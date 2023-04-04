@@ -1014,6 +1014,8 @@ impl Ring3Process {
             ArrayVec::from([NONE_FD; MAX_FILES_PER_PROCESS]);
 
         let pfm = ProcessFrames::default();
+        let mut pinfo = kpi::process::ProcessInfo::default();
+        pinfo.pid = pid;
 
         Ok(Ring3Process {
             pid: pid,
@@ -1024,7 +1026,7 @@ impl Ring3Process {
             executor_cache,
             executor_offset: VAddr::from(EXECUTOR_OFFSET),
             fds,
-            pinfo: Default::default(),
+            pinfo,
             pfm,
             writeable_sections: ArrayVec::new(),
             read_only_offset: VAddr::zero(),

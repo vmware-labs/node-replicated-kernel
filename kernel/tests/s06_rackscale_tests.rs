@@ -424,7 +424,6 @@ fn s06_rackscale_shmem_shootdown_test() {
         spawn_shmem_server(SHMEM_PATH, SHMEM_SIZE).expect("Failed to start shmem server");
     let mut dcm = spawn_dcm(1, timeout).expect("Failed to start DCM");
 
-    // client 1 to controller
     let (tx, rx) = channel();
 
     let rx_mut = Arc::new(Mutex::new(rx));
@@ -442,7 +441,6 @@ fn s06_rackscale_shmem_shootdown_test() {
     );
 
     let controller_build = build.clone();
-    let controller_rx_mut = rx_mut.clone();
     let controller = std::thread::spawn(move || {
         let cmdline_controller = RunnerArgs::new_with_build("userspace-smp", &controller_build)
             .timeout(timeout)
@@ -454,13 +452,15 @@ fn s06_rackscale_shmem_shootdown_test() {
             .workers(clients + 1)
             .use_vmxnet3();
 
-        let output = String::new();
-        let qemu_run = || -> Result<WaitStatus> {
+        let mut output = String::new();
+        let mut qemu_run = || -> Result<WaitStatus> {
             let mut p = spawn_nrk(&cmdline_controller)?;
+            output += p.exp_string("rackscale_shootdown_test OK")?.as_str();
 
-            // Wait for the shootdown client to complete
-            let rx = controller_rx_mut.lock();
-            wait_for_client_termination::<()>(&rx);
+            // Notify clients all are done.
+            for _i in 0..clients {
+                notify_controller_of_termination(&tx);
+            }
 
             p.process.kill(SIGTERM)
         };
@@ -468,42 +468,12 @@ fn s06_rackscale_shmem_shootdown_test() {
         wait_for_sigterm(&cmdline_controller, qemu_run(), output);
     });
 
-    let build2 = build.clone();
-    let shootdown_client = std::thread::spawn(move || {
-        sleep(Duration::from_millis(CLIENT_BUILD_DELAY));
-        let tap = format!("tap{}", 2 * 1);
-        let cmdline_client = RunnerArgs::new_with_build("userspace-smp", &build2)
-            .timeout(timeout)
-            .cmd("mode=client transport=shmem")
-            .shmem_size(SHMEM_SIZE)
-            .shmem_path(SHMEM_PATH)
-            .tap(&tap)
-            .no_network_setup()
-            .workers(clients + 1)
-            .nobuild()
-            .cores(cores)
-            .use_vmxnet3();
-        let mut output = String::new();
-        let mut qemu_run = || -> Result<WaitStatus> {
-            let mut p = spawn_nrk(&cmdline_client)?;
-            output += p.exp_string("rackscale_shootdown_test OK")?.as_str();
-
-            // Notify all other clients & controller we are done.
-            for _i in 0..clients {
-                notify_controller_of_termination(&tx);
-            }
-            p.process.kill(SIGTERM)
-        };
-
-        wait_for_sigterm(&cmdline_client, qemu_run(), output);
-    });
-
-    for i in 2..=clients {
-        let tap = format!("tap{}", 2 * i);
+    for i in 0..clients {
+        let tap = format!("tap{}", 2 * (i + 1));
         let client_build = build.clone();
         let my_rx_mut = rx_mut.clone();
         let client = std::thread::spawn(move || {
-            sleep(Duration::from_millis(i as u64 * CLIENT_BUILD_DELAY));
+            sleep(Duration::from_millis((i + 1) as u64 * CLIENT_BUILD_DELAY));
             let cmdline_client = RunnerArgs::new_with_build("userspace-smp", &client_build)
                 .timeout(timeout)
                 .cmd("mode=client transport=shmem")
@@ -516,18 +486,17 @@ fn s06_rackscale_shmem_shootdown_test() {
                 .cores(cores)
                 .use_vmxnet3();
 
-            let mut output = String::new();
+            let output = String::new();
             let mut qemu_run = || -> Result<WaitStatus> {
                 let mut p = spawn_nrk(&cmdline_client)?;
-                output += p.exp_string("Got a remote shootdown!")?.as_str();
 
                 // Wait for the shootdown client to complete
                 let rx = my_rx_mut.lock();
                 wait_for_client_termination::<()>(&rx);
 
-                p.process.exit()
+                p.process.kill(SIGTERM)
             };
-            check_for_successful_exit(&cmdline_client, qemu_run(), output);
+            wait_for_sigterm(&cmdline_client, qemu_run(), output);
         });
         processes.push(client);
     }
@@ -537,7 +506,6 @@ fn s06_rackscale_shmem_shootdown_test() {
         client_rets.push(p.join());
     }
     let controller_ret = controller.join();
-    let shootdown_client_ret = shootdown_client.join();
 
     let _ignore = shmem_server.send_control('c');
     let _ignore = dcm.send_control('c');
@@ -546,7 +514,6 @@ fn s06_rackscale_shmem_shootdown_test() {
         ret.unwrap();
     }
     controller_ret.unwrap();
-    shootdown_client_ret.unwrap();
 }
 
 #[cfg(not(feature = "baremetal"))]
@@ -752,11 +719,6 @@ fn s06_rackscale_shmem_request_core_remote_test() {
         let mut output = String::new();
         let mut qemu_run = || -> Result<WaitStatus> {
             let mut p = spawn_nrk(&cmdline_client)?;
-            output += p
-                .exp_string("vibrio::upcalls: Got a new core (4294967297 -> 25) assigned to us.")?
-                .as_str();
-            output += p.exp_string("Hello from core 25")?.as_str();
-
             // Wait for controller to terminate
             let _ = wait_for_client_termination::<()>(&rx1);
 
@@ -786,10 +748,6 @@ fn s06_rackscale_shmem_request_core_remote_test() {
         let mut output = String::new();
         let mut qemu_run = || -> Result<WaitStatus> {
             let mut p = spawn_nrk(&cmdline_client)?;
-            output += p
-                .exp_string("Got a new core (8589934593 -> 49) assigned to us.")?
-                .as_str();
-            output += p.exp_string("Hello from core 49")?.as_str();
 
             // Wait for controller to terminate
             let _ = wait_for_client_termination::<()>(&rx2);

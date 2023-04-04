@@ -59,6 +59,8 @@ impl CoreToken {
 // know how to handle 'static string.
 #[derive(Serialize, Deserialize, Debug, Default, Copy, Clone, Eq, PartialEq)]
 pub struct ProcessInfo {
+    /// the process id
+    pub pid: usize,
     pub has_tls: bool,
     /// Start of initial TLS data section in the address space.
     pub tls_data: u64,
@@ -82,6 +84,7 @@ fn serialize() {
 
     let _r = env_logger::try_init();
     let point = ProcessInfo {
+        pid: 0,
         has_tls: true,
         tls_data: 0xdead,
         tls_data_len: 4,

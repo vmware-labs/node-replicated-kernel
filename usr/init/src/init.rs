@@ -151,58 +151,41 @@ fn request_core_remote_test() {
 
     let threads = vibrio::syscalls::System::threads().expect("Can't get system topology");
     let current_gtid = vibrio::syscalls::System::core_id().expect("Can't get core id");
-    let current_mid = kpi::system::mid_from_gtid(current_gtid);
-    let current_mtid = kpi::system::mtid_from_gtid(current_gtid);
-    log::info!(
-        "gtid={:?} machine_id={:?} machine_thread_id={:?}",
-        current_gtid,
-        current_mid,
-        current_mtid
-    );
+    let pinfo = vibrio::syscalls::Process::process_info().expect("Can't read process info");
 
-    if current_mid == 1 && current_mtid == 0 {
-        for thread in threads[1..].iter() {
-            let mid = kpi::system::mid_from_gtid(thread.id);
-            let mtid = kpi::system::mtid_from_gtid(thread.id);
-            log::info!(
-                "Considering thread: gtid={:?}, mid={:?}, mtid={:?}",
-                thread.id,
-                mid,
-                mtid
+    if pinfo.pid == 0 {
+        // Ignore current thread, and one other thread.
+        for thread in threads[2..].iter() {
+            let r = vibrio::syscalls::Process::request_core(
+                0, // this field does nothing in rackscale mode
+                VAddr::from(vibrio::upcalls::upcall_while_enabled as *const fn() as u64),
             );
 
-            if mtid != 0 {
-                let r = vibrio::syscalls::Process::request_core(
-                    0, // this field does nothing in rackscale mode
-                    VAddr::from(vibrio::upcalls::upcall_while_enabled as *const fn() as u64),
-                );
-
-                match r {
-                    Ok(spawned_gtid) => {
-                        // Spawn process on core that was given to us in response to our request.
-                        info!("Spawned core {:?}", spawned_gtid);
-                        s.spawn(
-                            32 * 4096,
-                            move |_| {
-                                info!(
-                                    "Hello from core {}",
-                                    lineup::tls2::Environment::scheduler().core_id
-                                );
-                            },
-                            ptr::null_mut(),
-                            spawned_gtid.gtid() as usize,
-                            None,
-                        );
-                    }
-                    Err(_e) => {
-                        panic!("Failed to spawn core");
-                    }
+            match r {
+                Ok(spawned_gtid) => {
+                    // Spawn process on core that was given to us in response to our request.
+                    info!("Spawned core {:?}", spawned_gtid);
+                    s.spawn(
+                        32 * 4096,
+                        move |_| {
+                            info!(
+                                "Hello from core {}",
+                                lineup::tls2::Environment::scheduler().core_id
+                            );
+                        },
+                        ptr::null_mut(),
+                        spawned_gtid.gtid() as usize,
+                        None,
+                    );
+                }
+                Err(_e) => {
+                    panic!("Failed to spawn core");
                 }
             }
         }
     }
 
-    // Run scheduler on core 0 of this machine
+    // Run scheduler on the current core of this machine
     let core_id = lineup::gtid_to_core_id(current_gtid);
     let scb: SchedulerControlBlock = SchedulerControlBlock::new(core_id);
     loop {
@@ -219,11 +202,10 @@ fn rackscale_shootdown_test() {
 
     // Get machine ID and machine thread ID
     let current_gtid = vibrio::syscalls::System::core_id().expect("Can't get core id");
-    let current_mid = kpi::system::mid_from_gtid(current_gtid);
-    let current_mtid = kpi::system::mtid_from_gtid(current_gtid);
+    let pinfo = vibrio::syscalls::Process::process_info().expect("Can't read process info");
 
     // Only trigger shootdown from one machine
-    if current_mid == 1 && current_mtid == 0 {
+    if pinfo.pid == 0 {
         for _i in 0..2 {
             let r = vibrio::syscalls::Process::request_core(
                 0, // this field does nothing in rackscale mode
@@ -279,7 +261,8 @@ fn rackscale_shootdown_test() {
     }
 
     let s = &vibrio::upcalls::PROCESS_SCHEDULER;
-    let scb: SchedulerControlBlock = SchedulerControlBlock::new(current_mtid);
+    let core_id = lineup::gtid_to_core_id(current_gtid);
+    let scb: SchedulerControlBlock = SchedulerControlBlock::new(core_id);
     loop {
         s.run(&scb);
     }

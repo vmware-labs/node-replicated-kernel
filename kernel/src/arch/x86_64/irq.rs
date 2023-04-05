@@ -693,8 +693,6 @@ pub extern "C" fn handle_generic_exception(a: ExceptionArguments) -> ! {
         // TODO(scheduling): do proper masking based on some VCPU mask
         // TODO(scheduling): Currently don't deliver interrupts to process not currently running
         if a.vector > 30 && a.vector < 249 && a.vector != debug::GDB_REMOTE_IRQ_VECTOR.into() {
-            log::info!("handle_generic_exception {:?}", a);
-
             let mut pborrow = super::process::CURRENT_EXECUTOR.borrow_mut();
             let p = pborrow.as_mut().unwrap();
             let resumer = {

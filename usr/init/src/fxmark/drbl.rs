@@ -6,6 +6,8 @@ use alloc::vec::Vec;
 use alloc::{format, vec};
 use core::cell::RefCell;
 use core::sync::atomic::{AtomicUsize, Ordering};
+use kpi::process::MAX_CORES;
+use lineup::core_id_to_index;
 use vibrio::io::*;
 
 #[derive(Clone)]
@@ -17,7 +19,7 @@ pub struct DRBL {
 impl Default for DRBL {
     fn default() -> DRBL {
         let page = vec![0xb; PAGE_SIZE as usize];
-        let fd = vec![u64::MAX; 512];
+        let fd = vec![u64::MAX; MAX_CORES];
         DRBL {
             page,
             fds: RefCell::new(fd),
@@ -39,7 +41,7 @@ impl Bench for DRBL {
             let ret = vibrio::syscalls::Fs::write_at(fd, &self.page, 0)
                 .expect("FileWriteAt syscall failed");
             assert_eq!(ret, PAGE_SIZE as u64);
-            self.fds.borrow_mut()[core as usize] = fd;
+            self.fds.borrow_mut()[core_id_to_index(core)] = fd;
         }
     }
 
@@ -51,7 +53,7 @@ impl Bench for DRBL {
         _write_ratio: usize,
     ) -> Vec<usize> {
         let mut iops_per_second = Vec::with_capacity(duration as usize);
-        let fd = self.fds.borrow()[core as usize];
+        let fd = self.fds.borrow()[core_id_to_index(core)];
         if fd == u64::MAX {
             panic!("Unable to open a file");
         }

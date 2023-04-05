@@ -136,7 +136,7 @@ fn s04_userspace_rumprt_fs() {
 #[cfg(not(feature = "baremetal"))]
 #[test]
 fn s04_userspace_concurrent_shootdowns() {
-    let machine = Machine::determine();
+    let _machine = Machine::determine();
     let num_cores: usize = 3; //machine.max_cores();
     let build = BuildArgs::default()
         .user_feature("test-concurrent-shootdown")

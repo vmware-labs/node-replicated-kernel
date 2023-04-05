@@ -21,6 +21,7 @@ use kpi::process::MAX_CORES;
 use log::{error, trace};
 use rawtime::Instant;
 
+use crate::core_id_to_index;
 use crate::stack::LineupStack;
 use crate::threads::{Runnable, Thread, ThreadId, YieldRequest, YieldResume};
 use crate::tls2::{self, SchedulerControlBlock, ThreadControlBlock};
@@ -116,7 +117,7 @@ impl<'a> SmpScheduler<'a> {
         stack: LineupStack,
         f: F,
         arg: *mut u8,
-        affinity: kpi::system::GlobalThreadId,
+        affinity: CoreId,
         interrupt_vector: Option<IrqVector>,
         tls: *mut ThreadControlBlock<'static>,
     ) -> Option<ThreadId>
@@ -125,12 +126,11 @@ impl<'a> SmpScheduler<'a> {
     {
         let t = self.tid_counter.fetch_add(1, Ordering::Relaxed);
         let tid = ThreadId(t);
-        let core_id = crate::gtid_to_core_id(affinity);
 
         let (handle, generator) = unsafe {
             Thread::new(
                 tid,
-                core_id,
+                affinity,
                 stack,
                 f,
                 arg,
@@ -140,8 +140,9 @@ impl<'a> SmpScheduler<'a> {
             )
         };
 
+        let core_index = core_id_to_index(affinity);
         self.add_thread(handle, generator).map(|tid| {
-            self.mark_runnable(tid, core_id);
+            self.mark_runnable(tid, core_index);
             if let Some(vec) = interrupt_vector {
                 self.irqvec_to_tid.lock().insert(vec, tid);
             }
@@ -154,7 +155,7 @@ impl<'a> SmpScheduler<'a> {
         stack_size: usize,
         f: F,
         arg: *mut u8,
-        affinity: kpi::system::GlobalThreadId,
+        affinity: CoreId,
         irq_vec: Option<IrqVector>,
     ) -> Option<ThreadId>
     where
@@ -189,8 +190,8 @@ impl<'a> SmpScheduler<'a> {
 
     /// Marks a thread as sunnable by inserting it into
     /// `runnable`.
-    fn mark_runnable(&self, tid: ThreadId, affinity: CoreId) {
-        self.per_core[affinity].runnable.lock().push_back(tid);
+    fn mark_runnable(&self, tid: ThreadId, core_index: usize) {
+        self.per_core[core_index].runnable.lock().push_back(tid);
     }
 
     /// Make a thread no longer runnable.
@@ -198,8 +199,8 @@ impl<'a> SmpScheduler<'a> {
     /// Anything that's not in runnable is unrunnable.
     /// This is O(n) but it happens rarely(?); only
     /// call it if tid is different from current thread.
-    fn mark_unrunnable(&self, tid: ThreadId, affinity: CoreId) {
-        let mut runnable = self.per_core[affinity].runnable.lock();
+    fn mark_unrunnable(&self, tid: ThreadId, core_index: usize) {
+        let mut runnable = self.per_core[core_index].runnable.lock();
         runnable.retain(|&ltid| ltid != tid);
     }
 
@@ -212,14 +213,14 @@ impl<'a> SmpScheduler<'a> {
     /// up using `signal` and `broadcast` so we can remove calls
     /// here except in these situation if we track it better
     /// i.e. save in thread state if its waiting...
-    fn waitlist_remove(&self, tid: ThreadId, affinity: CoreId) {
-        let mut waiting = self.per_core[affinity].waiting.lock();
+    fn waitlist_remove(&self, tid: ThreadId, core_index: usize) {
+        let mut waiting = self.per_core[core_index].waiting.lock();
         waiting.retain(|&(_instant, wtid)| wtid != tid);
     }
 
     /// Insert thread in a sorted waitlist
-    fn waitlist_insert(&self, tid: ThreadId, affinity: CoreId, until: Instant) {
-        let mut waiting = self.per_core[affinity].waiting.lock();
+    fn waitlist_insert(&self, tid: ThreadId, core_index: usize, until: Instant) {
+        let mut waiting = self.per_core[core_index].waiting.lock();
         let to_insert = (until, tid);
         match waiting.binary_search_by(|probe| probe.cmp(&to_insert).reverse()) {
             Err(pos) => waiting.insert(pos, to_insert),
@@ -233,10 +234,11 @@ impl<'a> SmpScheduler<'a> {
     /// Updates run and waitlists accordingly.
     fn handle_yield_request(&self, tid: ThreadId, result: Option<YieldRequest>) -> YieldResume {
         let affinity = self.threads.lock().get(&tid).unwrap().affinity;
+        let core_index = core_id_to_index(affinity);
         match result {
             None => {
                 trace!("Thread {} has terminated.", tid);
-                self.mark_unrunnable(tid, affinity);
+                self.mark_unrunnable(tid, core_index);
                 let thread = self
                     .threads
                     .lock()
@@ -250,7 +252,7 @@ impl<'a> SmpScheduler<'a> {
                         sleeping_tid,
                         sleeping_affinity
                     );
-                    self.mark_runnable(sleeping_tid, sleeping_affinity);
+                    self.mark_runnable(sleeping_tid, core_id_to_index(sleeping_affinity));
                 }
                 YieldResume::DoNotResume
             }
@@ -260,7 +262,7 @@ impl<'a> SmpScheduler<'a> {
                     tid
                 );
                 // Put us back at end of the queue:
-                self.mark_runnable(tid, affinity);
+                self.mark_runnable(tid, core_index);
                 YieldResume::Interrupted
             }
             Some(YieldRequest::Runnable(rtid)) => {
@@ -271,13 +273,14 @@ impl<'a> SmpScheduler<'a> {
                     .get(&rtid)
                     .expect("Can't find thread")
                     .affinity;
-                self.waitlist_remove(rtid, rtid_affinity);
+                let rtid_index = core_id_to_index(rtid_affinity);
+                self.waitlist_remove(rtid, rtid_index);
                 // TODO(race): We can race with the core running on core id rtid_affinity here,
                 // it will remove the rtid on it's own if the wait timeout has been reached
                 // so if we don't remove anything here from the waitlist we should probably not insert
                 // alternative is to lock both lists, need to have a lockint scheme then
                 // e.g. we could use order of rtid affinity
-                self.mark_runnable(rtid, rtid_affinity);
+                self.mark_runnable(rtid, rtid_index);
                 YieldResume::Completed
             }
             Some(YieldRequest::Unrunnable(rtid)) => {
@@ -293,7 +296,7 @@ impl<'a> SmpScheduler<'a> {
                     YieldResume::Interrupted
                 } else {
                     // Slow path
-                    self.mark_unrunnable(rtid, rtid_affinity);
+                    self.mark_unrunnable(rtid, core_id_to_index(rtid_affinity));
                     // Do not need to context switch, continue running
                     YieldResume::Completed
                 }
@@ -307,8 +310,9 @@ impl<'a> SmpScheduler<'a> {
                         .get(rtid)
                         .expect("Can't find thread")
                         .affinity;
-                    self.waitlist_remove(*rtid, rtid_affinity);
-                    self.mark_runnable(*rtid, rtid_affinity);
+                    let rtid_index = core_id_to_index(rtid_affinity);
+                    self.waitlist_remove(*rtid, rtid_index);
+                    self.mark_runnable(*rtid, rtid_index);
                 }
                 YieldResume::Completed
             }
@@ -318,7 +322,7 @@ impl<'a> SmpScheduler<'a> {
                     tid,
                     until.duration_since(Instant::now()),
                 );
-                self.waitlist_insert(tid, affinity, until);
+                self.waitlist_insert(tid, core_index, until);
                 // Already popped from running, force context switch
                 YieldResume::Interrupted
             }
@@ -393,11 +397,11 @@ impl<'a> SmpScheduler<'a> {
     /// Acquires lock on `waiting` and `runnable`.
     /// TODO(style): Maybe should avoid taking both locks here to avoid deadlock.
     /// TODO(efficiency): Should probably avoid taking `runnable` lock multiple times.
-    fn check_wakeups(&self, affinity: CoreId) {
-        let mut waiting = self.per_core[affinity].waiting.lock();
+    fn check_wakeups(&self, core_index: usize) {
+        let mut waiting = self.per_core[core_index].waiting.lock();
         while !waiting.is_empty() && waiting.last().unwrap().0 <= Instant::now() {
             if let Some((_wakeup, tid)) = waiting.pop() {
-                self.mark_runnable(tid, affinity);
+                self.mark_runnable(tid, core_index);
             }
         }
     }
@@ -407,7 +411,7 @@ impl<'a> SmpScheduler<'a> {
         while !state.pending_irqs.is_empty() {
             match state.pending_irqs.pop() {
                 Some(vec) => match self.irqvec_to_tid.lock().get(&vec) {
-                    Some(tid) => self.mark_runnable(*tid, state.core_id),
+                    Some(tid) => self.mark_runnable(*tid, core_id_to_index(state.core_id)),
                     None => error!("Don't have a thread to handle IRQ vector {}", vec),
                 },
                 None => unreachable!("Only one thread pops so this shouldn't happen"),
@@ -428,6 +432,7 @@ impl<'a> SmpScheduler<'a> {
     /// Maybe run() should just never return?
     pub fn run(&self, scb: &SchedulerControlBlock) {
         let core_id = scb.core_id;
+        let core_index = core_id_to_index(core_id);
 
         unsafe {
             // Set the schedler control block -- may have already been installed
@@ -440,10 +445,10 @@ impl<'a> SmpScheduler<'a> {
         // Run until `runnable` is empty.
         loop {
             self.check_interrupt(scb);
-            self.check_wakeups(core_id);
+            self.check_wakeups(core_index);
 
             // The next thread ID we want to run
-            let next_tid = self.per_core[core_id].runnable.lock().pop_front();
+            let next_tid = self.per_core[core_index].runnable.lock().pop_front();
             match next_tid {
                 Some(tid) => {
                     let mut generator = self

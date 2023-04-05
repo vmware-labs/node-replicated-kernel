@@ -26,11 +26,19 @@ pub mod upcalls;
 /// Type to represent a core id for the scheduler.
 type CoreId = usize;
 
-/// A utility function that converts from a gtid to a core_id, which is a form more
-/// easily used for indexing.
-pub fn gtid_to_core_id(gtid: kpi::system::GlobalThreadId) -> CoreId {
-    kpi::process::MAX_CORES_PER_MACHINE * kpi::system::mid_from_gtid(gtid)
-        + kpi::system::mtid_from_gtid(gtid)
+/// A utility function that converts a core_id (which may not be sequential)
+/// to a form more easily used for indexing
+pub fn core_id_to_index(core_id: CoreId) -> usize {
+    let machine_id = kpi::system::mid_from_gtid(core_id);
+    if machine_id == 0 {
+        // This is controller (should never happen) or non-rackscale
+        core_id
+    } else {
+        // The controller (which will never need this) is always machine_id 0, so
+        // decrement here for rackscale clients.
+        kpi::process::MAX_CORES_PER_MACHINE * (machine_id - 1)
+            + kpi::system::mtid_from_gtid(core_id)
+    }
 }
 
 /// Type to represent an IRQ vector.

@@ -219,7 +219,8 @@ unsafe fn setup_process() {
 #[no_mangle]
 pub extern "C" fn main() {
     use lineup::tls2::SchedulerControlBlock;
-    let scb: SchedulerControlBlock = SchedulerControlBlock::new(0);
+    let current_core = crate::syscalls::System::core_id().expect("Can't get core id");
+    let scb: SchedulerControlBlock = SchedulerControlBlock::new(current_core);
     unsafe { scb.preinstall() };
 
     #[repr(C)]
@@ -255,30 +256,37 @@ pub extern "C" fn main() {
     install_vcpu_area();
 
     let hwthreads = crate::syscalls::System::threads().expect("Can't get system topology");
-    let current_core = crate::syscalls::System::core_id().expect("Can't get core id");
     let mut maximum = 1; // We already have the current core
 
     let pinfo = crate::syscalls::Process::process_info().expect("Can't read process info");
 
     let ncores: Option<usize> = pinfo.cmdline.parse().ok();
-    for hwthread in hwthreads.iter().take(ncores.unwrap_or(hwthreads.len())) {
-        if hwthread.id != current_core {
-            info!("request core {:?}", hwthread);
-            match crate::syscalls::Process::request_core(
-                hwthread.id,
-                VAddr::from(crate::upcalls::upcall_while_enabled as *const fn() as u64),
-            ) {
-                Ok(_) => {
-                    maximum += 1;
-                    continue;
-                }
-                Err(e) => {
-                    error!("Can't spawn on {:?}: {:?}", hwthread.id, e);
-                    break;
+    let ncores_to_request = ncores.unwrap_or(hwthreads.len());
+    if ncores_to_request > maximum {
+        for hwthread in hwthreads.iter() {
+            if hwthread.id != current_core {
+                info!("request core {:?}", hwthread);
+                match crate::syscalls::Process::request_core(
+                    hwthread.id,
+                    VAddr::from(crate::upcalls::upcall_while_enabled as *const fn() as u64),
+                ) {
+                    Ok(_) => {
+                        maximum += 1;
+                        if maximum == ncores_to_request {
+                            break;
+                        }
+                        continue;
+                    }
+                    Err(e) => {
+                        error!("Can't spawn on {:?}: {:?}", hwthread.id, e);
+                        break;
+                    }
                 }
             }
         }
     }
+    // TODO: remove this assert
+    assert!(maximum == ncores_to_request);
 
     // Split app args into individual parts
     let parsed_args: Vec<&str> = pinfo.app_cmdline.rsplit(' ').collect();
@@ -395,7 +403,7 @@ pub extern "C" fn main() {
             }
         },
         core::ptr::null_mut(),
-        0,
+        current_core,
         None,
     );
 

@@ -20,6 +20,7 @@ use kpi::SystemCallError;
 
 use slabmalloc::*;
 
+use lineup::core_id_to_index;
 use lineup::tls2::Environment;
 
 use crossbeam_utils::CachePadded;
@@ -139,15 +140,15 @@ unsafe impl GlobalAlloc for SafeZoneAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         #[inline(always)]
         unsafe fn try_alloc_page() -> Option<&'static mut ObjectPage<'static>> {
-            let mut core_id = Environment::core_id();
-            let my_core_id = core_id;
+            let mut core_index = core_id_to_index(Environment::core_id());
+            let my_core_index = core_index;
 
             loop {
-                match PAGER[core_id].lock().allocate_page() {
+                match PAGER[core_index].lock().allocate_page() {
                     Some(ret) => return Some(ret),
                     None => {
-                        core_id = (core_id + 1) % MAX_CORES;
-                        if core_id == (my_core_id - 1) % MAX_CORES {
+                        core_index = (core_index + 1) % MAX_CORES;
+                        if core_index == (my_core_index - 1) % MAX_CORES {
                             break;
                         } else {
                             continue;
@@ -160,15 +161,15 @@ unsafe impl GlobalAlloc for SafeZoneAllocator {
 
         #[inline(always)]
         unsafe fn try_alloc_largepage() -> Option<&'static mut LargeObjectPage<'static>> {
-            let mut core_id = Environment::core_id();
-            let my_core_id = core_id;
+            let mut core_index = core_id_to_index(Environment::core_id());
+            let my_core_index = core_index;
 
             loop {
-                match PAGER[core_id].lock().allocate_large_page() {
+                match PAGER[core_index].lock().allocate_large_page() {
                     Some(ret) => return Some(ret),
                     None => {
-                        core_id = (core_id + 1) % MAX_CORES;
-                        if core_id == (my_core_id - 1) % MAX_CORES {
+                        core_index = (core_index + 1) % MAX_CORES;
+                        if core_index == (my_core_index - 1) % MAX_CORES {
                             break;
                         } else {
                             continue;
@@ -270,9 +271,10 @@ unsafe impl GlobalAlloc for SafeZoneAllocator {
                 // An proper reclamation strategy could be implemented here
                 // to release empty pages back from the ZoneAllocator to the PAGER
             }
-            LPRANGE_START..=Pager::LARGE_PAGE_SIZE => PAGER[Environment::core_id()]
-                .lock()
-                .dealloc_page(ptr, Pager::LARGE_PAGE_SIZE),
+            LPRANGE_START..=Pager::LARGE_PAGE_SIZE => PAGER
+                [core_id_to_index(Environment::core_id())]
+            .lock()
+            .dealloc_page(ptr, Pager::LARGE_PAGE_SIZE),
             _ => error!("TODO: Currently can't dealloc of {:?}.", layout),
         }
     }
@@ -304,17 +306,17 @@ impl PerCoreAllocator {
 unsafe impl GlobalAlloc for PerCoreAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         // Get the core_id we are currently running on. Then return alloc of that SafeZoneAllocator.
-        let sza = &PER_CORE_MEM_ALLOCATOR[Environment::core_id()];
+        let sza = &PER_CORE_MEM_ALLOCATOR[core_id_to_index(Environment::core_id())];
         sza.alloc(layout)
     }
 
     unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
-        let sza = &PER_CORE_MEM_ALLOCATOR[Environment::core_id()];
+        let sza = &PER_CORE_MEM_ALLOCATOR[core_id_to_index(Environment::core_id())];
         sza.realloc(ptr, layout, new_size)
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
-        let sza = &PER_CORE_MEM_ALLOCATOR[Environment::core_id()];
+        let sza = &PER_CORE_MEM_ALLOCATOR[core_id_to_index(Environment::core_id())];
         sza.dealloc(ptr, layout)
     }
 }

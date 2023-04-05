@@ -5,6 +5,7 @@ use crate::fxmark::{Bench, PAGE_SIZE};
 use alloc::vec::Vec;
 use core::slice::from_raw_parts_mut;
 use core::sync::atomic::{AtomicUsize, Ordering};
+use lineup::core_id_to_index;
 use vibrio::io::*;
 
 #[derive(Clone)]
@@ -67,7 +68,7 @@ impl Bench for DWOM {
             panic!("Unable to open a file");
         }
         let size: u64 = 0x1000;
-        let base: u64 = 0xff0000 + (size * core as u64);
+        let base: u64 = 0xff0000 + (size * core_id_to_index(core) as u64);
         // Allocate a buffer and write data into it, which is later written to the file.
         let page: &mut [u8] = unsafe {
             vibrio::syscalls::VSpace::map(base, size).expect("Map syscall failed");
@@ -86,8 +87,12 @@ impl Bench for DWOM {
             let start = rawtime::Instant::now();
             while start.elapsed().as_secs() < 1 {
                 for _i in 0..64 {
-                    if vibrio::syscalls::Fs::write_at(fd, page, core as i64 * 4096)
-                        .expect("FileWriteAt syscall failed")
+                    if vibrio::syscalls::Fs::write_at(
+                        fd,
+                        page,
+                        core_id_to_index(core) as i64 * 4096,
+                    )
+                    .expect("FileWriteAt syscall failed")
                         != PAGE_SIZE
                     {
                         panic!("DWOM: write_at() failed");

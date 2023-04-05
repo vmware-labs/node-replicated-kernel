@@ -7,6 +7,7 @@ use alloc::{format, vec};
 use core::cell::RefCell;
 use core::slice::from_raw_parts_mut;
 use core::sync::atomic::{AtomicUsize, Ordering};
+use lineup::core_id_to_index;
 use vibrio::io::*;
 
 #[derive(Clone)]
@@ -49,7 +50,7 @@ impl Bench for DWOL {
             let ret = vibrio::syscalls::Fs::write_at(fd, &self.page, 0)
                 .expect("FileWriteAt syscall failed");
             assert_eq!(ret, PAGE_SIZE as u64);
-            self.fds.borrow_mut()[core as usize] = fd;
+            self.fds.borrow_mut()[core_id_to_index(core)] = fd;
         }
     }
 
@@ -61,12 +62,13 @@ impl Bench for DWOL {
         _write_ratio: usize,
     ) -> Vec<usize> {
         let mut iops_per_second = Vec::with_capacity(duration as usize);
-        let fd = self.fds.borrow()[core as usize];
+        let core_index = core_id_to_index(core);
+        let fd = self.fds.borrow()[core_index];
         if fd == u64::MAX {
             panic!("Unable to open a file");
         }
         let size: u64 = 0x1000;
-        let base: u64 = 0xff0000 + (size * core as u64);
+        let base: u64 = 0xff0000 + (size * core_index as u64);
         // Allocate a buffer and write data into it, which is later written to the file.
         let page: &mut [u8] = unsafe {
             vibrio::syscalls::VSpace::map(base, size).expect("Map syscall failed");

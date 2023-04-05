@@ -7,6 +7,7 @@ use core::alloc::Layout;
 use core::{fmt, ptr};
 
 use hashbrown::HashMap;
+use lineup::core_id_to_index;
 use lineup::tls2::Environment;
 use log::{error, trace, warn};
 use spin::Mutex;
@@ -260,7 +261,7 @@ pub unsafe extern "C" fn rumpcomp_pci_dmalloc(
     let layout = Layout::from_size_align_unchecked(size, size);
 
     let r = {
-        let mut p = crate::mem::PAGER[Environment::core_id()].lock();
+        let mut p = crate::mem::PAGER[core_id_to_index(Environment::core_id())].lock();
         (*p).allocate(layout)
     };
 

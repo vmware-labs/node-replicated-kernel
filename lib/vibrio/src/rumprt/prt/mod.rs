@@ -93,7 +93,9 @@ pub fn context_switch(prev_cookie: *mut u8, next_cookie: *mut u8) {
             (*prev).rl_lwpctl.lc_curcpu = LWPCTL_CPU_NONE;
         }
         if !next.is_null() {
-            (*next).rl_lwpctl.lc_curcpu = Environment::scheduler().core_id as i32;
+            // Use core_id_to_index to ensure it fits in an i32
+            (*next).rl_lwpctl.lc_curcpu =
+                lineup::core_id_to_index(Environment::scheduler().core_id) as i32;
             (*next).rl_lwpctl.lc_pctr += 1;
         }
     }

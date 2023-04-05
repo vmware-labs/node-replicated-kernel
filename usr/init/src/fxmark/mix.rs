@@ -6,6 +6,7 @@ use alloc::vec::Vec;
 use alloc::{format, vec};
 use core::cell::RefCell;
 use core::sync::atomic::{AtomicUsize, Ordering};
+use lineup::core_id_to_index;
 use vibrio::io::*;
 use x86::random::rdrand16;
 
@@ -14,6 +15,7 @@ pub struct MIX {
     page: Vec<u8>,
     size: i64,
     cores: RefCell<usize>,
+    min_core: RefCell<usize>,
     max_open_files: usize,
     open_files: RefCell<usize>,
     fds: RefCell<Vec<u64>>,
@@ -29,6 +31,7 @@ impl Default for MIX {
             page,
             size: 256 * 1024 * 1024,
             cores: RefCell::new(0),
+            min_core: RefCell::new(0),
             max_open_files: MAX_OPEN_FILES.load(Ordering::Acquire),
             open_files: RefCell::new(0),
             fds: RefCell::new(fd),
@@ -39,6 +42,7 @@ impl Default for MIX {
 impl Bench for MIX {
     fn init(&self, cores: Vec<usize>, open_files: usize) {
         *self.cores.borrow_mut() = cores.len();
+        *self.min_core.borrow_mut() = *cores.iter().min().unwrap();
         *self.open_files.borrow_mut() = open_files;
         for file_num in 0..open_files {
             let fd = vibrio::syscalls::Fs::open(
@@ -64,7 +68,7 @@ impl Bench for MIX {
     ) -> Vec<usize> {
         let mut iops_per_second = Vec::with_capacity(duration as usize);
 
-        let file_num = (core % self.max_open_files) % *self.open_files.borrow();
+        let file_num = (core_id_to_index(core) % self.max_open_files) % *self.open_files.borrow();
         let fd = self.fds.borrow()[file_num];
         if fd == u64::MAX {
             panic!("Unable to open a file");
@@ -122,7 +126,7 @@ impl Bench for MIX {
             vibrio::syscalls::Fs::read_at(fd, &mut page[0..1], 0).expect("can't read_at");
         }
 
-        if core == 0 {
+        if core == *self.min_core.borrow() {
             let start = rawtime::Instant::now();
             while start.elapsed().as_secs() < 1 {}
             for i in 0..*self.open_files.borrow() {

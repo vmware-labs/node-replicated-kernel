@@ -186,8 +186,7 @@ fn request_core_remote_test() {
     }
 
     // Run scheduler on the current core of this machine
-    let core_id = lineup::gtid_to_core_id(current_gtid);
-    let scb: SchedulerControlBlock = SchedulerControlBlock::new(core_id);
+    let scb: SchedulerControlBlock = SchedulerControlBlock::new(current_gtid);
     loop {
         s.run(&scb);
     }
@@ -261,8 +260,7 @@ fn rackscale_shootdown_test() {
     }
 
     let s = &vibrio::upcalls::PROCESS_SCHEDULER;
-    let core_id = lineup::gtid_to_core_id(current_gtid);
-    let scb: SchedulerControlBlock = SchedulerControlBlock::new(core_id);
+    let scb: SchedulerControlBlock = SchedulerControlBlock::new(current_gtid);
     loop {
         s.run(&scb);
     }
@@ -351,7 +349,7 @@ fn concurrent_shootdown_test() {
     }
 
     // Run scheduler on core 0
-    let scb: SchedulerControlBlock = SchedulerControlBlock::new(current_mtid);
+    let scb: SchedulerControlBlock = SchedulerControlBlock::new(current_gtid);
     loop {
         s.run(&scb);
     }
@@ -361,18 +359,21 @@ fn scheduler_smp_test() {
     let s = &vibrio::upcalls::PROCESS_SCHEDULER;
 
     let threads = vibrio::syscalls::System::threads().expect("Can't get system topology");
+    let current_gtid = vibrio::syscalls::System::core_id().expect("Can't get core id");
 
-    for thread in threads[1..].iter() {
-        let r = vibrio::syscalls::Process::request_core(
-            thread.id,
-            VAddr::from(vibrio::upcalls::upcall_while_enabled as *const fn() as u64),
-        );
-        match r {
-            Ok(ctoken) => {
-                info!("Spawned core on {:?} <-> {}", ctoken, thread.id);
-            }
-            Err(_e) => {
-                panic!("Failed to spawn to core {}", thread.id);
+    for thread in threads.iter() {
+        if thread.id != current_gtid {
+            let r = vibrio::syscalls::Process::request_core(
+                thread.id,
+                VAddr::from(vibrio::upcalls::upcall_while_enabled as *const fn() as u64),
+            );
+            match r {
+                Ok(ctoken) => {
+                    info!("Spawned core on {:?} <-> {}", ctoken, thread.id);
+                }
+                Err(_e) => {
+                    panic!("Failed to spawn to core {}", thread.id);
+                }
             }
         }
     }
@@ -392,8 +393,8 @@ fn scheduler_smp_test() {
         );
     }
 
-    // Run scheduler on core 0
-    let scb: SchedulerControlBlock = SchedulerControlBlock::new(0);
+    // Run scheduler on current core
+    let scb: SchedulerControlBlock = SchedulerControlBlock::new(current_gtid);
     loop {
         s.run(&scb);
     }
@@ -479,7 +480,9 @@ fn test_rump_tmpfs() {
         context_switch: rumprt::prt::context_switch,
     };
 
+    let current_gtid = vibrio::syscalls::System::core_id().expect("Can't get core id");
     let mut scheduler = lineup::scheduler::SmpScheduler::with_upcalls(up);
+
     scheduler.spawn(
         32 * 4096,
         |_yielder| unsafe {
@@ -530,11 +533,11 @@ fn test_rump_tmpfs() {
             info!("bytes_read: {:?}", read_bytes);
         },
         core::ptr::null_mut(),
-        0,
+        current_gtid,
         None,
     );
 
-    let scb: SchedulerControlBlock = SchedulerControlBlock::new(0);
+    let scb: SchedulerControlBlock = SchedulerControlBlock::new(current_gtid);
     scheduler.run(&scb);
 
     // TODO: Don't drop the scheduler for now,
@@ -592,8 +595,9 @@ pub fn test_rump_net() {
         schedule: rumprt::rumpkern_sched,
         context_switch: rumprt::prt::context_switch,
     };
-
+    let current_gtid = vibrio::syscalls::System::core_id().expect("Can't get core id");
     let scheduler = lineup::scheduler::SmpScheduler::with_upcalls(up);
+
     scheduler.spawn(
         32 * 4096,
         |_yielder| unsafe {
@@ -676,11 +680,11 @@ pub fn test_rump_net() {
             assert_eq!(r, 0);
         },
         core::ptr::null_mut(),
-        0,
+        current_gtid,
         None,
     );
 
-    let scb: SchedulerControlBlock = SchedulerControlBlock::new(0);
+    let scb: SchedulerControlBlock = SchedulerControlBlock::new(current_gtid);
     loop {
         scheduler.run(&scb);
     }
@@ -889,17 +893,23 @@ fn pmem_alloc(ncores: Option<usize>) {
     let hwthreads = vibrio::syscalls::System::threads().expect("Can't get system topology");
     let s = &vibrio::upcalls::PROCESS_SCHEDULER;
     let cores = ncores.unwrap_or(hwthreads.len());
-    let current_core = vibrio::syscalls::System::core_id().expect("Can't get core id");
+    let current_gtid = vibrio::syscalls::System::core_id().expect("Can't get core id");
+    let mut gtids = Vec::with_capacity(cores);
 
-    let mut maximum = 1; // We already have core 0
-    for hwthread in hwthreads.iter().take(cores) {
-        if hwthread.id != current_core {
+    // We already have current core
+    gtids.push(current_gtid);
+
+    for hwthread in hwthreads.iter() {
+        if hwthread.id != current_gtid {
             match vibrio::syscalls::Process::request_core(
                 hwthread.id,
                 VAddr::from(vibrio::upcalls::upcall_while_enabled as *const fn() as u64),
             ) {
-                Ok(_) => {
-                    maximum += 1;
+                Ok(core_token) => {
+                    gtids.push(core_token.gtid());
+                    if gtids.len() == cores {
+                        break;
+                    }
                     continue;
                 }
                 Err(e) => {
@@ -909,33 +919,36 @@ fn pmem_alloc(ncores: Option<usize>) {
             }
         }
     }
-    info!("Spawned {} cores", maximum);
+    assert!(cores == gtids.len());
+    info!("Spawned {} cores", cores);
 
     s.spawn(
         32 * 4096,
         move |_| {
-            for idx in maximum..maximum + 1 {
-                let mut thandles = Vec::with_capacity(idx);
+            let mut thandles = Vec::with_capacity(cores);
 
-                for core_id in 0..idx {
-                    thandles.push(
-                        Environment::thread()
-                            .spawn_on_core(Some(bencher_trampoline), idx as *mut u8, core_id)
-                            .expect("Can't spawn bench thread?"),
-                    );
-                }
+            for core_index in 0..cores {
+                thandles.push(
+                    Environment::thread()
+                        .spawn_on_core(
+                            Some(bencher_trampoline),
+                            cores as *mut u8,
+                            gtids[core_index],
+                        )
+                        .expect("Can't spawn bench thread?"),
+                );
+            }
 
-                for thandle in thandles {
-                    Environment::thread().join(thandle);
-                }
+            for thandle in thandles {
+                Environment::thread().join(thandle);
             }
         },
         ptr::null_mut(),
-        0,
+        current_gtid,
         None,
     );
 
-    let scb: SchedulerControlBlock = SchedulerControlBlock::new(0);
+    let scb: SchedulerControlBlock = SchedulerControlBlock::new(current_gtid);
     while s.has_active_threads() {
         s.run(&scb);
     }

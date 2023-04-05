@@ -8,6 +8,7 @@ use core::ptr;
 
 use crate::rumprt::{c_int, c_size_t, c_void};
 
+use lineup::core_id_to_index;
 use lineup::tls2::Environment;
 
 use log::{debug, info, trace, warn};
@@ -110,7 +111,7 @@ mod nrk {
             addr, len, prot, flags, fd, pos
         );
 
-        let mut pager = crate::mem::PAGER[Environment::core_id()].lock();
+        let mut pager = crate::mem::PAGER[core_id_to_index(Environment::core_id())].lock();
 
         let len = len as usize;
         let mut remaining = len;

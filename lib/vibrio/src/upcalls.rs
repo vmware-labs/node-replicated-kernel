@@ -64,8 +64,8 @@ pub fn upcall_while_enabled(control: &mut kpi::arch::VirtualCpu, cmd: u64, arg: 
 
     if cmd == kpi::upcall::NEW_CORE {
         use lineup::tls2::SchedulerControlBlock;
-        let core_id = lineup::gtid_to_core_id(arg as usize);
-        log::info!("Got a new core ({} -> {}) assigned to us.", arg, core_id);
+        let core_id = arg;
+        log::info!("Got a new core ({}) assigned to us.", core_id);
         CORES_ONLINE.fetch_add(1, Ordering::SeqCst);
 
         #[cfg(feature = "rumprt")]

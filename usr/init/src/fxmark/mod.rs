@@ -170,17 +170,14 @@ pub fn bench(ncores: Option<usize>, open_files: usize, benchmark: String, write_
     let mut cores = Vec::with_capacity(ncores.unwrap());
     let current_core = vibrio::syscalls::System::core_id().expect("Can't get core id");
 
-    let mut maximum = 1; // We already have core 0
     for hwthread in hwthreads.iter().take(ncores.unwrap_or(hwthreads.len())) {
-        cores.push(hwthread.id);
-
         if hwthread.id != current_core {
             match vibrio::syscalls::Process::request_core(
                 hwthread.id,
                 VAddr::from(vibrio::upcalls::upcall_while_enabled as *const fn() as u64),
             ) {
                 Ok(_) => {
-                    maximum += 1;
+                    cores.push(hwthread.id);
                     continue;
                 }
                 Err(e) => {
@@ -188,50 +185,51 @@ pub fn bench(ncores: Option<usize>, open_files: usize, benchmark: String, write_
                     break;
                 }
             }
+        } else {
+            cores.push(hwthread.id);
         }
     }
-    info!("Spawned {} cores", maximum);
+    info!("Spawned {} cores", cores.len());
+    assert!(ncores.unwrap() == cores.len());
 
     fn start<
         T: Bench + Default + core::marker::Send + core::marker::Sync + 'static + core::clone::Clone,
     >(
-        maximum: usize,
+        current_core: usize,
+        cores: Vec<usize>,
         microbench: Arc<MicroBench<'static, T>>,
     ) {
         let s = &vibrio::upcalls::PROCESS_SCHEDULER;
         s.spawn(
             32 * 4096,
             move |_| {
-                // use `for idx in 1..maximum+1` to run over all cores
                 // currently we'll run out of 4 KiB frames
-                for idx in maximum..maximum + 1 {
-                    let mut thandles = Vec::with_capacity(idx);
-                    // Set up barrier
-                    POOR_MANS_BARRIER.store(idx, Ordering::SeqCst);
+                let mut thandles = Vec::with_capacity(cores.len());
+                // Set up barrier
+                POOR_MANS_BARRIER.store(cores.len(), Ordering::SeqCst);
 
-                    for core_id in 0..idx {
-                        thandles.push(
-                            Environment::thread()
-                                .spawn_on_core(
-                                    Some(fxmark_bencher_trampoline::<T>),
-                                    Arc::into_raw(microbench.clone()) as *const _ as *mut u8,
-                                    core_id,
-                                )
-                                .expect("Can't spawn bench thread?"),
-                        );
-                    }
+                for core_id in cores.iter() {
+                    thandles.push(
+                        Environment::thread()
+                            .spawn_on_core(
+                                Some(fxmark_bencher_trampoline::<T>),
+                                Arc::into_raw(microbench.clone()) as *const _ as *mut u8,
+                                *core_id,
+                            )
+                            .expect("Can't spawn bench thread?"),
+                    );
+                }
 
-                    for thandle in thandles {
-                        Environment::thread().join(thandle);
-                    }
+                for thandle in thandles {
+                    Environment::thread().join(thandle);
                 }
             },
             ptr::null_mut(),
-            0,
+            current_core,
             None,
         );
 
-        let scb: SchedulerControlBlock = SchedulerControlBlock::new(0);
+        let scb: SchedulerControlBlock = SchedulerControlBlock::new(current_core);
         while s.has_active_threads() {
             s.run(&scb);
         }
@@ -239,78 +237,78 @@ pub fn bench(ncores: Option<usize>, open_files: usize, benchmark: String, write_
 
     if benchmark == "drbl" {
         let microbench = Arc::new(MicroBench::<DRBL>::new(
-            maximum,
+            cores.len(),
             "drbl",
             write_ratio,
             open_files,
         ));
         microbench.bench.init(cores.clone(), open_files);
-        start::<DRBL>(maximum, microbench);
+        start::<DRBL>(current_core, cores.clone(), microbench);
     }
 
     if benchmark == "drbh" {
         let microbench = Arc::new(MicroBench::<DRBH>::new(
-            maximum,
+            cores.len(),
             "drbh",
             write_ratio,
             open_files,
         ));
         microbench.bench.init(cores.clone(), open_files);
-        start::<DRBH>(maximum, microbench);
+        start::<DRBH>(current_core, cores.clone(), microbench);
     }
 
     if benchmark == "dwol" {
         let microbench = Arc::new(MicroBench::<DWOL>::new(
-            maximum,
+            cores.len(),
             "dwol",
             write_ratio,
             open_files,
         ));
         microbench.bench.init(cores.clone(), open_files);
-        start::<DWOL>(maximum, microbench);
+        start::<DWOL>(current_core, cores.clone(), microbench);
     }
 
     if benchmark == "dwom" {
         let microbench = Arc::new(MicroBench::<DWOM>::new(
-            maximum,
+            cores.len(),
             "dwom",
             write_ratio,
             open_files,
         ));
         microbench.bench.init(cores.clone(), open_files);
-        start::<DWOM>(maximum, microbench);
+        start::<DWOM>(current_core, cores.clone(), microbench);
     }
 
     if benchmark == "mwrl" {
         let microbench = Arc::new(MicroBench::<MWRL>::new(
-            maximum,
+            cores.len(),
             "mwrl",
             write_ratio,
             open_files,
         ));
         microbench.bench.init(cores.clone(), open_files);
-        start::<MWRL>(maximum, microbench);
+        start::<MWRL>(current_core, cores.clone(), microbench);
     }
 
     if benchmark == "mwrm" {
         let microbench = Arc::new(MicroBench::<MWRM>::new(
-            maximum,
+            cores.len(),
             "mwrm",
             write_ratio,
             open_files,
         ));
         microbench.bench.init(cores.clone(), open_files);
-        start::<MWRM>(maximum, microbench);
+        start::<MWRM>(current_core, cores.clone(), microbench);
     }
 
     if benchmark == "mix" {
         let microbench = Arc::new(MicroBench::<MIX>::new(
-            maximum,
+            cores.len(),
             "mix",
             write_ratio,
             open_files,
         ));
         microbench.bench.init(cores.clone(), open_files);
-        start::<MIX>(maximum, microbench);
+        start::<MIX>(current_core, cores.clone(), microbench);
     }
 }

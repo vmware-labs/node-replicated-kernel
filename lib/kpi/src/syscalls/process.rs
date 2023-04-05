@@ -27,7 +27,6 @@ impl Process {
         };
 
         if r == 0 {
-            debug_assert_eq!(gtid as usize, core_id, "Should this hold?");
             Ok(CoreToken::from(gtid))
         } else {
             Err(SystemCallError::from(r))

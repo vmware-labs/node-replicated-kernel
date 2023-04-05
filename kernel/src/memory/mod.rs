@@ -367,16 +367,17 @@ impl KernelAllocator {
         needed_base_pages: usize,
         needed_large_pages: usize,
     ) -> Result<(), KError> {
+        use crate::arch::rackscale::controller_state::CONTROLLER_AFFINITY_SHMEM;
+        use crate::arch::rackscale::get_shmem_frames::rpc_get_shmem_frames;
+        use crate::arch::rackscale::CLIENT_STATE;
+        use crate::memory::backends::{AllocatorStatistics, GrowBackend};
         use crate::transport::shmem::is_shmem_frame;
-        // TODO(rackscale performance): asserts should probably be debug_asserts
 
         if crate::CMDLINE
             .get()
             .map_or(false, |c| c.mode == crate::cmdline::Mode::Controller)
         {
             // Refill from controller affinity shmem as needed.
-            use crate::arch::rackscale::controller_state::CONTROLLER_AFFINITY_SHMEM;
-
             let pcm = try_per_core_mem().ok_or(KError::KcbUnavailable)?;
             let mut mem_manager = pcm.try_mem_manager()?;
             let mut shmem_manager = CONTROLLER_AFFINITY_SHMEM.lock();
@@ -408,10 +409,6 @@ impl KernelAllocator {
             }
         } else {
             // We only request at large page granularity
-            use crate::arch::rackscale::get_shmem_frames::rpc_get_shmem_frames;
-            use crate::arch::rackscale::CLIENT_STATE;
-            use crate::memory::backends::{AllocatorStatistics, GrowBackend};
-
             let mut total_needed_large_pages = needed_large_pages;
             let mut total_needed_base_pages = needed_base_pages;
 

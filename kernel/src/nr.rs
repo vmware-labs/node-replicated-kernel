@@ -153,7 +153,6 @@ impl Dispatch for KernelNode {
 
     fn dispatch<'rop>(&self, op: Self::ReadOperation<'_>) -> Self::Response {
         match op {
-            // TODO(rackscale): hmm how to make this different?
             ReadOps::CurrentProcess(gtid) => {
                 let core_info = self
                     .scheduler_map

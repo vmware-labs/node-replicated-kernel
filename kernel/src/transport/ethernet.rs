@@ -4,11 +4,14 @@
 use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
+
 use fallible_collections::FallibleVecGlobal;
 use lazy_static::lazy_static;
 use smoltcp::iface::{Interface, InterfaceBuilder, NeighborCache, Routes};
 use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr, Ipv4Address};
 use spin::Mutex;
+
+use kpi::KERNEL_BASE;
 use vmxnet3::pci::BarAccess;
 use vmxnet3::smoltcp::DevQueuePhy;
 use vmxnet3::vmx::VMXNet3;
@@ -18,7 +21,6 @@ use crate::error::{KError, KResult};
 use crate::memory::vspace::MapAction;
 use crate::memory::PAddr;
 use crate::pci::claim_device;
-use kpi::KERNEL_BASE;
 
 lazy_static! {
     pub(crate) static ref ETHERNET_IFACE: Arc<Mutex<Interface<'static, DevQueuePhy>>> =

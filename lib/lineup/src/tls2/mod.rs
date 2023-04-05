@@ -352,8 +352,7 @@ impl Environment {
         }
     }
 
-    // This method returns the core-id for the current thread. It is needed because
-    // SchedulerControlBlock allocates an ArrayQueue and that leads to recursive fault.
+    // This method returns the core-id for the current thread.
     pub fn core_id() -> CoreId {
         unsafe {
             let scb = arch::get_scb() as *const SchedulerControlBlock;

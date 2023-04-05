@@ -70,7 +70,6 @@ pub struct SmpScheduler<'a> {
     per_core: [SchedulerCoreState; MAX_CORES],
     /// Contains a global counter of thread IDs
     tid_counter: AtomicUsize,
-    /// TODO(rackscale): may need to make IrqVector unique w/ machine id?
     /// Maps interrupt vectors to ThreadId
     irqvec_to_tid: spin::Mutex<hashbrown::HashMap<IrqVector, ThreadId>>,
 }

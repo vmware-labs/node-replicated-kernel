@@ -51,7 +51,7 @@ impl CoreToken {
 
     #[allow(unused)]
     pub fn gtid(&self) -> usize {
-        self.0 as usize
+        self.0
     }
 }
 

@@ -291,13 +291,13 @@ impl elfloader::ElfLoader for DataSecAllocator {
                     }
 
                     for i in 0..large_pages {
-                        self.frames
-                            .push((page_base.as_usize() + i * LARGE_PAGE_SIZE, shmem_frames[i]));
-                        log::info!(
+                        trace!(
                             "add to self.frames  (elf_va={:#x}, pa={:#x})",
                             page_base.as_usize() + i * LARGE_PAGE_SIZE,
                             shmem_frames[i].base
                         );
+                        self.frames
+                            .push((page_base.as_usize() + i * LARGE_PAGE_SIZE, shmem_frames[i]));
                     }
                 } else {
                     panic!("make_process() for rackscale controller not implemented");
@@ -492,7 +492,6 @@ pub(crate) fn make_process<P: Process>(binary: &'static str) -> Result<Pid, KErr
     }
 
     let mod_file = mod_file.ok_or(KError::BinaryNotFound { binary })?;
-    // TODO: How to rewind on error here?
     info!(
         "binary={} cmdline={} module={:?}",
         binary,

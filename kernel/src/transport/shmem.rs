@@ -1,14 +1,19 @@
 // Copyright © 2022 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
+use alloc::sync::Arc;
 
 use abomonation::{unsafe_abomonate, Abomonation};
-use alloc::sync::Arc;
 use core2::io::Result as IOResult;
 use core2::io::Write;
 use driverkit::pci::{CapabilityId, CapabilityType, PciDevice};
-use kpi::KERNEL_BASE;
 use lazy_static::lazy_static;
 use spin::Mutex;
+
+use kpi::KERNEL_BASE;
+
+use crate::memory::vspace::MapAction;
+use crate::memory::{paddr_to_kernel_vaddr, PAddr, BASE_PAGE_SIZE};
+use crate::pci::claim_device;
 
 #[cfg(feature = "rpc")]
 use {
@@ -21,10 +26,6 @@ use {
     rpc::transport::ShmemTransport,
     static_assertions::const_assert,
 };
-
-use crate::memory::vspace::MapAction;
-use crate::memory::{paddr_to_kernel_vaddr, PAddr, BASE_PAGE_SIZE};
-use crate::pci::claim_device;
 
 // Register information from:
 // https://github.com/qemu/qemu/blob/master/docs/specs/ivshmem-spec.txt

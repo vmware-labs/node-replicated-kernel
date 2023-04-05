@@ -127,10 +127,12 @@ fn s04_userspace_rumprt_fs() {
     check_for_successful_exit(&cmdline, qemu_run(), output);
 }
 
-/*
 /// Tests a flurry of shootdowns for multiple threads.
+/// TODO: this results in some kind of weird slowdown.
+/// TODO: this test isn't fully developed yet - the conditions for success are not implemented.
 ///
 /// Makes sure all the shootdowns are sufficiently handled.
+#[ignore]
 #[cfg(not(feature = "baremetal"))]
 #[test]
 fn s04_userspace_concurrent_shootdowns() {
@@ -150,9 +152,6 @@ fn s04_userspace_concurrent_shootdowns() {
 
         for _i in 0..num_cores {
             // TODO: detect success
-            let r = p.exp_regex(r#"init: Hello from core (\d+)"#)?;
-            output += r.0.as_str();
-            output += r.1.as_str();
         }
 
         p.process.kill(SIGTERM)
@@ -160,4 +159,3 @@ fn s04_userspace_concurrent_shootdowns() {
 
     wait_for_sigterm(&cmdline, qemu_run(), output);
 }
-*/

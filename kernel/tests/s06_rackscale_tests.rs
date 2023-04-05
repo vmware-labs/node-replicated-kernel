@@ -25,6 +25,127 @@ use testutils::runner_args::{check_for_successful_exit, wait_for_sigterm, Runner
 
 #[cfg(not(feature = "baremetal"))]
 #[test]
+fn s06_rackscale_shmem_userspace_smoke_test() {
+    rackscale_userspace_smoke_test(true);
+}
+
+#[cfg(not(feature = "baremetal"))]
+#[test]
+fn s06_rackscale_ethernet_userspace_smoke_test() {
+    rackscale_userspace_smoke_test(false);
+}
+
+#[cfg(not(feature = "baremetal"))]
+fn rackscale_userspace_smoke_test(is_shmem: bool) {
+    use std::sync::Arc;
+    use std::thread::sleep;
+    use std::time::Duration;
+
+    let timeout = 30_000;
+
+    let (tx, rx) = channel();
+    setup_network(2);
+
+    let mut shmem_server =
+        spawn_shmem_server(SHMEM_PATH, SHMEM_SIZE).expect("Failed to start shmem server");
+    let mut dcm = spawn_dcm(1, timeout).expect("Failed to start DCM");
+
+    // Create build for both controller and client
+    let build = Arc::new(
+        BuildArgs::default()
+            .module("init")
+            .user_features(&[
+                "test-print",
+                "test-map",
+                "test-alloc",
+                "test-upcall",
+                "test-scheduler",
+                "test-syscalls",
+            ])
+            .kernel_feature("shmem")
+            .kernel_feature("ethernet")
+            .kernel_feature("rackscale")
+            .release()
+            .build(),
+    );
+
+    // Run DCM and controller in separate thread
+    let build1 = build.clone();
+    let controller = std::thread::spawn(move || {
+        let controller_cmd = if is_shmem {
+            "mode=controller transport=shmem"
+        } else {
+            "mode=controller transport=ethernet"
+        };
+        let cmdline_controller = RunnerArgs::new_with_build("userspace-smp", &build1)
+            .timeout(timeout)
+            .cmd(controller_cmd)
+            .shmem_size(SHMEM_SIZE as usize)
+            .shmem_path(SHMEM_PATH)
+            .tap("tap0")
+            .no_network_setup()
+            .workers(2)
+            .use_vmxnet3();
+
+        let output = String::new();
+        let mut qemu_run = || -> Result<WaitStatus> {
+            let mut p = spawn_nrk(&cmdline_controller)?;
+
+            let _ = wait_for_client_termination::<()>(&rx);
+            p.process.kill(SIGTERM)
+        };
+
+        wait_for_sigterm(&cmdline_controller, qemu_run(), output);
+    });
+
+    // Run client in separate thead. Wait a bit to make sure controller started
+    let build2 = build.clone();
+    let client = std::thread::spawn(move || {
+        sleep(Duration::from_millis(CLIENT_BUILD_DELAY));
+        let client_cmd = if is_shmem {
+            "mode=client transport=shmem"
+        } else {
+            "mode=client transport=ethernet"
+        };
+        let cmdline_client = RunnerArgs::new_with_build("userspace-smp", &build2)
+            .timeout(timeout)
+            .cmd(client_cmd)
+            .shmem_size(SHMEM_SIZE as usize)
+            .shmem_path(SHMEM_PATH)
+            .tap("tap2")
+            .no_network_setup()
+            .workers(2)
+            .nobuild()
+            .use_vmxnet3();
+
+        let mut output = String::new();
+        let mut qemu_run = || -> Result<WaitStatus> {
+            let mut p = spawn_nrk(&cmdline_client)?;
+            output += p.exp_string("print_test OK")?.as_str();
+            output += p.exp_string("upcall_test OK")?.as_str();
+            output += p.exp_string("map_test OK")?.as_str();
+            output += p.exp_string("alloc_test OK")?.as_str();
+            output += p.exp_string("scheduler_test OK")?.as_str();
+            output += p.exp_eof()?.as_str();
+            notify_controller_of_termination(&tx);
+            p.process.exit()
+        };
+
+        check_for_successful_exit(&cmdline_client, qemu_run(), output);
+    });
+
+    let client_ret = client.join();
+    let controller_ret = controller.join();
+
+    let _ignore = shmem_server.send_control('c');
+    let _ignore = dcm.send_control('c');
+
+    client_ret.unwrap();
+    controller_ret.unwrap();
+}
+
+#[cfg(not(feature = "baremetal"))]
+#[test]
 fn s06_rackscale_phys_alloc_test() {
     use std::sync::Arc;
     use std::thread::sleep;

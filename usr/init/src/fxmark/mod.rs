@@ -176,8 +176,8 @@ pub fn bench(ncores: Option<usize>, open_files: usize, benchmark: String, write_
                 hwthread.id,
                 VAddr::from(vibrio::upcalls::upcall_while_enabled as *const fn() as u64),
             ) {
-                Ok(_) => {
-                    cores.push(hwthread.id);
+                Ok(core_token) => {
+                    cores.push(core_token.gtid());
                     continue;
                 }
                 Err(e) => {

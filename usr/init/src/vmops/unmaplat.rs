@@ -126,6 +126,7 @@ pub fn bench(ncores: Option<usize>) {
     let s = &vibrio::upcalls::PROCESS_SCHEDULER;
     let cores = ncores.unwrap_or(hwthreads.len());
     let current_core = vibrio::syscalls::System::core_id().expect("Can't get core id");
+    let mut core_ids = Vec::with_capacity(cores);
 
     let mut maximum = 1; // We already have core 0
     for hwthread in hwthreads.iter().take(cores) {
@@ -134,8 +135,8 @@ pub fn bench(ncores: Option<usize>) {
                 hwthread.id,
                 VAddr::from(vibrio::upcalls::upcall_while_enabled as *const fn() as u64),
             ) {
-                Ok(_) => {
-                    maximum += 1;
+                Ok(core_token) => {
+                    core_ids.push(core_token.gtid());
                     continue;
                 }
                 Err(e) => {
@@ -143,39 +144,39 @@ pub fn bench(ncores: Option<usize>) {
                     break;
                 }
             }
+        } else {
+            core_ids.push(hwthread.id);
         }
     }
-    info!("Spawned {} cores", maximum);
+    assert!(core_ids.len() == cores);
+    info!("Spawned {} cores", cores);
 
     s.spawn(
         32 * 4096,
         move |_| {
-            // use `for idx in 1..maximum+1` to run over all cores
             // currently we'll run out of 4 KiB frames
-            for idx in maximum..maximum + 1 {
-                let mut thandles = Vec::with_capacity(idx);
-                // Set up barrier
-                POOR_MANS_BARRIER.store(idx, Ordering::SeqCst);
+            let mut thandles = Vec::with_capacity(cores);
+            // Set up barrier
+            POOR_MANS_BARRIER.store(cores, Ordering::SeqCst);
 
-                for core_id in 0..idx {
-                    thandles.push(
-                        Environment::thread()
-                            .spawn_on_core(Some(unmap_bencher_trampoline), idx as *mut u8, core_id)
-                            .expect("Can't spawn bench thread?"),
-                    );
-                }
+            for core_id in core_ids {
+                thandles.push(
+                    Environment::thread()
+                        .spawn_on_core(Some(unmap_bencher_trampoline), cores as *mut u8, core_id)
+                        .expect("Can't spawn bench thread?"),
+                );
+            }
 
-                for thandle in thandles {
-                    Environment::thread().join(thandle);
-                }
+            for thandle in thandles {
+                Environment::thread().join(thandle);
             }
         },
         ptr::null_mut(),
-        0,
+        current_core,
         None,
     );
 
-    let scb: SchedulerControlBlock = SchedulerControlBlock::new(0);
+    let scb: SchedulerControlBlock = SchedulerControlBlock::new(current_core);
     while s.has_active_threads() {
         s.run(&scb);
     }

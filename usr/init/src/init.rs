@@ -285,14 +285,15 @@ fn concurrent_shootdown_test() {
                     thread.id,
                     VAddr::from(vibrio::upcalls::upcall_while_enabled as *const fn() as u64),
                 );
-                match r {
+                let gtid = match r {
                     Ok(ctoken) => {
                         info!("Spawned core on {:?} <-> {}", ctoken, thread.id);
+                        ctoken.gtid()
                     }
                     Err(_e) => {
                         panic!("Failed to spawn to core {}", thread.id);
                     }
-                }
+                };
 
                 s.spawn(
                     32 * 4096,
@@ -341,7 +342,7 @@ fn concurrent_shootdown_test() {
                         );
                     },
                     ptr::null_mut(),
-                    thread.id,
+                    gtid,
                     None,
                 );
             }

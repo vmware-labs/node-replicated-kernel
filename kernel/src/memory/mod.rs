@@ -171,7 +171,8 @@ impl KernelAllocator {
                 }
                 // TODO(correctness): Make sure we have 20 pages for page-tables
                 // so vspace ops don't fail us :/
-                self.maybe_refill_tcache(base + 20, large)?;
+                // For rackscale, it seems maybe we need a large page too??
+                self.maybe_refill_tcache(base + 20, large + 1)?;
 
                 // We allocate (large+1) * large-page-size
                 // the +1 is to account for space for all the base-pages

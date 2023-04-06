@@ -972,6 +972,13 @@ pub extern "C" fn _start() -> ! {
     #[cfg(feature = "fxmark")]
     {
         use core::str::FromStr;
+
+        // This is for rackscale - we only want to ever spawn one fxmark test.
+        if pinfo.pid != 0 {
+            info!("Extra fxmark process; exiting now.");
+            vibrio::syscalls::Process::exit(0);
+        }
+
         //python3 ./run.py --kfeature test-userspace --ufeatures fxmark --qemu-cores 1 --cmd initargs=1xdrbl
         let (ncores, open_files, benchmark, write_ratio) =
             match fxmark::ARGs::from_str(pinfo.cmdline) {

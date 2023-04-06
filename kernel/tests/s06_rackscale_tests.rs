@@ -41,7 +41,7 @@ fn rackscale_userspace_smoke_test(is_shmem: bool, num_clients: usize) {
     use std::thread::sleep;
     use std::time::Duration;
 
-    let timeout = 30_000;
+    let timeout = 30_000 * (num_clients as u64 + 1);
 
     let (tx, rx) = channel();
     let tx_mut = Arc::new(Mutex::new(tx));
@@ -80,7 +80,7 @@ fn rackscale_userspace_smoke_test(is_shmem: bool, num_clients: usize) {
             "mode=controller transport=ethernet"
         };
         let cmdline_controller = RunnerArgs::new_with_build("userspace-smp", &build1)
-            .timeout(timeout * num_clients as u64)
+            .timeout(timeout)
             .cmd(controller_cmd)
             .shmem_size(SHMEM_SIZE as usize)
             .shmem_path(SHMEM_PATH)
@@ -108,7 +108,6 @@ fn rackscale_userspace_smoke_test(is_shmem: bool, num_clients: usize) {
     for i in 0..num_clients {
         let tap = format!("tap{}", 2 * (i + 1));
         let my_tx_mut = tx_mut.clone();
-        //let my_rx2_mut = rx2_mut.clone();
         let build2 = build.clone();
         let client = std::thread::spawn(move || {
             sleep(Duration::from_millis(CLIENT_BUILD_DELAY * (i + 1) as u64));
@@ -118,14 +117,14 @@ fn rackscale_userspace_smoke_test(is_shmem: bool, num_clients: usize) {
                 "mode=client transport=ethernet"
             };
             let cmdline_client = RunnerArgs::new_with_build("userspace-smp", &build2)
-                .timeout((timeout - CLIENT_BUILD_DELAY) * num_clients as u64)
+                .timeout(timeout)
                 .cmd(client_cmd)
                 .shmem_size(SHMEM_SIZE as usize)
                 .shmem_path(SHMEM_PATH)
                 .tap(&tap)
                 .no_network_setup()
                 .workers(num_clients + 1)
-                .cores(2)
+                .cores(1)
                 .nobuild()
                 .use_vmxnet3();
 

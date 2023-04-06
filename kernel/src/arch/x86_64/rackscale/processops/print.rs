@@ -7,6 +7,7 @@ use alloc::string::String;
 use core2::io::Result as IOResult;
 use core2::io::Write;
 
+use klogger::sprint;
 use kpi::system::MachineId;
 use rpc::rpc::*;
 use rpc::RPCClient;
@@ -68,7 +69,7 @@ pub(crate) fn handle_log(
         match core::str::from_utf8(
             &remaining[0..(hdr.msg_len as usize - core::mem::size_of::<LogReq>())],
         ) {
-            Ok(msg_str) => log::info!("RemoteLog({}) {}", res.machine_id, msg_str),
+            Ok(msg_str) => sprint!("RemoteLog({}) {}", res.machine_id, msg_str),
             Err(e) => log::warn!(
                 "log: invalid UTF-8 string: {:?}",
                 &payload[0..hdr.msg_len as usize]

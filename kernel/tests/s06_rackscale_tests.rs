@@ -681,7 +681,7 @@ fn rackscale_userspace_multicore_test(is_shmem: bool) {
     let timeout = 60_000;
 
     let machine = Machine::determine();
-    let client_num_cores: usize = core::cmp::min(5, (machine.max_cores() - 1) / 2);
+    let client_num_cores: usize = core::cmp::min(4, (machine.max_cores() - 1) / 2);
 
     let (tx, rx) = channel();
 
@@ -760,7 +760,7 @@ fn rackscale_userspace_multicore_test(is_shmem: bool) {
         let mut qemu_run = || -> Result<WaitStatus> {
             let mut p = spawn_nrk(&cmdline_client)?;
 
-            for _i in 0..(client_num_cores - 1) {
+            for _i in 0..client_num_cores {
                 let r = p.exp_regex(r#"init: Hello from core (\d+)"#)?;
                 output += r.0.as_str();
                 output += r.1.as_str();
@@ -784,12 +784,14 @@ fn rackscale_userspace_multicore_test(is_shmem: bool) {
 
 #[cfg(not(feature = "baremetal"))]
 #[test]
-fn s06_rackscale_shmem_request_core_remote_test() {
+fn s06_rackscale_shmem_userspace_multicore_multiclient() {
     use std::sync::Arc;
     use std::thread::sleep;
     use std::time::Duration;
 
-    let timeout = 180_000;
+    let timeout = 90_000;
+    let machine = Machine::determine();
+    let cores_per_client: usize = core::cmp::min(4, (machine.max_cores() - 1) / 2);
 
     setup_network(3);
     let (tx1, rx1) = channel();
@@ -804,7 +806,7 @@ fn s06_rackscale_shmem_request_core_remote_test() {
     let build = Arc::new(
         BuildArgs::default()
             .module("init")
-            .user_feature("test-request-core-remote")
+            .user_feature("test-scheduler-smp")
             .kernel_feature("shmem")
             .kernel_feature("ethernet")
             .kernel_feature("rackscale")
@@ -829,9 +831,11 @@ fn s06_rackscale_shmem_request_core_remote_test() {
         let mut qemu_run = || -> Result<WaitStatus> {
             let mut p = spawn_nrk(&cmdline_controller)?;
 
-            // Could be in either order, so we won't specify core number
-            output += p.exp_string("Hello from core")?.as_str();
-            output += p.exp_string("Hello from core")?.as_str();
+            for _i in 0..(cores_per_client * 2) {
+                let r = p.exp_regex(r#"init: Hello from core (\d+)"#)?;
+                output += r.0.as_str();
+                output += r.1.as_str();
+            }
 
             // Notify each client it's okay to shutdown
             notify_controller_of_termination(&tx1);
@@ -855,14 +859,21 @@ fn s06_rackscale_shmem_request_core_remote_test() {
             .tap("tap2")
             .no_network_setup()
             .workers(3)
-            .cores(2)
+            .cores(cores_per_client)
             .memory(4096)
             .nobuild() // Use single build for all for consistency
             .use_vmxnet3();
 
-        let output = String::new();
-        let qemu_run = || -> Result<WaitStatus> {
+        let mut output = String::new();
+        let mut qemu_run = || -> Result<WaitStatus> {
             let mut p = spawn_nrk(&cmdline_client)?;
+
+            for _i in 0..cores_per_client {
+                let r = p.exp_regex(r#"init: Hello from core (\d+)"#)?;
+                output += r.0.as_str();
+                output += r.1.as_str();
+            }
+
             // Wait for controller to terminate
             let _ = wait_for_client_termination::<()>(&rx1);
 
@@ -884,14 +895,20 @@ fn s06_rackscale_shmem_request_core_remote_test() {
             .tap("tap4")
             .no_network_setup()
             .workers(3)
-            .cores(2)
+            .cores(cores_per_client)
             .memory(4096)
             .nobuild() // Use build from previous client for consistency
             .use_vmxnet3();
 
-        let output = String::new();
-        let qemu_run = || -> Result<WaitStatus> {
+        let mut output = String::new();
+        let mut qemu_run = || -> Result<WaitStatus> {
             let mut p = spawn_nrk(&cmdline_client)?;
+
+            for _i in 0..cores_per_client {
+                let r = p.exp_regex(r#"init: Hello from core (\d+)"#)?;
+                output += r.0.as_str();
+                output += r.1.as_str();
+            }
 
             // Wait for controller to terminate
             let _ = wait_for_client_termination::<()>(&rx2);

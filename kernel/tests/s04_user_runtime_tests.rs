@@ -146,8 +146,8 @@ fn s04_userspace_concurrent_shootdowns() {
         .memory(4096 * 2)
         .timeout(60_000);
 
-    let mut output = String::new();
-    let mut qemu_run = || -> Result<WaitStatus> {
+    let output = String::new();
+    let qemu_run = || -> Result<WaitStatus> {
         let mut p = spawn_nrk(&cmdline)?;
 
         for _i in 0..num_cores {

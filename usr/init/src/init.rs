@@ -13,6 +13,7 @@
 )]
 
 extern crate alloc;
+use alloc::vec::Vec;
 
 use core::ptr;
 use core::slice::from_raw_parts_mut;
@@ -143,53 +144,6 @@ fn alloc_physical_test() {
         .expect("Failed to release physical memory large page");
 
     info!("phys_alloc_test OK");
-}
-
-// Just used for rackscale right now, not for standalone
-fn request_core_remote_test() {
-    let s = &vibrio::upcalls::PROCESS_SCHEDULER;
-
-    let threads = vibrio::syscalls::System::threads().expect("Can't get system topology");
-    let current_gtid = vibrio::syscalls::System::core_id().expect("Can't get core id");
-    let pinfo = vibrio::syscalls::Process::process_info().expect("Can't read process info");
-
-    if pinfo.pid == 0 {
-        // Ignore current thread, and one other thread.
-        for thread in threads[2..].iter() {
-            let r = vibrio::syscalls::Process::request_core(
-                0, // this field does nothing in rackscale mode
-                VAddr::from(vibrio::upcalls::upcall_while_enabled as *const fn() as u64),
-            );
-
-            match r {
-                Ok(spawned_gtid) => {
-                    // Spawn process on core that was given to us in response to our request.
-                    info!("Spawned core {:?}", spawned_gtid);
-                    s.spawn(
-                        32 * 4096,
-                        move |_| {
-                            info!(
-                                "Hello from core {}",
-                                lineup::tls2::Environment::scheduler().core_id
-                            );
-                        },
-                        ptr::null_mut(),
-                        spawned_gtid.gtid() as usize,
-                        None,
-                    );
-                }
-                Err(_e) => {
-                    panic!("Failed to spawn core");
-                }
-            }
-        }
-    }
-
-    // Run scheduler on the current core of this machine
-    let scb: SchedulerControlBlock = SchedulerControlBlock::new(current_gtid);
-    loop {
-        s.run(&scb);
-    }
 }
 
 fn rackscale_shootdown_test() {
@@ -349,7 +303,7 @@ fn concurrent_shootdown_test() {
         }
     }
 
-    // Run scheduler on core 0
+    // Run scheduler on current core
     let scb: SchedulerControlBlock = SchedulerControlBlock::new(current_gtid);
     loop {
         s.run(&scb);
@@ -361,25 +315,58 @@ fn scheduler_smp_test() {
 
     let threads = vibrio::syscalls::System::threads().expect("Can't get system topology");
     let current_gtid = vibrio::syscalls::System::core_id().expect("Can't get core id");
+    let current_mid = kpi::system::mid_from_gtid(current_gtid);
+    let pinfo = vibrio::syscalls::Process::process_info().expect("Can't read process info");
 
-    for thread in threads.iter() {
-        if thread.id != current_gtid {
-            let r = vibrio::syscalls::Process::request_core(
-                thread.id,
-                VAddr::from(vibrio::upcalls::upcall_while_enabled as *const fn() as u64),
-            );
-            match r {
-                Ok(ctoken) => {
-                    info!("Spawned core on {:?} <-> {}", ctoken, thread.id);
-                }
-                Err(_e) => {
-                    panic!("Failed to spawn to core {}", thread.id);
+    // for rackscale, this ensures only one process tries to take all threads.
+    if pinfo.pid == 0 {
+        let thread_iter = if current_mid == 0 {
+            // non-rackscale, use all threads
+            threads.iter()
+        } else {
+            // for rackscale, use all threads except the one belonging to the other process
+            threads[1..].iter()
+        };
+
+        // for rackscale, core given will likely not be core asked for, so we'll do some bookkeeping.
+        let mut core_ids = Vec::with_capacity(threads.len());
+
+        // we already have current core
+        core_ids.push(current_gtid);
+
+        for thread in thread_iter {
+            if thread.id != current_gtid {
+                let r = vibrio::syscalls::Process::request_core(
+                    thread.id,
+                    VAddr::from(vibrio::upcalls::upcall_while_enabled as *const fn() as u64),
+                );
+                match r {
+                    Ok(ctoken) => {
+                        info!("Spawned core on {:?} <-> {}", ctoken, thread.id);
+                        core_ids.push(ctoken.gtid());
+                    }
+                    Err(_e) => {
+                        panic!("Failed to spawn to core {}", thread.id);
+                    }
                 }
             }
         }
-    }
 
-    for thread in threads {
+        for core_id in core_ids {
+            s.spawn(
+                32 * 4096,
+                move |_| {
+                    info!(
+                        "Hello from core {}",
+                        lineup::tls2::Environment::scheduler().core_id
+                    );
+                },
+                ptr::null_mut(),
+                core_id,
+                None,
+            );
+        }
+    } else {
         s.spawn(
             32 * 4096,
             move |_| {
@@ -389,7 +376,7 @@ fn scheduler_smp_test() {
                 );
             },
             ptr::null_mut(),
-            thread.id,
+            current_gtid,
             None,
         );
     }
@@ -1031,9 +1018,6 @@ pub extern "C" fn _start() -> ! {
 
     #[cfg(feature = "test-phys-alloc")]
     alloc_physical_test();
-
-    #[cfg(feature = "test-request-core-remote")]
-    request_core_remote_test();
 
     #[cfg(feature = "test-rackscale-shootdown")]
     rackscale_shootdown_test();

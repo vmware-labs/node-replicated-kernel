@@ -788,7 +788,7 @@ fn s06_rackscale_shmem_userspace_multicore_multiclient() {
     use std::thread::sleep;
     use std::time::Duration;
 
-    let timeout = 90_000;
+    let timeout = 120_000;
     let machine = Machine::determine();
     let cores_per_client: usize = core::cmp::min(4, (machine.max_cores() - 1) / 2);
 

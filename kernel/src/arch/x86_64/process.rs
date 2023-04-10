@@ -90,11 +90,9 @@ lazy_static! {
         } else {
             // Get location of the logs from the controller, who will created them in shared memory
             use crate::arch::rackscale::get_shmem_structure::{rpc_get_shmem_structure, ShmemStructure};
-            use crate::arch::rackscale::CLIENT_STATE;
 
             let mut log_ptrs = [0u64; MAX_PROCESSES];
-            let mut client = CLIENT_STATE.rpc_client.lock();
-            rpc_get_shmem_structure(&mut **client, ShmemStructure::NrProcLogs, &mut log_ptrs[..]).expect("Failed to get process log pointers");
+            rpc_get_shmem_structure(ShmemStructure::NrProcLogs, &mut log_ptrs[..]).expect("Failed to get process log pointers");
             let mut process_logs = Box::new(ArrayVec::new());
             for i in 0..log_ptrs.len() {
                 let log_ptr = paddr_to_kernel_vaddr(PAddr::from(log_ptrs[i]));
@@ -1600,12 +1598,9 @@ pub(crate) fn spawn(binary: &'static str) -> Result<Pid, KError> {
     #[cfg(feature = "rackscale")]
     {
         use crate::arch::rackscale::processops::request_core::rpc_request_core;
-        use crate::arch::rackscale::CLIENT_STATE;
 
-        let mut client = CLIENT_STATE.rpc_client.lock();
-        let (_gtid, _) =
-            rpc_request_core(&mut **client, pid, true, INVALID_EXECUTOR_START.as_u64())
-                .expect("Failed to get core for newly spawned process");
+        let (_gtid, _) = rpc_request_core(pid, true, INVALID_EXECUTOR_START.as_u64())
+            .expect("Failed to get core for newly spawned process");
     }
 
     // Set current thread to run executor from our process (on the current core)

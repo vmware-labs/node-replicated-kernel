@@ -4,8 +4,8 @@
 use abomonation::{decode, encode, unsafe_abomonate, Abomonation};
 use core2::io::Result as IOResult;
 use core2::io::Write;
+
 use kpi::FileOperation;
-use log::{debug, warn};
 use rpc::rpc::*;
 use rpc::RPCClient;
 
@@ -15,6 +15,7 @@ use crate::fs::fd::FileDescriptor;
 
 use super::super::controller_state::ControllerState;
 use super::super::kernelrpc::*;
+use super::super::CLIENT_STATE;
 use super::FileIO;
 
 #[derive(Debug)]
@@ -26,23 +27,17 @@ pub(crate) struct RWReq {
 }
 unsafe_abomonate!(RWReq: pid, fd, len, offset);
 
-pub(crate) fn rpc_write(
-    rpc_client: &mut dyn RPCClient,
-    pid: usize,
-    fd: FileDescriptor,
-    data: &[u8],
-) -> KResult<(u64, u64)> {
-    rpc_writeat(rpc_client, pid, fd, -1, data)
+pub(crate) fn rpc_write(pid: usize, fd: FileDescriptor, data: &[u8]) -> KResult<(u64, u64)> {
+    rpc_writeat(pid, fd, -1, data)
 }
 
 pub(crate) fn rpc_writeat(
-    rpc_client: &mut dyn RPCClient,
     pid: usize,
     fd: FileDescriptor,
     offset: i64,
     data: &[u8],
 ) -> KResult<(u64, u64)> {
-    debug!("Write({:?}, {:?})", fd, offset);
+    log::debug!("Write({:?}, {:?})", fd, offset);
 
     // Constrcut request data
     let req = RWReq {
@@ -63,14 +58,17 @@ pub(crate) fn rpc_writeat(
     } else {
         KernelRpc::WriteAt as RPCType
     };
-    rpc_client.call(rpc_type, &[&req_data, &data], &mut [&mut res_data])?;
+    CLIENT_STATE
+        .rpc_client
+        .lock()
+        .call(rpc_type, &[&req_data, &data], &mut [&mut res_data])?;
 
     // Decode result, return result if decoded successfully
     if let Some((res, remaining)) = unsafe { decode::<KResult<(u64, u64)>>(&mut res_data) } {
         if remaining.len() > 0 {
             return Err(KError::from(RPCError::ExtraData));
         }
-        debug!("Write() {:?}", res);
+        log::debug!("Write() {:?}", res);
         return *res;
     } else {
         return Err(KError::from(RPCError::MalformedResponse));
@@ -78,23 +76,17 @@ pub(crate) fn rpc_writeat(
 }
 
 // This function is just a wrapper for rpc_readat
-pub(crate) fn rpc_read(
-    rpc_client: &mut dyn RPCClient,
-    pid: usize,
-    fd: FileDescriptor,
-    buff_ptr: &mut [u8],
-) -> KResult<(u64, u64)> {
-    rpc_readat(rpc_client, pid, fd, buff_ptr, -1)
+pub(crate) fn rpc_read(pid: usize, fd: FileDescriptor, buff_ptr: &mut [u8]) -> KResult<(u64, u64)> {
+    rpc_readat(pid, fd, buff_ptr, -1)
 }
 
 pub(crate) fn rpc_readat(
-    rpc_client: &mut dyn RPCClient,
     pid: usize,
     fd: FileDescriptor,
     buff_ptr: &mut [u8],
     offset: i64,
 ) -> KResult<(u64, u64)> {
-    debug!("Read({:?}, {:?})", buff_ptr.len(), offset);
+    log::debug!("Read({:?}, {:?})", buff_ptr.len(), offset);
 
     // Construct request data
     let req = RWReq {
@@ -115,7 +107,7 @@ pub(crate) fn rpc_readat(
     } else {
         KernelRpc::ReadAt as RPCType
     };
-    rpc_client.call(
+    CLIENT_STATE.rpc_client.lock().call(
         KernelRpc::ReadAt as RPCType,
         &[&req_data],
         &mut [&mut res_data, buff_ptr],
@@ -126,7 +118,7 @@ pub(crate) fn rpc_readat(
         if remaining.len() > 0 {
             Err(KError::from(RPCError::ExtraData))
         } else {
-            debug!("Read(At)() {:?}", res);
+            log::debug!("Read(At)() {:?}", res);
             *res
         }
     } else {
@@ -147,9 +139,12 @@ pub(crate) fn handle_read(
     let mut offset = -1;
     let mut operation = FileOperation::Read;
     if let Some((req, _)) = unsafe { decode::<RWReq>(payload) } {
-        debug!(
+        log::debug!(
             "Read(At)(fd={:?}, len={:?}, offset={:?}), pid={:?}",
-            req.fd, req.len, req.offset, req.pid
+            req.fd,
+            req.len,
+            req.offset,
+            req.pid
         );
         fd = req.fd;
         len = req.len;
@@ -159,7 +154,7 @@ pub(crate) fn handle_read(
             operation = FileOperation::ReadAt;
         }
     } else {
-        warn!("Invalid payload for request: {:?}", hdr);
+        log::error!("Invalid payload for request: {:?}", hdr);
         construct_error_ret(hdr, payload, KError::from(RPCError::MalformedRequest));
         return Ok(state);
     }
@@ -188,9 +183,12 @@ pub(crate) fn handle_write(
 ) -> Result<ControllerState, RPCError> {
     // Decode request
     let ret = if let Some((req, remaining)) = unsafe { decode::<RWReq>(payload) } {
-        debug!(
+        log::debug!(
             "Write(At)(fd={:?}, len={:?}, offset={:?}), pid={:?}",
-            req.fd, req.len, req.offset, req.pid
+            req.fd,
+            req.len,
+            req.offset,
+            req.pid
         );
 
         // Call Write() or WriteAt()
@@ -206,7 +204,7 @@ pub(crate) fn handle_write(
         }
     // Return error if failed to decode request
     } else {
-        warn!("Invalid payload for request: {:?}", hdr);
+        log::error!("Invalid payload for request: {:?}", hdr);
         Err(KError::from(RPCError::MalformedRequest))
     };
     construct_ret(hdr, payload, ret);

@@ -11,6 +11,7 @@ use rpc::RPCClient;
 use super::super::controller_state::ControllerState;
 use super::super::dcm::resource_alloc::dcm_resource_alloc;
 use super::super::kernelrpc::*;
+use crate::arch::rackscale::CLIENT_STATE;
 use crate::error::{KError, KResult};
 use crate::memory::VAddr;
 use crate::nr::KernelNode;
@@ -24,12 +25,7 @@ pub(crate) struct RequestCoreReq {
 }
 unsafe_abomonate!(RequestCoreReq: pid, new_pid, entry_point);
 
-pub(crate) fn rpc_request_core(
-    rpc_client: &mut dyn RPCClient,
-    pid: Pid,
-    new_pid: bool,
-    entry_point: u64,
-) -> KResult<(u64, u64)> {
+pub(crate) fn rpc_request_core(pid: Pid, new_pid: bool, entry_point: u64) -> KResult<(u64, u64)> {
     log::debug!("RequestCore({:?}, {:?}, {:?})", pid, new_pid, entry_point);
 
     // Construct request data
@@ -43,7 +39,7 @@ pub(crate) fn rpc_request_core(
 
     // Construct result buffer and call RPC
     let mut res_data = [0u8; core::mem::size_of::<KResult<(u64, u64)>>()];
-    rpc_client.call(
+    CLIENT_STATE.rpc_client.lock().call(
         KernelRpc::RequestCore as RPCType,
         &[&req_data],
         &mut [&mut res_data],

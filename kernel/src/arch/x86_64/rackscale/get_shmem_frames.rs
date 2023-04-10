@@ -12,6 +12,7 @@ use kpi::system::MachineId;
 use rpc::rpc::*;
 use rpc::RPCClient;
 
+use super::client_state::CLIENT_STATE;
 use super::controller_state::ControllerState;
 use super::dcm::{affinity_alloc::dcm_affinity_alloc, resource_alloc::dcm_resource_alloc};
 use super::kernelrpc::*;
@@ -30,7 +31,6 @@ unsafe_abomonate!(ShmemFrameReq: machine_id, pid, num_frames);
 
 // This isn't truly a syscall
 pub(crate) fn rpc_get_shmem_frames(
-    rpc_client: &mut dyn RPCClient,
     pid: Option<Pid>,
     num_frames: usize,
 ) -> KResult<Box<Vec<Frame>>> {
@@ -61,7 +61,9 @@ pub(crate) fn rpc_get_shmem_frames(
     for i in 0..max_res_size {
         res_data.push(0u8);
     }
-    rpc_client
+    CLIENT_STATE
+        .rpc_client
+        .lock()
         .call(
             KernelRpc::GetShmemFrames as RPCType,
             &[&req_data],

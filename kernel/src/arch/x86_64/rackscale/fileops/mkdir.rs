@@ -16,6 +16,7 @@ use rpc::RPCClient;
 use super::super::controller_state::ControllerState;
 use super::super::fileops::get_str_from_payload;
 use super::super::kernelrpc::*;
+use super::super::CLIENT_STATE;
 use super::FileIO;
 use crate::error::{KError, KResult};
 use crate::fallible_string::TryString;
@@ -29,7 +30,6 @@ pub(crate) struct MkDirReq {
 unsafe_abomonate!(MkDirReq: pid, modes);
 
 pub(crate) fn rpc_mkdir<P: AsRef<[u8]> + Debug>(
-    rpc_client: &mut dyn RPCClient,
     pid: usize,
     pathname: P,
     modes: FileModes,
@@ -45,7 +45,7 @@ pub(crate) fn rpc_mkdir<P: AsRef<[u8]> + Debug>(
     let mut res_data = [0u8; core::mem::size_of::<KResult<(u64, u64)>>()];
 
     // Call RPC
-    rpc_client.call(
+    CLIENT_STATE.rpc_client.lock().call(
         KernelRpc::MkDir as RPCType,
         &[&req_data, pathname.as_ref()],
         &mut [&mut res_data],

@@ -17,6 +17,7 @@ use crate::fs::cnrfs;
 use super::super::controller_state::ControllerState;
 use super::super::fileops::get_str_from_payload;
 use super::super::kernelrpc::*;
+use super::super::CLIENT_STATE;
 use super::FileIO;
 
 #[derive(Debug)]
@@ -25,11 +26,7 @@ pub(crate) struct GetInfoReq {
 }
 unsafe_abomonate!(GetInfoReq: pid);
 
-pub(crate) fn rpc_getinfo<P: AsRef<[u8]> + Debug>(
-    rpc_client: &mut dyn RPCClient,
-    pid: usize,
-    name: P,
-) -> KResult<(u64, u64)> {
+pub(crate) fn rpc_getinfo<P: AsRef<[u8]> + Debug>(pid: usize, name: P) -> KResult<(u64, u64)> {
     debug!("GetInfo({:?})", name);
 
     // Construct request data
@@ -40,7 +37,7 @@ pub(crate) fn rpc_getinfo<P: AsRef<[u8]> + Debug>(
 
     // Construct result buffer and call RPC
     let mut res_data = [0u8; core::mem::size_of::<KResult<(u64, u64)>>()];
-    rpc_client.call(
+    CLIENT_STATE.rpc_client.lock().call(
         KernelRpc::GetInfo as RPCType,
         &[&req_data, name.as_ref()],
         &mut [&mut res_data],

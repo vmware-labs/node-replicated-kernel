@@ -25,7 +25,7 @@ pub(crate) struct LogReq {
 }
 unsafe_abomonate!(LogReq: machine_id);
 
-pub(crate) fn rpc_log(rpc_client: &mut dyn RPCClient, msg: String) -> KResult<(u64, u64)> {
+pub(crate) fn rpc_log(msg: String) -> KResult<(u64, u64)> {
     if let Some(print_str) = SerialControl::buffered_print_and_return(&msg) {
         // Construct request data
         let req = LogReq {
@@ -37,7 +37,7 @@ pub(crate) fn rpc_log(rpc_client: &mut dyn RPCClient, msg: String) -> KResult<(u
 
         // Construct result buffer and call RPC
         let mut res_data = [0u8; core::mem::size_of::<KResult<(u64, u64)>>()];
-        rpc_client.call(
+        CLIENT_STATE.rpc_client.lock().call(
             KernelRpc::Log as RPCType,
             &[&req_data, print_str.as_ref()],
             &mut [&mut res_data],

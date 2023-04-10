@@ -15,12 +15,12 @@ use rpc::RPCClient;
 use super::super::controller_state::ControllerState;
 use super::super::kernelrpc::*;
 use crate::arch::process::Ring3Process;
+use crate::arch::rackscale::CLIENT_STATE;
 use crate::error::{KError, KResult};
 use crate::nrproc::NrProcess;
 use crate::process::{UVAddr, UserSlice};
 
 pub(crate) fn rpc_get_hardware_threads(
-    rpc_client: &mut dyn RPCClient,
     pid: usize,
     vaddr_buf: u64,
     vaddr_buf_len: u64,
@@ -32,12 +32,11 @@ pub(crate) fn rpc_get_hardware_threads(
     let mut res_data = [0u8; core::mem::size_of::<KResult<(u64, u64)>>() + 5 * 4096];
 
     // Call GetHardwareThreads() RPC
-    rpc_client.call(
+    CLIENT_STATE.rpc_client.lock().call(
         KernelRpc::GetHardwareThreads as RPCType,
         &[&[]],
         &mut [&mut res_data],
     )?;
-    drop(rpc_client);
 
     // Decode and return result
     if let Some((res, remaining)) = unsafe { decode::<KResult<(u64, u64)>>(&mut res_data) } {

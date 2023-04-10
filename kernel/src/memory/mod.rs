@@ -451,10 +451,7 @@ impl KernelAllocator {
             }
 
             // Query controller (DCM) to get frames of shmem
-            let large_shmem_frames = {
-                let mut client = CLIENT_STATE.rpc_client.lock();
-                rpc_get_shmem_frames(&mut **client, None, total_needed_large_pages)?
-            };
+            let large_shmem_frames = rpc_get_shmem_frames(None, total_needed_large_pages)?;
 
             // Reset to shmem manager
             let pcm = try_per_core_mem().ok_or(KError::KcbUnavailable)?;

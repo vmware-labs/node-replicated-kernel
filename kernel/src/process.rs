@@ -37,8 +37,7 @@ use crate::fs::cnrfs;
 
 #[cfg(all(feature = "rackscale", target_arch = "x86_64"))]
 use {
-    crate::arch::rackscale::get_shmem_frames::rpc_get_shmem_frames,
-    crate::arch::rackscale::CLIENT_STATE, crate::memory::SHARED_AFFINITY,
+    crate::arch::rackscale::get_shmem_frames::rpc_get_shmem_frames, crate::memory::SHARED_AFFINITY,
 };
 
 /// Process ID.
@@ -295,10 +294,8 @@ impl elfloader::ElfLoader for DataSecAllocator {
                         }
                     };
 
-                    let mut client = CLIENT_STATE.rpc_client.lock();
-                    let shmem_frames =
-                        rpc_get_shmem_frames(&mut **client, Some(self.pid), large_pages)
-                            .expect("Failed to get shmem frames for elf loading");
+                    let shmem_frames = rpc_get_shmem_frames(Some(self.pid), large_pages)
+                        .expect("Failed to get shmem frames for elf loading");
 
                     // Restore affinity
                     if reset_affinity {

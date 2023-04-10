@@ -51,14 +51,10 @@ lazy_static! {
             use crate::memory::{paddr_to_kernel_vaddr, PAddr};
 
             use crate::arch::rackscale::get_shmem_structure::{rpc_get_shmem_structure, ShmemStructure};
-            use crate::arch::rackscale::CLIENT_STATE;
 
             // Get location of the nr log from the controller, who will created them in shared memory
             let mut log_ptrs = [0u64; 1];
-            {
-                let mut client = CLIENT_STATE.rpc_client.lock();
-                rpc_get_shmem_structure(&mut **client, ShmemStructure::NrLog, &mut log_ptrs).expect("Failed to get nr log from controller");
-            }
+            rpc_get_shmem_structure(ShmemStructure::NrLog, &mut log_ptrs).expect("Failed to get nr log from controller");
             let log_ptr = paddr_to_kernel_vaddr(PAddr::from(log_ptrs[0]));
             let local_log_arc = unsafe { Arc::from_raw(log_ptr.as_u64() as *const Log<'static, Op>) };
             local_log_arc

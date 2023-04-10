@@ -7,7 +7,6 @@ use core::fmt::Debug;
 use abomonation::{decode, encode, unsafe_abomonate, Abomonation};
 use core2::io::Result as IOResult;
 use core2::io::Write;
-use log::{debug, error, warn};
 
 use rpc::rpc::*;
 use rpc::RPCClient;
@@ -15,6 +14,7 @@ use rpc::RPCClient;
 use super::super::controller_state::ControllerState;
 use super::super::fileops::get_str_from_payload;
 use super::super::kernelrpc::*;
+use super::super::CLIENT_STATE;
 use super::FileIO;
 use crate::error::{KError, KResult};
 use crate::fallible_string::TryString;
@@ -28,12 +28,11 @@ pub(crate) struct RenameReq {
 unsafe_abomonate!(RenameReq: pid, oldname_len);
 
 pub(crate) fn rpc_rename<P: AsRef<[u8]> + Debug>(
-    rpc_client: &mut dyn RPCClient,
     pid: usize,
     oldname: P,
     newname: P,
 ) -> KResult<(u64, u64)> {
-    debug!("Rename({:?}, {:?})", oldname, newname);
+    log::debug!("Rename({:?}, {:?})", oldname, newname);
 
     // Construct request data
     let req = RenameReq {
@@ -47,7 +46,7 @@ pub(crate) fn rpc_rename<P: AsRef<[u8]> + Debug>(
     let mut res_data = [0u8; core::mem::size_of::<KResult<(u64, u64)>>()];
 
     // Call the RPC
-    rpc_client.call(
+    CLIENT_STATE.rpc_client.lock().call(
         KernelRpc::FileRename as RPCType,
         &[&req_data, oldname.as_ref(), newname.as_ref()],
         &mut [&mut res_data],
@@ -58,10 +57,10 @@ pub(crate) fn rpc_rename<P: AsRef<[u8]> + Debug>(
         if remaining.len() > 0 {
             return Err(KError::from(RPCError::ExtraData));
         }
-        debug!("Rename() {:?}", res);
+        log::debug!("Rename() {:?}", res);
         *res
     } else {
-        error!("Rename(): Malformed response");
+        log::error!("Rename(): Malformed response");
         Err(KError::from(RPCError::MalformedResponse))
     }
 }
@@ -76,7 +75,7 @@ pub(crate) fn handle_rename(
     let (pid, oldname_len) = match unsafe { decode::<RenameReq>(payload) } {
         Some((req, _)) => (req.pid, req.oldname_len as usize),
         None => {
-            warn!("Invalid payload for request: {:?}", hdr);
+            log::error!("Invalid payload for request: {:?}", hdr);
             construct_error_ret(hdr, payload, KError::from(RPCError::MalformedRequest));
             return Ok(state);
         }

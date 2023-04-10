@@ -33,11 +33,7 @@ pub(crate) struct ReleasePhysicalReq {
 unsafe_abomonate!(ReleasePhysicalReq: frame_base, frame_size, node_id);
 
 /// RPC to forward physical memory release to controller.
-pub(crate) fn rpc_release_physical(
-    rpc_client: &mut dyn RPCClient,
-    pid: Pid,
-    frame_id: u64,
-) -> KResult<(u64, u64)> {
+pub(crate) fn rpc_release_physical(pid: Pid, frame_id: u64) -> KResult<(u64, u64)> {
     log::debug!("ReleasePhysical({:?})", frame_id);
 
     // Construct request data
@@ -61,7 +57,7 @@ pub(crate) fn rpc_release_physical(
 
     // Create result buffer
     let mut res_data = [0u8; core::mem::size_of::<KResult<(u64, u64)>>()];
-    rpc_client.call(
+    CLIENT_STATE.rpc_client.lock().call(
         KernelRpc::ReleasePhysical as RPCType,
         &[&req_data],
         &mut [&mut res_data],

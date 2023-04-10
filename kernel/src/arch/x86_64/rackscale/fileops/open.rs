@@ -6,19 +6,19 @@ use core::fmt::Debug;
 use abomonation::{decode, encode, unsafe_abomonate, Abomonation};
 use core2::io::Result as IOResult;
 use core2::io::Write;
+
 use kpi::io::{FileFlags, FileModes};
-use log::{debug, warn};
 use rpc::rpc::*;
 use rpc::RPCClient;
-
-use crate::error::{KError, KResult};
-use crate::fallible_string::TryString;
-use crate::fs::cnrfs;
 
 use super::super::controller_state::ControllerState;
 use super::super::fileops::get_str_from_payload;
 use super::super::kernelrpc::*;
+use super::super::CLIENT_STATE;
 use super::FileIO;
+use crate::error::{KError, KResult};
+use crate::fallible_string::TryString;
+use crate::fs::cnrfs;
 
 #[derive(Debug)]
 pub(crate) struct OpenReq {
@@ -30,31 +30,22 @@ unsafe_abomonate!(OpenReq: pid, flags, modes);
 
 // This is just a wrapper function for rpc_open_create
 pub(crate) fn rpc_open<P: AsRef<[u8]> + Debug>(
-    rpc_client: &mut dyn RPCClient,
     pid: usize,
     pathname: P,
     flags: FileFlags,
     modes: FileModes,
 ) -> KResult<(u64, u64)> {
-    rpc_open_create(
-        rpc_client,
-        pid,
-        pathname,
-        flags,
-        modes,
-        KernelRpc::Open as RPCType,
-    )
+    rpc_open_create(pid, pathname, flags, modes, KernelRpc::Open as RPCType)
 }
 
 fn rpc_open_create<P: AsRef<[u8]> + Debug>(
-    rpc_client: &mut dyn RPCClient,
     pid: usize,
     pathname: P,
     flags: FileFlags,
     modes: FileModes,
     rpc_type: RPCType,
 ) -> KResult<(u64, u64)> {
-    debug!("Open({:?}, {:?}, {:?})", pathname, flags, modes);
+    log::debug!("Open({:?}, {:?}, {:?})", pathname, flags, modes);
 
     // Construct request data
     let req = OpenReq { pid, flags, modes };
@@ -65,7 +56,7 @@ fn rpc_open_create<P: AsRef<[u8]> + Debug>(
     let mut res_data = [0u8; core::mem::size_of::<KResult<(u64, u64)>>()];
 
     // Call the RPC
-    rpc_client.call(
+    CLIENT_STATE.rpc_client.lock().call(
         rpc_type,
         &[&req_data, pathname.as_ref()],
         &mut [&mut res_data],
@@ -76,7 +67,7 @@ fn rpc_open_create<P: AsRef<[u8]> + Debug>(
         if remaining.len() > 0 {
             return Err(KError::from(RPCError::ExtraData));
         }
-        debug!("Open() {:?}", res);
+        log::debug!("Open() {:?}", res);
         *res
     } else {
         Err(KError::from(RPCError::MalformedResponse))
@@ -92,7 +83,7 @@ pub(crate) fn handle_open(
     // Decode request
     let (pid, flags, modes) = match unsafe { decode::<OpenReq>(payload) } {
         Some((req, _)) => {
-            debug!(
+            log::debug!(
                 "Open(flags={:?}, modes={:?}), pid={:?}",
                 FileFlags::from(req.flags),
                 FileModes::from(req.modes),
@@ -101,7 +92,7 @@ pub(crate) fn handle_open(
             (req.pid, req.flags, req.modes)
         }
         None => {
-            warn!("Invalid payload for request: {:?}", hdr);
+            log::error!("Invalid payload for request: {:?}", hdr);
             construct_error_ret(hdr, payload, KError::from(RPCError::MalformedRequest));
             return Ok(state);
         }

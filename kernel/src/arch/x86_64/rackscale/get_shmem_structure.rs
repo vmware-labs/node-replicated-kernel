@@ -12,6 +12,7 @@ use node_replication::{Dispatch, Log};
 use rpc::rpc::*;
 use rpc::RPCClient;
 
+use super::client_state::CLIENT_STATE;
 use super::controller_state::ControllerState;
 use super::kernelrpc::*;
 use crate::arch::kcb::per_core_mem;
@@ -35,7 +36,6 @@ pub enum ShmemStructure {
 unsafe_abomonate!(ShmemStructure);
 
 pub(crate) fn rpc_get_shmem_structure(
-    rpc_client: &mut dyn RPCClient,
     shmem_structure: ShmemStructure,
     ptrs: &mut [u64],
 ) -> KResult<()> {
@@ -53,7 +53,9 @@ pub(crate) fn rpc_get_shmem_structure(
 
     // Make buffer max size of MAX_PROCESS (for NrProcLogs), 1 (for NrLog)
     let mut res_data = [0u8; core::mem::size_of::<[u64; MAX_PROCESSES]>()];
-    rpc_client
+    CLIENT_STATE
+        .rpc_client
+        .lock()
         .call(
             KernelRpc::GetShmemStructure as RPCType,
             &[&req_data],

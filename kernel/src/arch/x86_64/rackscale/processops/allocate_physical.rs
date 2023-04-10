@@ -32,12 +32,7 @@ pub(crate) struct AllocatePhysicalReq {
 unsafe_abomonate!(AllocatePhysicalReq: size, affinity);
 
 /// RPC to forward physical memory allocation request to controller.
-pub(crate) fn rpc_allocate_physical(
-    rpc_client: &mut dyn RPCClient,
-    pid: Pid,
-    size: u64,
-    affinity: u64,
-) -> KResult<(u64, u64)> {
+pub(crate) fn rpc_allocate_physical(pid: Pid, size: u64, affinity: u64) -> KResult<(u64, u64)> {
     log::debug!("AllocatePhysical({:?}, {:?})", size, affinity);
 
     // Construct request data
@@ -52,7 +47,7 @@ pub(crate) fn rpc_allocate_physical(
 
     // Create result buffer
     let mut res_data = [0u8; core::mem::size_of::<KResult<(u64, u64)>>()];
-    rpc_client.call(
+    CLIENT_STATE.rpc_client.lock().call(
         KernelRpc::AllocatePhysical as RPCType,
         &[&req_data],
         &mut [&mut res_data],

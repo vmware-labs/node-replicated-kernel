@@ -15,6 +15,7 @@ use crate::fs::fd::FileDescriptor;
 
 use super::super::controller_state::ControllerState;
 use super::super::kernelrpc::*;
+use super::super::CLIENT_STATE;
 use super::FileIO;
 
 #[derive(Debug)]
@@ -24,11 +25,7 @@ pub(crate) struct CloseReq {
 }
 unsafe_abomonate!(CloseReq: pid, fd);
 
-pub(crate) fn rpc_close(
-    rpc_client: &mut dyn RPCClient,
-    pid: usize,
-    fd: FileDescriptor,
-) -> KResult<(u64, u64)> {
+pub(crate) fn rpc_close(pid: usize, fd: FileDescriptor) -> KResult<(u64, u64)> {
     debug!("Close({:?})", fd);
 
     // Setup request data
@@ -40,7 +37,7 @@ pub(crate) fn rpc_close(
     let mut res_data = [0u8; core::mem::size_of::<KResult<(u64, u64)>>()];
 
     // Call Close() RPC
-    rpc_client.call(
+    CLIENT_STATE.rpc_client.lock().call(
         KernelRpc::Close as RPCType,
         &[&req_data],
         &mut [&mut res_data],

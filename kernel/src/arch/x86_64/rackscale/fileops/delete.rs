@@ -18,6 +18,7 @@ use super::super::controller_state::ControllerState;
 use super::super::fileops::get_str_from_payload;
 use super::super::kernelrpc::*;
 use super::FileIO;
+use crate::arch::rackscale::CLIENT_STATE;
 
 #[derive(Debug)]
 pub(crate) struct DeleteReq {
@@ -25,11 +26,7 @@ pub(crate) struct DeleteReq {
 }
 unsafe_abomonate!(DeleteReq: pid);
 
-pub(crate) fn rpc_delete(
-    rpc_client: &mut dyn RPCClient,
-    pid: usize,
-    pathname: String,
-) -> KResult<(u64, u64)> {
+pub(crate) fn rpc_delete(pid: usize, pathname: String) -> KResult<(u64, u64)> {
     debug!("Delete({:?})", pathname);
 
     // Construct request data
@@ -42,7 +39,7 @@ pub(crate) fn rpc_delete(
     let mut res_data = [0u8; core::mem::size_of::<KResult<(u64, u64)>>()];
 
     // Call RPC
-    rpc_client.call(
+    CLIENT_STATE.rpc_client.lock().call(
         KernelRpc::Delete as RPCType,
         &[&req_data, &pathname.as_bytes()],
         &mut [&mut res_data],

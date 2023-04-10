@@ -97,10 +97,8 @@ impl VSpaceDispatch<u64> for Arch86LwkSystemCall {
 
         if total_needed_large_pages > 0 {
             // Query controller (DCM) to get frames of shmem
-            let mut allocated_frames = {
-                let mut client = CLIENT_STATE.rpc_client.lock();
-                rpc_get_shmem_frames(&mut **client, Some(pid), total_needed_large_pages)?
-            };
+            let mut allocated_frames =
+                { rpc_get_shmem_frames(Some(pid), total_needed_large_pages)? };
 
             for i in 0..lp {
                 // TODO(rackscale performance): should be debug assert
@@ -210,8 +208,7 @@ impl VSpaceDispatch<u64> for Arch86LwkSystemCall {
 impl SystemDispatch<u64> for Arch86LwkSystemCall {
     fn get_hardware_threads(&self, vaddr_buf: u64, vaddr_buf_len: u64) -> KResult<(u64, u64)> {
         let pid = current_pid()?;
-        let mut client = CLIENT_STATE.rpc_client.lock();
-        rpc_get_hardware_threads(&mut **client, pid, vaddr_buf, vaddr_buf_len).map_err(|e| e.into())
+        rpc_get_hardware_threads(pid, vaddr_buf, vaddr_buf_len).map_err(|e| e.into())
     }
 
     fn get_stats(&self) -> KResult<(u64, u64)> {
@@ -227,67 +224,60 @@ impl FsDispatch<u64> for Arch86LwkSystemCall {
     fn open(&self, path: UserSlice, flags: FileFlags, modes: FileModes) -> KResult<(u64, u64)> {
         let pid = path.pid;
         let pathstring: String = path.try_into()?;
-
-        let mut client = CLIENT_STATE.rpc_client.lock();
-        rpc_open(&mut **client, pid, pathstring, flags, modes).map_err(|e| e.into())
+        rpc_open(pid, pathstring, flags, modes).map_err(|e| e.into())
     }
 
     fn read(&self, fd: FileDescriptor, uslice: UserSlice) -> KResult<(u64, u64)> {
+        // TODO(rackscale, performance): this is a long time to hold the read lock. May be better
+        // to do this with an extra copy instead.
+        // TODO(rackscale, correctness): it could lead to deadlock to hold the RPC client in a log operation,
+        // as sometimes the log may try to grab the client mutex in order to allocator more memory.
         nrproc::NrProcess::<Ring3Process>::userspace_exec_slice_mut(
             uslice,
             Box::try_new(move |ubuf: &mut [u8]| {
-                let mut client = CLIENT_STATE.rpc_client.lock();
-                rpc_read(&mut **client, uslice.pid, fd, ubuf).map_err(|e| e.into())
+                rpc_read(uslice.pid, fd, ubuf).map_err(|e| e.into())
             })?,
         )
     }
 
     fn write(&self, fd: FileDescriptor, uslice: UserSlice) -> KResult<(u64, u64)> {
         let kernslice = KernArcBuffer::try_from(uslice)?;
-        let mut client = CLIENT_STATE.rpc_client.lock();
-        rpc_write(&mut **client, uslice.pid, fd, &*kernslice.buffer).map_err(|e| e.into())
+        rpc_write(uslice.pid, fd, &*kernslice.buffer).map_err(|e| e.into())
     }
 
     fn read_at(&self, fd: FileDescriptor, uslice: UserSlice, offset: i64) -> KResult<(u64, u64)> {
         // TODO(rackscale, performance): this is a long time to hold the read lock. May be better
         // to do this with an extra copy instead.
+        // TODO(rackscale, correctness): it could lead to deadlock to hold the RPC client in a log operation,
+        // as sometimes the log may try to grab the client mutex in order to allocator more memory.
         nrproc::NrProcess::<Ring3Process>::userspace_exec_slice_mut(
             uslice,
             Box::try_new(move |ubuf: &mut [u8]| {
-                let mut client = CLIENT_STATE.rpc_client.lock();
-                rpc_readat(&mut **client, uslice.pid, fd, ubuf, offset).map_err(|e| e.into())
+                rpc_readat(uslice.pid, fd, ubuf, offset).map_err(|e| e.into())
             })?,
         )
     }
 
     fn write_at(&self, fd: FileDescriptor, uslice: UserSlice, offset: i64) -> KResult<(u64, u64)> {
-        // TODO(rackscale, performance): this copy may not be truly necessary since it's already
-        // copied from userspace into the shmem/socket buffer in the RPC call
         let kernslice = KernArcBuffer::try_from(uslice)?;
-        let mut client = CLIENT_STATE.rpc_client.lock();
-        rpc_writeat(&mut **client, uslice.pid, fd, offset, &*kernslice.buffer).map_err(|e| e.into())
+        rpc_writeat(uslice.pid, fd, offset, &*kernslice.buffer).map_err(|e| e.into())
     }
 
     fn close(&self, fd: FileDescriptor) -> KResult<(u64, u64)> {
         let pid = current_pid()?;
-        let mut client = CLIENT_STATE.rpc_client.lock();
-        rpc_close(&mut **client, pid, fd).map_err(|e| e.into())
+        rpc_close(pid, fd).map_err(|e| e.into())
     }
 
     fn get_info(&self, path: UserSlice) -> KResult<(u64, u64)> {
         let pid = path.pid;
         let pathstring: String = path.try_into()?;
-
-        let mut client = CLIENT_STATE.rpc_client.lock();
-        rpc_getinfo(&mut **client, pid, pathstring).map_err(|e| e.into())
+        rpc_getinfo(pid, pathstring).map_err(|e| e.into())
     }
 
     fn delete(&self, path: UserSlice) -> KResult<(u64, u64)> {
         let pid = path.pid;
         let pathstring: String = path.try_into()?;
-
-        let mut client = CLIENT_STATE.rpc_client.lock();
-        rpc_delete(&mut **client, pid, pathstring).map_err(|e| e.into())
+        rpc_delete(pid, pathstring).map_err(|e| e.into())
     }
 
     fn file_rename(&self, oldpath: UserSlice, newpath: UserSlice) -> KResult<(u64, u64)> {
@@ -298,25 +288,20 @@ impl FsDispatch<u64> for Arch86LwkSystemCall {
         let pid = oldpath.pid;
         let oldpath: String = oldpath.try_into()?;
         let newpath: String = newpath.try_into()?;
-
-        let mut client = CLIENT_STATE.rpc_client.lock();
-        rpc_rename(&mut **client, pid, oldpath, newpath).map_err(|e| e.into())
+        rpc_rename(pid, oldpath, newpath).map_err(|e| e.into())
     }
 
     fn mkdir(&self, path: UserSlice, modes: FileModes) -> KResult<(u64, u64)> {
         let pid = path.pid;
         let pathstring: String = path.try_into()?;
-
-        let mut client = CLIENT_STATE.rpc_client.lock();
-        rpc_mkdir(&mut **client, pid, pathstring, modes).map_err(|e| e.into())
+        rpc_mkdir(pid, pathstring, modes).map_err(|e| e.into())
     }
 }
 
 impl ProcessDispatch<u64> for Arch86LwkSystemCall {
     fn log(&self, uslice: UserSlice) -> KResult<(u64, u64)> {
         let msg: String = uslice.try_into()?;
-        let mut client = CLIENT_STATE.rpc_client.lock();
-        rpc_log(&mut **client, msg).map_err(|e| e.into())
+        rpc_log(msg).map_err(|e| e.into())
     }
 
     fn get_vcpu_area(&self) -> KResult<(u64, u64)> {
@@ -332,21 +317,18 @@ impl ProcessDispatch<u64> for Arch86LwkSystemCall {
     }
 
     fn request_core(&self, _core_id: u64, entry_point: u64) -> KResult<(u64, u64)> {
-        let mut client = CLIENT_STATE.rpc_client.lock();
         let pid = current_pid()?;
-        rpc_request_core(&mut **client, pid, false, entry_point).map_err(|e| e.into())
+        rpc_request_core(pid, false, entry_point).map_err(|e| e.into())
     }
 
     fn allocate_physical(&self, page_size: u64, affinity: u64) -> KResult<(u64, u64)> {
-        let mut client = CLIENT_STATE.rpc_client.lock();
         let pid = current_pid()?;
-        rpc_allocate_physical(&mut **client, pid, page_size, affinity).map_err(|e| e.into())
+        rpc_allocate_physical(pid, page_size, affinity).map_err(|e| e.into())
     }
 
     fn release_physical(&self, frame_id: u64) -> KResult<(u64, u64)> {
-        let mut client = CLIENT_STATE.rpc_client.lock();
         let pid = current_pid()?;
-        rpc_release_physical(&mut **client, pid, frame_id).map_err(|e| e.into())
+        rpc_release_physical(pid, frame_id).map_err(|e| e.into())
     }
 
     fn exit(&self, code: u64) -> KResult<(u64, u64)> {

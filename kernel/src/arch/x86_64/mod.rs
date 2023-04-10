@@ -202,6 +202,7 @@ pub(crate) fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
             .map_or(false, |c| c.mode == crate::cmdline::Mode::Client)
         {
             crate::nrproc::register_thread_with_process_replicas();
+            crate::arch::rackscale::client_state::create_client_rpc_shmem_buffers();
         }
 
         #[cfg(not(feature = "rackscale"))]

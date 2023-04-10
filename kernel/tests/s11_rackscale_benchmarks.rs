@@ -32,7 +32,6 @@ fn s11_rackscale_shmem_fxmark_benchmark() {
     rackscale_fxmark_benchmark(true);
 }
 
-#[ignore]
 #[test]
 #[cfg(not(feature = "baremetal"))]
 fn s11_rackscale_ethernet_fxmark_benchmark() {
@@ -75,7 +74,7 @@ fn rackscale_fxmark_benchmark(is_shmem: bool) {
     let threads = [1, 2, 4];
     let max_cores = *threads.iter().max().unwrap();
 
-    let num_clients = [1, 2, 4];
+    let num_clients = if is_shmem { vec![1, 2, 4] } else { vec![1] };
     let max_clients = *num_clients.iter().max().unwrap();
 
     fn open_files(benchmark: &str, max_cores: usize, nodes: usize) -> Vec<usize> {
@@ -95,7 +94,8 @@ fn rackscale_fxmark_benchmark(is_shmem: bool) {
     }
 
     for benchmark in benchmarks {
-        for nclients in num_clients {
+        for i in 0..num_clients.len() {
+            let nclients = num_clients[i];
             setup_network(nclients + 1);
 
             // TODO(rackscale): probably scale with nclients?
@@ -108,8 +108,7 @@ fn rackscale_fxmark_benchmark(is_shmem: bool) {
 
             for &cores in threads.iter() {
                 // TODO(rackscale): this is probably too high, but oh well.
-                let timeout =
-                    num_microbenchs * (240_000 + cores as u64 * 20000 + nclients as u64 * 10000);
+                let timeout = num_microbenchs * (120_000 + 20000 * (cores + nclients) as u64);
 
                 for &of in open_files.iter() {
                     let (tx, rx) = channel();
@@ -146,7 +145,7 @@ fn rackscale_fxmark_benchmark(is_shmem: bool) {
                         }
 
                         let mut output = String::new();
-                        let mut qemu_run = || -> Result<WaitStatus> {
+                        let mut qemu_run = |nclients| -> Result<WaitStatus> {
                             let mut p = spawn_nrk(&cmdline_controller)?;
 
                             // Parse lines like
@@ -194,7 +193,7 @@ fn rackscale_fxmark_benchmark(is_shmem: bool) {
                             }
                             p.process.kill(SIGTERM)
                         };
-                        wait_for_sigterm(&cmdline_controller, qemu_run(), output);
+                        wait_for_sigterm(&cmdline_controller, qemu_run(nclients), output);
                     });
 
                     let mut clients = Vec::new();

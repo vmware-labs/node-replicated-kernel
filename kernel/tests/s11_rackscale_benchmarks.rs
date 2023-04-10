@@ -107,8 +107,9 @@ fn rackscale_fxmark_benchmark(is_shmem: bool) {
                 open_files(benchmark, max_cores * max_clients, max_clients);
 
             for &cores in threads.iter() {
+                // TODO(rackscale): this is probably too high, but oh well.
                 let timeout =
-                    num_microbenchs * (120_000 + cores as u64 * 20000 + nclients as u64 * 10000);
+                    num_microbenchs * (240_000 + cores as u64 * 20000 + nclients as u64 * 10000);
 
                 for &of in open_files.iter() {
                     let (tx, rx) = channel();

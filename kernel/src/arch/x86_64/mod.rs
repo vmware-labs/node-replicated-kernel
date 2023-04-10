@@ -416,6 +416,7 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
                     REMOTE_TLB_WORK_PENDING_VECTOR,
                 );
                 lazy_static::initialize(&rackscale::client_state::CLIENT_STATE);
+                crate::arch::rackscale::client_state::create_client_rpc_shmem_buffers();
             }
         }
         // Initialize the workqueues used for distributed TLB shootdowns

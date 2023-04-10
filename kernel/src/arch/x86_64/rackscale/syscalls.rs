@@ -228,16 +228,7 @@ impl FsDispatch<u64> for Arch86LwkSystemCall {
     }
 
     fn read(&self, fd: FileDescriptor, uslice: UserSlice) -> KResult<(u64, u64)> {
-        // TODO(rackscale, performance): this is a long time to hold the read lock. May be better
-        // to do this with an extra copy instead.
-        // TODO(rackscale, correctness): it could lead to deadlock to hold the RPC client in a log operation,
-        // as sometimes the log may try to grab the client mutex in order to allocator more memory.
-        nrproc::NrProcess::<Ring3Process>::userspace_exec_slice_mut(
-            uslice,
-            Box::try_new(move |ubuf: &mut [u8]| {
-                rpc_read(uslice.pid, fd, ubuf).map_err(|e| e.into())
-            })?,
-        )
+        rpc_read(uslice.pid, fd, uslice).map_err(|e| e.into())
     }
 
     fn write(&self, fd: FileDescriptor, uslice: UserSlice) -> KResult<(u64, u64)> {
@@ -246,16 +237,7 @@ impl FsDispatch<u64> for Arch86LwkSystemCall {
     }
 
     fn read_at(&self, fd: FileDescriptor, uslice: UserSlice, offset: i64) -> KResult<(u64, u64)> {
-        // TODO(rackscale, performance): this is a long time to hold the read lock. May be better
-        // to do this with an extra copy instead.
-        // TODO(rackscale, correctness): it could lead to deadlock to hold the RPC client in a log operation,
-        // as sometimes the log may try to grab the client mutex in order to allocator more memory.
-        nrproc::NrProcess::<Ring3Process>::userspace_exec_slice_mut(
-            uslice,
-            Box::try_new(move |ubuf: &mut [u8]| {
-                rpc_readat(uslice.pid, fd, ubuf, offset).map_err(|e| e.into())
-            })?,
-        )
+        rpc_readat(uslice.pid, fd, uslice, offset)
     }
 
     fn write_at(&self, fd: FileDescriptor, uslice: UserSlice, offset: i64) -> KResult<(u64, u64)> {

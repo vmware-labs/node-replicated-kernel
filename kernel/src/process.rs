@@ -77,13 +77,30 @@ pub(crate) trait Process: FrameManagement {
         how_many: usize,
         affinity: atopology::NodeId,
     ) -> Result<(), alloc::collections::TryReserveError>;
+
+    #[cfg(not(feature = "rackscale"))]
     fn allocate_executors(&mut self, frame: Frame) -> Result<usize, KError>;
+
+    #[cfg(feature = "rackscale")]
+    fn allocate_executors(
+        &mut self,
+        frame: Frame,
+        mid: kpi::system::MachineId,
+    ) -> Result<usize, KError>;
 
     fn vspace_mut(&mut self) -> &mut Self::A;
 
     fn vspace(&self) -> &Self::A;
 
+    #[cfg(not(feature = "rackscale"))]
     fn get_executor(&mut self, for_region: atopology::NodeId) -> Result<Box<Self::E>, KError>;
+
+    #[cfg(feature = "rackscale")]
+    fn get_executor(
+        &mut self,
+        for_region: atopology::NodeId,
+        mid: kpi::system::MachineId,
+    ) -> Result<Box<Self::E>, KError>;
 
     fn allocate_fd(&mut self) -> Option<(u64, &mut FileDescriptorEntry)>;
 
@@ -567,6 +584,7 @@ pub(crate) fn allocate_dispatchers<P: Process>(pid: Pid, affinity: NodeId) -> Re
     };
 
     let mut dispatchers_created = 0;
+
     while dispatchers_created < to_create {
         KernelAllocator::try_refill_tcache(20, 1, MemType::Mem)?;
         let mut frame = {

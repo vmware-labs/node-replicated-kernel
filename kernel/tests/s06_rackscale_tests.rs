@@ -26,27 +26,26 @@ use testutils::runner_args::{check_for_successful_exit, wait_for_sigterm, Runner
 #[cfg(not(feature = "baremetal"))]
 #[test]
 fn s06_rackscale_shmem_userspace_smoke_test() {
-    rackscale_userspace_smoke_test(true, 3);
+    rackscale_userspace_smoke_test(true);
 }
 
 #[cfg(not(feature = "baremetal"))]
 #[test]
 fn s06_rackscale_ethernet_userspace_smoke_test() {
-    rackscale_userspace_smoke_test(false, 1);
+    rackscale_userspace_smoke_test(false);
 }
 
 #[cfg(not(feature = "baremetal"))]
-fn rackscale_userspace_smoke_test(is_shmem: bool, num_clients: usize) {
+fn rackscale_userspace_smoke_test(is_shmem: bool) {
     use std::sync::Arc;
     use std::thread::sleep;
     use std::time::Duration;
 
-    let timeout = 30_000 * (num_clients as u64 + 1);
+    let timeout = 60_000;
 
     let (tx, rx) = channel();
-    let tx_mut = Arc::new(Mutex::new(tx));
 
-    setup_network(num_clients + 1);
+    setup_network(2);
 
     let mut shmem_server =
         spawn_shmem_server(SHMEM_PATH, SHMEM_SIZE).expect("Failed to start shmem server");
@@ -86,82 +85,66 @@ fn rackscale_userspace_smoke_test(is_shmem: bool, num_clients: usize) {
             .shmem_path(SHMEM_PATH)
             .tap("tap0")
             .no_network_setup()
-            .workers(num_clients + 1)
+            .workers(2)
             .use_vmxnet3();
 
         let output = String::new();
         let qemu_run = || -> Result<WaitStatus> {
             let mut p = spawn_nrk(&cmdline_controller)?;
 
-            // wait until all clients are done
-            for _i in 0..num_clients {
-                let _ = wait_for_client_termination::<()>(&rx);
-            }
+            // wait until all the client is done
+            let _ = wait_for_client_termination::<()>(&rx);
             p.process.kill(SIGTERM)
         };
-
         wait_for_sigterm(&cmdline_controller, qemu_run(), output);
     });
 
     // Run client in separate thead. Wait a bit to make sure controller started
-    let mut clients = Vec::new();
-    for i in 0..num_clients {
-        let tap = format!("tap{}", 2 * (i + 1));
-        let my_tx_mut = tx_mut.clone();
-        let build2 = build.clone();
-        let client = std::thread::spawn(move || {
-            sleep(Duration::from_millis(CLIENT_BUILD_DELAY * (i + 1) as u64));
-            let client_cmd = if is_shmem {
-                "mode=client transport=shmem"
-            } else {
-                "mode=client transport=ethernet"
-            };
-            let cmdline_client = RunnerArgs::new_with_build("userspace-smp", &build2)
-                .timeout(timeout)
-                .cmd(client_cmd)
-                .shmem_size(SHMEM_SIZE as usize)
-                .shmem_path(SHMEM_PATH)
-                .tap(&tap)
-                .no_network_setup()
-                .workers(num_clients + 1)
-                .cores(1)
-                .nobuild()
-                .use_vmxnet3();
+    let build2 = build.clone();
+    let client = std::thread::spawn(move || {
+        sleep(Duration::from_millis(CLIENT_BUILD_DELAY));
+        let client_cmd = if is_shmem {
+            "mode=client transport=shmem"
+        } else {
+            "mode=client transport=ethernet"
+        };
+        let cmdline_client = RunnerArgs::new_with_build("userspace-smp", &build2)
+            .timeout(timeout)
+            .cmd(client_cmd)
+            .shmem_size(SHMEM_SIZE as usize)
+            .shmem_path(SHMEM_PATH)
+            .tap("tap2")
+            .no_network_setup()
+            .workers(2)
+            .cores(1)
+            .nobuild()
+            .use_vmxnet3();
 
-            let mut output = String::new();
-            let mut qemu_run = || -> Result<WaitStatus> {
-                let mut p = spawn_nrk(&cmdline_client)?;
-                output += p.exp_string("print_test OK")?.as_str();
-                output += p.exp_string("upcall_test OK")?.as_str();
-                output += p.exp_string("map_test OK")?.as_str();
-                output += p.exp_string("alloc_test OK")?.as_str();
-                output += p.exp_string("scheduler_test OK")?.as_str();
-                output += p.exp_eof()?.as_str();
+        let mut output = String::new();
+        let mut qemu_run = || -> Result<WaitStatus> {
+            let mut p = spawn_nrk(&cmdline_client)?;
+            output += p.exp_string("print_test OK")?.as_str();
+            output += p.exp_string("upcall_test OK")?.as_str();
+            output += p.exp_string("map_test OK")?.as_str();
+            output += p.exp_string("alloc_test OK")?.as_str();
+            output += p.exp_string("scheduler_test OK")?.as_str();
+            output += p.exp_eof()?.as_str();
 
-                // notify done
-                let tx = my_tx_mut.lock();
-                notify_controller_of_termination(&tx);
+            // notify controller we are done
+            notify_controller_of_termination(&tx);
 
-                p.process.exit()
-            };
+            p.process.exit()
+        };
+        check_for_successful_exit(&cmdline_client, qemu_run(), output);
+    });
 
-            check_for_successful_exit(&cmdline_client, qemu_run(), output);
-        });
-        clients.push(client);
-    }
-
-    let mut client_rets = Vec::new();
-    for client in clients {
-        client_rets.push(client.join());
-    }
+    let client_ret = client.join();
     let controller_ret = controller.join();
 
     let _ignore = shmem_server.send_control('c');
     let _ignore = dcm.send_control('c');
 
-    for client_ret in client_rets {
-        client_ret.unwrap();
-    }
+    client_ret.unwrap();
     controller_ret.unwrap();
 }
 
@@ -443,109 +426,6 @@ fn s06_rackscale_shmem_fs_prop_test() {
     let _ignore = dcm.send_control('c');
 
     client_ret.unwrap();
-    controller_ret.unwrap();
-}
-
-#[cfg(not(feature = "baremetal"))]
-#[test]
-fn s06_rackscale_shmem_multiinstance() {
-    use std::sync::Arc;
-    use std::thread::sleep;
-    use std::time::Duration;
-
-    let timeout = 60_000;
-    let clients = 3;
-    let mut processes = Vec::with_capacity(clients);
-
-    setup_network(clients + 1);
-
-    let mut shmem_server =
-        spawn_shmem_server(SHMEM_PATH, SHMEM_SIZE).expect("Failed to start shmem server");
-    let mut dcm = spawn_dcm(1, timeout).expect("Failed to start DCM");
-
-    let (tx, rx) = channel();
-    let tx_mut = Arc::new(Mutex::new(tx));
-
-    let build = Arc::new(
-        BuildArgs::default()
-            .module("init")
-            .user_feature("test-print")
-            .kernel_feature("shmem")
-            .kernel_feature("ethernet")
-            .kernel_feature("rackscale")
-            .release()
-            .build(),
-    );
-
-    let controller_build = build.clone();
-    let controller = std::thread::spawn(move || {
-        let cmdline_controller = RunnerArgs::new_with_build("userspace-smp", &controller_build)
-            .timeout(timeout)
-            .cmd("mode=controller transport=shmem")
-            .shmem_size(SHMEM_SIZE)
-            .shmem_path(SHMEM_PATH)
-            .tap("tap0")
-            .no_network_setup()
-            .workers(clients + 1)
-            .use_vmxnet3();
-
-        let output = String::new();
-        let qemu_run = || -> Result<WaitStatus> {
-            let mut p = spawn_nrk(&cmdline_controller)?;
-
-            for _i in 0..clients {
-                let _ = wait_for_client_termination::<()>(&rx);
-            }
-            p.process.kill(SIGTERM)
-        };
-
-        wait_for_sigterm(&cmdline_controller, qemu_run(), output);
-    });
-
-    for i in 1..=clients {
-        let tap = format!("tap{}", 2 * i);
-        let client_build = build.clone();
-        let my_tx_mut = tx_mut.clone();
-        let client = std::thread::spawn(move || {
-            sleep(Duration::from_millis(i as u64 * CLIENT_BUILD_DELAY));
-            let cmdline_client = RunnerArgs::new_with_build("userspace-smp", &client_build)
-                .timeout(timeout)
-                .cmd("mode=client transport=shmem")
-                .shmem_size(SHMEM_SIZE)
-                .shmem_path(SHMEM_PATH)
-                .tap(&tap)
-                .no_network_setup()
-                .workers(clients + 1)
-                .nobuild()
-                .use_vmxnet3();
-
-            let mut output = String::new();
-            let mut qemu_run = || -> Result<WaitStatus> {
-                let mut p = spawn_nrk(&cmdline_client)?;
-                output += p.exp_string("print_test OK")?.as_str();
-                output += p.exp_eof()?.as_str();
-                let tx = my_tx_mut.lock();
-                notify_controller_of_termination(&tx);
-                p.process.exit()
-            };
-
-            check_for_successful_exit(&cmdline_client, qemu_run(), output);
-        });
-        processes.push(client);
-    }
-
-    let mut client_rets = Vec::with_capacity(clients);
-    for p in processes {
-        client_rets.push(p.join());
-    }
-    let controller_ret = controller.join();
-
-    let _ignore = shmem_server.send_control('c');
-    let _ignore = dcm.send_control('c');
-
-    for ret in client_rets {
-        ret.unwrap();
-    }
     controller_ret.unwrap();
 }
 

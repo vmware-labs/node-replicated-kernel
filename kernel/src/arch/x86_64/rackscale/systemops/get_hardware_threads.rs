@@ -37,6 +37,7 @@ pub(crate) fn rpc_get_hardware_threads(
         &[&[]],
         &mut [&mut res_data],
     )?;
+    drop(rpc_client);
 
     // Decode and return result
     if let Some((res, remaining)) = unsafe { decode::<KResult<(u64, u64)>>(&mut res_data) } {

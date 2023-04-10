@@ -83,6 +83,11 @@ pub(crate) enum ProcessOpMut {
     AllocateFrameToProcess(Frame),
     /// Remove a physical frame previosuly allocated to the process (returns a Frame).
     ReleaseFrameFromProcess(FrameId),
+
+    #[cfg(feature = "rackscale")]
+    DispatcherAllocation(Frame, kpi::system::MachineId),
+
+    #[cfg(not(feature = "rackscale"))]
     DispatcherAllocation(Frame),
 
     MemMapFrame(VAddr, Frame, MapAction),
@@ -375,8 +380,14 @@ impl<P: Process> NrProcess<P> {
 
         let node = *crate::environment::NODE_ID;
 
+        #[cfg(feature = "rackscale")]
+        let mid = *crate::environment::MACHINE_ID;
+
         let response = PROCESS_TABLE[node][pid].execute_mut(
+            #[cfg(not(feature = "rackscale"))]
             ProcessOpMut::DispatcherAllocation(frame),
+            #[cfg(feature = "rackscale")]
+            ProcessOpMut::DispatcherAllocation(frame, mid),
             PROCESS_TOKEN.get().unwrap()[pid],
         );
 
@@ -539,8 +550,15 @@ where
                 Ok(ProcessResult::Ok)
             }
 
+            #[cfg(not(feature = "rackscale"))]
             ProcessOpMut::DispatcherAllocation(frame) => {
                 let how_many = self.process.allocate_executors(frame)?;
+                Ok(ProcessResult::ExecutorsCreated(how_many))
+            }
+
+            #[cfg(feature = "rackscale")]
+            ProcessOpMut::DispatcherAllocation(frame, mid) => {
+                let how_many = self.process.allocate_executors(frame, mid)?;
                 Ok(ProcessResult::ExecutorsCreated(how_many))
             }
 
@@ -591,7 +609,14 @@ where
             }
 
             ProcessOpMut::AssignExecutor(gtid, region) => {
+                #[cfg(not(feature = "rackscale"))]
                 let executor = self.process.get_executor(region)?;
+
+                #[cfg(feature = "rackscale")]
+                let executor = self
+                    .process
+                    .get_executor(region, kpi::system::mid_from_gtid(gtid))?;
+
                 let eid = executor.id();
                 self.active_cores.try_push((gtid, eid))?;
                 Ok(ProcessResult::Executor(executor))

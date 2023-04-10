@@ -220,6 +220,7 @@ fn rackscale_shootdown_test() {
     }
 }
 
+// TODO: this test is a work in progress.
 fn concurrent_shootdown_test() {
     use x86::bits64::paging::BASE_PAGE_SIZE;
 
@@ -320,21 +321,13 @@ fn scheduler_smp_test() {
 
     // for rackscale, this ensures only one process tries to take all threads.
     if pinfo.pid == 0 {
-        let thread_iter = if current_mid == 0 {
-            // non-rackscale, use all threads
-            threads.iter()
-        } else {
-            // for rackscale, use all threads except the one belonging to the other process
-            threads[1..].iter()
-        };
-
         // for rackscale, core given will likely not be core asked for, so we'll do some bookkeeping.
         let mut core_ids = Vec::with_capacity(threads.len());
 
         // we already have current core
         core_ids.push(current_gtid);
 
-        for thread in thread_iter {
+        for thread in threads.iter() {
             if thread.id != current_gtid {
                 let r = vibrio::syscalls::Process::request_core(
                     thread.id,
@@ -366,19 +359,6 @@ fn scheduler_smp_test() {
                 None,
             );
         }
-    } else {
-        s.spawn(
-            32 * 4096,
-            move |_| {
-                info!(
-                    "Hello from core {}",
-                    lineup::tls2::Environment::scheduler().core_id
-                );
-            },
-            ptr::null_mut(),
-            current_gtid,
-            None,
-        );
     }
 
     // Run scheduler on current core
@@ -972,12 +952,6 @@ pub extern "C" fn _start() -> ! {
     #[cfg(feature = "fxmark")]
     {
         use core::str::FromStr;
-
-        // This is for rackscale - we only want to ever spawn one fxmark test.
-        if pinfo.pid != 0 {
-            info!("Extra fxmark process; exiting now.");
-            vibrio::syscalls::Process::exit(0);
-        }
 
         //python3 ./run.py --kfeature test-userspace --ufeatures fxmark --qemu-cores 1 --cmd initargs=1xdrbl
         let (ncores, open_files, benchmark, write_ratio) =

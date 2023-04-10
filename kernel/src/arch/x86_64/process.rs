@@ -1008,7 +1008,11 @@ pub(crate) struct Ring3Process {
     /// The entry point of the ELF file (set during elfloading).
     pub entry_point: VAddr,
     /// Executor cache (holds a per-region cache of executors)
+    #[cfg(not(feature = "rackscale"))]
     pub executor_cache: ArrayVec<Option<Vec<Box<Ring3Executor>>>, MAX_NUMA_NODES>,
+    #[cfg(feature = "rackscale")]
+    pub executor_cache:
+        ArrayVec<Option<Vec<Box<Ring3Executor>>>, { MAX_NUMA_NODES * crate::arch::MAX_MACHINES }>,
     /// Offset where executor memory is located in user-space.
     pub executor_offset: VAddr,
     /// File descriptors for the opened file.
@@ -1027,8 +1031,15 @@ pub(crate) struct Ring3Process {
 impl Ring3Process {
     fn new(pid: Pid, allocator: Box<dyn Allocator + Sync + Send>) -> Result<Self, KError> {
         const NONE_EXECUTOR: Option<Vec<Box<Ring3Executor>>> = None;
+        #[cfg(not(feature = "rackscale"))]
         let executor_cache: ArrayVec<Option<Vec<Box<Ring3Executor>>>, MAX_NUMA_NODES> =
             ArrayVec::from([NONE_EXECUTOR; MAX_NUMA_NODES]);
+
+        #[cfg(feature = "rackscale")]
+        let executor_cache: ArrayVec<
+            Option<Vec<Box<Ring3Executor>>>,
+            { MAX_NUMA_NODES * crate::arch::MAX_MACHINES },
+        > = ArrayVec::from([NONE_EXECUTOR; MAX_NUMA_NODES * crate::arch::MAX_MACHINES]);
 
         const NONE_FD: Option<FileDescriptorEntry> = None;
         let fds: ArrayVec<Option<FileDescriptorEntry>, MAX_FILES_PER_PROCESS> =
@@ -1052,6 +1063,15 @@ impl Ring3Process {
             writeable_sections: ArrayVec::new(),
             read_only_offset: VAddr::zero(),
         })
+    }
+
+    #[cfg(feature = "rackscale")]
+    fn get_executor_index(
+        &self,
+        affinity: atopology::NodeId,
+        mid: kpi::system::MachineId,
+    ) -> usize {
+        mid * MAX_NUMA_NODES + affinity
     }
 }
 
@@ -1374,8 +1394,16 @@ impl Process for Ring3Process {
     fn get_executor(
         &mut self,
         for_region: atopology::NodeId,
+
+        #[cfg(feature = "rackscale")] mid: kpi::system::MachineId,
     ) -> Result<Box<Ring3Executor>, KError> {
-        match &mut self.executor_cache[for_region as usize] {
+        #[cfg(not(feature = "rackscale"))]
+        let index = for_region as usize;
+
+        #[cfg(feature = "rackscale")]
+        let index = self.get_executor_index(for_region, mid);
+
+        match &mut self.executor_cache[index] {
             Some(ref mut executor_list) => {
                 let ret = executor_list.pop().ok_or(KError::ExecutorCacheExhausted)?;
                 //info!("get executor {} with affinity {}", ret.eid, for_region);
@@ -1386,24 +1414,60 @@ impl Process for Ring3Process {
     }
 
     /// Create a series of dispatcher objects for the process
-    fn allocate_executors(&mut self, memory: Frame) -> Result<usize, KError> {
+    fn allocate_executors(
+        &mut self,
+        memory: Frame,
+
+        #[cfg(feature = "rackscale")] mid: kpi::system::MachineId,
+    ) -> Result<usize, KError> {
         let executor_space_requirement = Ring3Executor::EXECUTOR_SPACE_REQUIREMENT;
         let executors_to_create = memory.size() / executor_space_requirement;
 
-        KernelAllocator::try_refill_tcache(20, 0, MemType::Mem).expect("Refill didn't work");
-        self.vspace
-            .map_frame(
+        // Only map to kernel space for local (valid) frames
+        #[cfg(feature = "rackscale")]
+        if mid == *crate::environment::MACHINE_ID {
+            KernelAllocator::try_refill_tcache(20, 0, MemType::Mem).expect("Refill didn't work");
+            self.vspace
+                .map_frame(
+                    self.executor_offset,
+                    memory,
+                    MapAction::user() | MapAction::write(),
+                )
+                .expect("Can't map user-space executor memory.");
+            log::info!(
+                "executor space base expanded {:#x} size: {} end {:#x}",
                 self.executor_offset,
-                memory,
-                MapAction::user() | MapAction::write(),
-            )
-            .expect("Can't map user-space executor memory.");
-        info!(
-            "executor space base expanded {:#x} size: {} end {:#x}",
-            self.executor_offset,
-            memory.size(),
-            self.executor_offset + memory.size()
-        );
+                memory.size(),
+                self.executor_offset + memory.size()
+            );
+        } else {
+            log::info!(
+                "skipping executor space vspace mapping for mid={:?} on mid={:?} {:#x} size: {} end {:#x}",
+                mid,
+                *crate::environment::MACHINE_ID,
+                self.executor_offset,
+                memory.size(),
+                self.executor_offset + memory.size()
+            );
+        }
+
+        #[cfg(not(feature = "rackscale"))]
+        {
+            KernelAllocator::try_refill_tcache(20, 0, MemType::Mem).expect("Refill didn't work");
+            self.vspace
+                .map_frame(
+                    self.executor_offset,
+                    memory,
+                    MapAction::user() | MapAction::write(),
+                )
+                .expect("Can't map user-space executor memory.");
+            info!(
+                "executor space base expanded {:#x} size: {} end {:#x}",
+                self.executor_offset,
+                memory.size(),
+                self.executor_offset + memory.size()
+            );
+        }
 
         let executor_space = executor_space_requirement * executors_to_create;
         let prange = memory.base..memory.base + executor_space;
@@ -1436,13 +1500,17 @@ impl Process for Ring3Process {
                 memory.affinity,
             ))?;
 
-            debug!("Created {} affinity {}", executor, memory.affinity);
+            #[cfg(not(feature = "rackscale"))]
+            let index = memory.affinity as usize;
+
+            #[cfg(feature = "rackscale")]
+            let index = self.get_executor_index(memory.affinity, mid);
 
             // TODO(error-handling): Needs to properly unwind on alloc errors
             // (e.g., have something that frees vcpu mem etc. on drop())
-            match &mut self.executor_cache[memory.affinity as usize] {
+            match &mut self.executor_cache[index] {
                 Some(ref mut vector) => vector.try_push(executor)?,
-                None => self.executor_cache[memory.affinity as usize] = Some(try_vec![executor]?),
+                None => self.executor_cache[index] = Some(try_vec![executor]?),
             }
 
             self.current_eid += 1;

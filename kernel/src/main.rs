@@ -120,6 +120,10 @@ pub(crate) fn main() {
         .map_or(false, |c| c.mode == cmdline::Mode::Controller)
     {
         arch::rackscale::controller::run();
+    } else if *crate::environment::MACHINE_ID != 1 {
+        // For clients other than client 1, just wait for work.
+        log::info!("Waiting for work!");
+        crate::scheduler::schedule()
     }
 
     #[cfg(not(feature = "integration-test"))]

@@ -9,6 +9,7 @@
 //! execution taking into account the dependency chain:
 //! * `s11_*`: Rackscale (distributed) benchmarks
 
+use spin::Mutex;
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::Path;
@@ -23,7 +24,7 @@ use testutils::helpers::{
     notify_controller_of_termination, setup_network, spawn_dcm, spawn_nrk, spawn_shmem_server,
     wait_for_client_termination, CLIENT_BUILD_DELAY, SHMEM_PATH, SHMEM_SIZE,
 };
-use testutils::runner_args::{check_for_successful_exit, wait_for_sigterm, RunnerArgs};
+use testutils::runner_args::{wait_for_sigterm, wait_for_sigterm_or_successful_exit, RunnerArgs};
 
 #[test]
 #[cfg(not(feature = "baremetal"))]
@@ -46,7 +47,6 @@ fn rackscale_fxmark_benchmark(is_shmem: bool) {
 
     // benchmark naming convention = nameXwrite - mixX10 is - mix benchmark for 10% writes.
     let benchmarks = vec!["mixX0", "mixX10", "mixX100"];
-    //let benchmarks = vec!["mixX10"];
     let num_microbenchs = benchmarks.len() as u64;
 
     let file_name = if is_shmem {
@@ -74,8 +74,8 @@ fn rackscale_fxmark_benchmark(is_shmem: bool) {
     let _machine = Machine::determine();
     let threads = [1, 2, 4];
     let max_cores = *threads.iter().max().unwrap();
-    // let num_clients = [1, 2, 4];
-    let num_clients = [1];
+
+    let num_clients = [1, 2, 4];
     let max_clients = *num_clients.iter().max().unwrap();
 
     fn open_files(benchmark: &str, max_cores: usize, nodes: usize) -> Vec<usize> {
@@ -108,22 +108,15 @@ fn rackscale_fxmark_benchmark(is_shmem: bool) {
 
             for &cores in threads.iter() {
                 let timeout =
-                    num_microbenchs * (90_000 + cores as u64 * 20000 + nclients as u64 * 10000);
+                    num_microbenchs * (120_000 + cores as u64 * 20000 + nclients as u64 * 10000);
 
                 for &of in open_files.iter() {
                     let (tx, rx) = channel();
+                    let rx_mut = Arc::new(Mutex::new(rx));
 
                     let mut shmem_server = spawn_shmem_server(SHMEM_PATH, shmem_size)
                         .expect("Failed to start shmem server");
                     let mut dcm = spawn_dcm(1, timeout).expect("Failed to start DCM");
-
-                    let kernel_cmdline = format!(
-                        "mode=client transport={} initargs={}X{}X{}",
-                        if is_shmem { "shmem" } else { "ethernet" },
-                        cores,
-                        of,
-                        benchmark
-                    );
 
                     let controller_cmdline = format!(
                         "mode=controller transport={}",
@@ -141,9 +134,8 @@ fn rackscale_fxmark_benchmark(is_shmem: bool) {
                                 .shmem_path(SHMEM_PATH)
                                 .tap("tap0")
                                 .no_network_setup()
-                                .workers(2)
+                                .workers(nclients + 1)
                                 .use_vmxnet3();
-                        //.setaffinity()
 
                         if cfg!(feature = "smoke") {
                             cmdline_controller = cmdline_controller.memory(8192);
@@ -151,53 +143,10 @@ fn rackscale_fxmark_benchmark(is_shmem: bool) {
                             cmdline_controller =
                                 cmdline_controller.memory(core::cmp::max(73728, cores * 2048));
                         }
-                        //cmdline_controller = cmdline_controller.nodes(0);
-
-                        let output = String::new();
-                        let qemu_run = || -> Result<WaitStatus> {
-                            let mut p = spawn_nrk(&cmdline_controller)?;
-
-                            let _ = wait_for_client_termination::<()>(&rx);
-                            p.process.kill(SIGTERM)
-                        };
-                        wait_for_sigterm(&cmdline_controller, qemu_run(), output);
-                    });
-
-                    // TODO(rackscale): add loop for nclients
-                    let build2 = build.clone();
-                    let client = std::thread::spawn(move || {
-                        sleep(Duration::from_millis(CLIENT_BUILD_DELAY));
-                        let mut cmdline_client =
-                            RunnerArgs::new_with_build("userspace-smp", &build2)
-                                .timeout(timeout)
-                                .shmem_size(shmem_size as usize)
-                                .shmem_path(SHMEM_PATH)
-                                .tap("tap2")
-                                .no_network_setup()
-                                .workers(2)
-                                .cores(max_cores)
-                                .use_vmxnet3()
-                                .cmd(kernel_cmdline.as_str());
-                        //.setaffinity()
-
-                        if cfg!(feature = "smoke") {
-                            cmdline_client = cmdline_client.memory(8192);
-                        } else {
-                            cmdline_client =
-                                cmdline_client.memory(core::cmp::max(73728, cores * 2048));
-                        }
-
-                        /*
-                        if cfg!(feature = "smoke") && cores > 2 {
-                            cmdline_client = cmdline_client.nodes(2);
-                        } else {
-                            cmdline_client = cmdline_client.nodes(machine.max_numa_nodes());
-                        }
-                        */
 
                         let mut output = String::new();
-                        let mut qemu_run = |_with_cores: usize| -> Result<WaitStatus> {
-                            let mut p = spawn_nrk(&cmdline_client)?;
+                        let mut qemu_run = || -> Result<WaitStatus> {
+                            let mut p = spawn_nrk(&cmdline_controller)?;
 
                             // Parse lines like
                             // `init::fxmark: 1,fxmark,2,2048,10000,4000,1863272`
@@ -208,8 +157,6 @@ fn rackscale_fxmark_benchmark(is_shmem: bool) {
                                 cores * 10
                             };
 
-                            // TODO(rackscale): for prep for multiclients, move to controller.
-                            // TODO(rackscale): need to output num clients
                             for _i in 0..expected_lines {
                                 let (prev, matched) = p.exp_regex(
                                     r#"init::fxmark: (\d+),(.*),(\d+),(\d+),(\d+),(\d+),(\d+),(\d+)"#,
@@ -225,8 +172,7 @@ fn rackscale_fxmark_benchmark(is_shmem: bool) {
                                     .open(file_name)
                                     .expect("Can't open file");
                                 if write_headers {
-                                    // TODO(rackscale): need to output num clients
-                                    let row = "git_rev,thread_id,benchmark,ncores,write_ratio,open_files,duration_total,duration,operations\n";
+                                    let row = "git_rev,nclients,thread_id,benchmark,ncores,write_ratio,open_files,duration_total,duration,operations\n";
                                     let r = csv_file.write(row.as_bytes());
                                     assert!(r.is_ok());
                                 }
@@ -234,27 +180,88 @@ fn rackscale_fxmark_benchmark(is_shmem: bool) {
                                 let parts: Vec<&str> = matched.split("init::fxmark: ").collect();
                                 let r = csv_file.write(format!("{},", env!("GIT_HASH")).as_bytes());
                                 assert!(r.is_ok());
+                                let r = csv_file.write(format!("{},", nclients).as_bytes());
+                                assert!(r.is_ok());
                                 let r = csv_file.write(parts[1].as_bytes());
                                 assert!(r.is_ok());
                                 let r = csv_file.write("\n".as_bytes());
                                 assert!(r.is_ok());
                             }
 
-                            output += p.exp_eof()?.as_str();
-                            notify_controller_of_termination(&tx);
-                            p.process.exit()
+                            for _i in 0..nclients {
+                                notify_controller_of_termination(&tx);
+                            }
+                            p.process.kill(SIGTERM)
                         };
-                        check_for_successful_exit(&cmdline_client, qemu_run(cores), output);
+                        wait_for_sigterm(&cmdline_controller, qemu_run(), output);
                     });
 
+                    let mut clients = Vec::new();
+                    for nclient in 1..(nclients + 1) {
+                        let kernel_cmdline = format!(
+                            "mode=client transport={} initargs={}X{}X{}",
+                            if is_shmem { "shmem" } else { "ethernet" },
+                            cores * nclients,
+                            of,
+                            benchmark
+                        );
+
+                        let tap = format!("tap{}", 2 * nclient);
+                        let my_rx_mut = rx_mut.clone();
+                        let build2 = build.clone();
+                        let client = std::thread::spawn(move || {
+                            sleep(Duration::from_millis(CLIENT_BUILD_DELAY * nclient as u64));
+                            let mut cmdline_client =
+                                RunnerArgs::new_with_build("userspace-smp", &build2)
+                                    .timeout(timeout)
+                                    .shmem_size(shmem_size as usize)
+                                    .shmem_path(SHMEM_PATH)
+                                    .tap(&tap)
+                                    .no_network_setup()
+                                    .workers(nclients + 1)
+                                    .cores(max_cores)
+                                    .use_vmxnet3()
+                                    .nobuild()
+                                    .cmd(kernel_cmdline.as_str());
+
+                            if cfg!(feature = "smoke") {
+                                cmdline_client = cmdline_client.memory(8192);
+                            } else {
+                                cmdline_client =
+                                    cmdline_client.memory(core::cmp::max(73728, cores * 2048));
+                            }
+
+                            let output = String::new();
+                            let qemu_run = |_with_cores: usize| -> Result<WaitStatus> {
+                                let mut p = spawn_nrk(&cmdline_client)?;
+
+                                let rx = my_rx_mut.lock();
+                                let _ = wait_for_client_termination::<()>(&rx);
+                                p.process.kill(SIGTERM)
+                            };
+                            // Could exit with 'success' or from sigterm, depending on number of clients.
+                            wait_for_sigterm_or_successful_exit(
+                                &cmdline_client,
+                                qemu_run(cores),
+                                output,
+                            );
+                        });
+                        clients.push(client)
+                    }
+
                     let controller_ret = controller.join();
-                    let client_ret = client.join();
+                    let mut client_rets = Vec::new();
+                    for client in clients {
+                        client_rets.push(client.join());
+                    }
 
                     let _ignore = shmem_server.send_control('c');
                     let _ignore = dcm.send_control('c');
 
-                    client_ret.unwrap();
                     controller_ret.unwrap();
+                    for client_ret in client_rets {
+                        client_ret.unwrap();
+                    }
                 }
             }
         }

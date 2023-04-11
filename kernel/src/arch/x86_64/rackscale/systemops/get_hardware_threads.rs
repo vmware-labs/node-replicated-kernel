@@ -25,7 +25,7 @@ pub(crate) fn rpc_get_hardware_threads(
     vaddr_buf: u64,
     vaddr_buf_len: u64,
 ) -> KResult<(u64, u64)> {
-    log::debug!("GetHardwareThreads()");
+    log::warn!("GetHardwareThreads()");
 
     // Setup result
     // TODO: make dynamic, for now, size copied from kpi implementation
@@ -40,8 +40,6 @@ pub(crate) fn rpc_get_hardware_threads(
 
     // Decode and return result
     if let Some((res, remaining)) = unsafe { decode::<KResult<(u64, u64)>>(&mut res_data) } {
-        log::debug!("GetHardwareThreads() {:?}", res);
-
         if let Ok((data_len, n)) = res {
             if *data_len as usize <= remaining.len() && *data_len <= vaddr_buf_len {
                 let mut user_slice =
@@ -50,6 +48,7 @@ pub(crate) fn rpc_get_hardware_threads(
                     &mut user_slice,
                     &remaining[..*data_len as usize],
                 )?;
+                log::warn!("GetHardwareThreads() = {:?}", res);
                 Ok((*data_len, *n))
             } else {
                 log::error!(

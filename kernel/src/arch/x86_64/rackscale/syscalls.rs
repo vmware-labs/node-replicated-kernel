@@ -42,6 +42,7 @@ impl SystemCallDispatch<u64> for Arch86LwkSystemCall {}
 
 impl VSpaceDispatch<u64> for Arch86LwkSystemCall {
     fn map_mem(&self, base: u64, size: u64) -> Result<(u64, u64), KError> {
+        log::warn!("map_mem({:x} {:?})", base, size);
         // Implementation mostly copied from map_generic in x86 syscalls.rs
         let base = VAddr::from(base);
         let pcm = try_per_core_mem().ok_or(KError::KcbUnavailable)?;
@@ -169,6 +170,7 @@ impl VSpaceDispatch<u64> for Arch86LwkSystemCall {
             }
         }
 
+        log::warn!("map_mem({:x} {:?}) before NrProc operation", base, size);
         nrproc::NrProcess::<Ring3Process>::map_frames(
             current_pid()?,
             base,
@@ -176,6 +178,12 @@ impl VSpaceDispatch<u64> for Arch86LwkSystemCall {
             MapAction::write(),
         )
         .expect("Can't map memory");
+        log::warn!(
+            "map_mem({:x} {:?}) = {:?}",
+            base,
+            size,
+            (paddr.unwrap().as_u64(), total_len as u64)
+        );
 
         Ok((paddr.unwrap().as_u64(), total_len as u64))
     }

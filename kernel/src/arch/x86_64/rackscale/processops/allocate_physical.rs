@@ -33,7 +33,7 @@ unsafe_abomonate!(AllocatePhysicalReq: size, affinity);
 
 /// RPC to forward physical memory allocation request to controller.
 pub(crate) fn rpc_allocate_physical(pid: Pid, size: u64, affinity: u64) -> KResult<(u64, u64)> {
-    log::debug!("AllocatePhysical({:?}, {:?})", size, affinity);
+    log::warn!("AllocatePhysical({:?}, {:?})", size, affinity);
 
     // Construct request data
     let req = AllocatePhysicalReq {
@@ -70,17 +70,14 @@ pub(crate) fn rpc_allocate_physical(pid: Pid, size: u64, affinity: u64) -> KResu
             // TODO(rackscale performance): should be debug assert
             assert!(is_shmem_frame(frame, false, false));
 
-            log::debug!(
-                "AllocatePhysical() mapping base from {:x?} to {:?}",
-                *frame_base,
-                frame,
-            );
+            log::warn!("AllocatePhysical() before NrProc operation");
 
             let fid = NrProcess::<Ring3Process>::allocate_frame_to_process(pid, frame)?;
 
             // Add frame mapping to client map
             CLIENT_STATE.add_frame(fid, *node_id);
 
+            log::warn!("AllocatePhysical() done");
             return Ok((fid as u64, *frame_base));
         } else {
             return *res;

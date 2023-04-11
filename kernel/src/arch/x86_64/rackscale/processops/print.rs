@@ -26,6 +26,7 @@ pub(crate) struct LogReq {
 unsafe_abomonate!(LogReq: machine_id);
 
 pub(crate) fn rpc_log(msg: String) -> KResult<(u64, u64)> {
+    log::warn!("Log()");
     if let Some(print_str) = SerialControl::buffered_print_and_return(&msg) {
         // Construct request data
         let req = LogReq {
@@ -46,14 +47,17 @@ pub(crate) fn rpc_log(msg: String) -> KResult<(u64, u64)> {
         // Decode and return the result
         if let Some((res, remaining)) = unsafe { decode::<KResult<(u64, u64)>>(&mut res_data) } {
             if remaining.len() > 0 {
+                log::error!("Log() RPC failed");
                 Err(KError::from(RPCError::ExtraData))
             } else {
+                log::warn!("Log() finished.");
                 *res
             }
         } else {
             Err(KError::from(RPCError::MalformedResponse))
         }
     } else {
+        log::warn!("Log() finished.");
         Ok((0, 0))
     }
 }

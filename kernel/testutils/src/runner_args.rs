@@ -483,22 +483,19 @@ pub fn wait_for_sigterm_or_successful_exit(
     r: Result<WaitStatus>,
     output: String,
 ) {
+    log_qemu_out(args, output);
     match r {
         Ok(WaitStatus::Signaled(_, SIGTERM, _)) => { /* This is what we expect */ }
-
         Ok(WaitStatus::Exited(_, code)) => {
             let exit_status: ExitStatus = code.into();
             if exit_status != ExitStatus::Success {
-                log_qemu_out(args, output);
                 panic!("Unexpected exit code from QEMU: {}", exit_status);
             } // else -> this is what we expect.
         }
         Err(e) => {
-            log_qemu_out(args, output);
             panic!("Qemu testing failed: {}", e);
         }
         e => {
-            log_qemu_out(args, output);
             panic!(
                 "Something weird happened to the Qemu process, please investigate: {:?}",
                 e

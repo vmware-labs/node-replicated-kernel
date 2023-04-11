@@ -231,13 +231,15 @@ fn rackscale_fxmark_benchmark(is_shmem: bool) {
                                     cmdline_client.memory(core::cmp::max(73728, cores * 2048));
                             }
 
-                            let output = String::new();
-                            let qemu_run = |_with_cores: usize| -> Result<WaitStatus> {
+                            let mut output = String::new();
+                            let mut qemu_run = |_with_cores: usize| -> Result<WaitStatus> {
                                 let mut p = spawn_nrk(&cmdline_client)?;
 
                                 let rx = my_rx_mut.lock();
                                 let _ = wait_for_client_termination::<()>(&rx);
-                                p.process.kill(SIGTERM)
+                                let ret = p.process.kill(SIGTERM);
+                                output += p.exp_eof()?.as_str();
+                                ret
                             };
                             // Could exit with 'success' or from sigterm, depending on number of clients.
                             wait_for_sigterm_or_successful_exit(
@@ -258,10 +260,10 @@ fn rackscale_fxmark_benchmark(is_shmem: bool) {
                     let _ignore = shmem_server.send_control('c');
                     let _ignore = dcm.send_control('c');
 
-                    controller_ret.unwrap();
                     for client_ret in client_rets {
                         client_ret.unwrap();
                     }
+                    controller_ret.unwrap();
                 }
             }
         }

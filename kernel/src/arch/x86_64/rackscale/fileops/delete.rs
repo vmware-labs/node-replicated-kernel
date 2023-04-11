@@ -6,7 +6,6 @@ use alloc::string::String;
 use abomonation::{decode, encode, unsafe_abomonate, Abomonation};
 use core2::io::Result as IOResult;
 use core2::io::Write;
-use log::{debug, warn};
 use rpc::rpc::*;
 use rpc::RPCClient;
 
@@ -27,7 +26,7 @@ pub(crate) struct DeleteReq {
 unsafe_abomonate!(DeleteReq: pid);
 
 pub(crate) fn rpc_delete(pid: usize, pathname: String) -> KResult<(u64, u64)> {
-    debug!("Delete({:?})", pathname);
+    log::warn!("Delete({:?})", pathname);
 
     // Construct request data
     let req = DeleteReq { pid };
@@ -50,7 +49,7 @@ pub(crate) fn rpc_delete(pid: usize, pathname: String) -> KResult<(u64, u64)> {
         if remaining.len() > 0 {
             return Err(KError::from(RPCError::ExtraData));
         }
-        debug!("Delete() {:?}", res);
+        log::warn!("Delete() {:?}", res);
         return *res;
     } else {
         return Err(KError::from(RPCError::MalformedResponse));
@@ -67,7 +66,7 @@ pub(crate) fn handle_delete(
     let pid = match unsafe { decode::<DeleteReq>(payload) } {
         Some((req, _)) => req.pid,
         None => {
-            warn!("Invalid payload for request: {:?}", hdr);
+            log::error!("Invalid payload for request: {:?}", hdr);
             construct_error_ret(hdr, payload, KError::from(RPCError::MalformedRequest));
             return Ok(state);
         }

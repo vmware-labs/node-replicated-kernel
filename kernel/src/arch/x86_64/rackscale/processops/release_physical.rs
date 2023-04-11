@@ -34,7 +34,7 @@ unsafe_abomonate!(ReleasePhysicalReq: frame_base, frame_size, node_id);
 
 /// RPC to forward physical memory release to controller.
 pub(crate) fn rpc_release_physical(pid: Pid, frame_id: u64) -> KResult<(u64, u64)> {
-    log::debug!("ReleasePhysical({:?})", frame_id);
+    log::warn!("ReleasePhysical({:?})", frame_id);
 
     // Construct request data
     let node_id = CLIENT_STATE.get_frame_as(frame_id as FrameId)?;
@@ -66,8 +66,10 @@ pub(crate) fn rpc_release_physical(pid: Pid, frame_id: u64) -> KResult<(u64, u64
     // Decode result, return result if decoded successfully
     if let Some((res, remaining)) = unsafe { decode::<KResult<(u64, u64)>>(&mut res_data) } {
         if remaining.len() > 0 {
+            log::error!("Release physical RPC failed with extra data");
             Err(KError::from(RPCError::ExtraData))
         } else {
+            log::warn!("ReleasePhysical({:?}) = {:?}", frame_id, *res);
             *res
         }
     } else {

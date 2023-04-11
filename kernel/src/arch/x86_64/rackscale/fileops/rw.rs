@@ -49,7 +49,7 @@ pub(crate) fn rpc_writeat(
     offset: i64,
     data: &[u8],
 ) -> KResult<(u64, u64)> {
-    log::debug!("Write({:?}, {:?})", fd, offset);
+    log::warn!("Write({:?}, {:?})", fd, offset);
 
     // Constrcut request data
     let req = RWReq {
@@ -81,7 +81,7 @@ pub(crate) fn rpc_writeat(
         if remaining.len() > 0 {
             return Err(KError::from(RPCError::ExtraData));
         }
-        log::debug!("Write() {:?}", res);
+        log::warn!("Write() {:?}", res);
         return *res;
     } else {
         return Err(KError::from(RPCError::MalformedResponse));
@@ -100,7 +100,7 @@ pub(crate) fn rpc_readat(
     offset: i64,
 ) -> KResult<(u64, u64)> {
     let uslice_len = uslice.len();
-    log::debug!("Read({:?}, {:?})", uslice_len, offset);
+    log::warn!("Read({:?}, {:?})", uslice_len, offset);
     assert!(
         uslice_len <= RW_SHMEM_BUF_LEN,
         "Read too long - not supported!"
@@ -143,22 +143,26 @@ pub(crate) fn rpc_readat(
             Err(KError::from(RPCError::ExtraData))
         } else {
             let ret = *res;
-            log::debug!("Read(At)() {:?}", ret);
+            log::warn!("Read(At)() before NrProc operation {:?}", ret);
 
             // Copy the read data into the user slice
             match ret {
-                Ok((bytes_read, n)) => NrProcess::<Ring3Process>::userspace_exec_slice_mut(
-                    uslice,
-                    Box::try_new(move |ubuf: &mut [u8]| {
-                        (&mut ubuf[..bytes_read as usize]).copy_from_slice(
-                            &RW_SHMEM_BUF
-                                .get()
-                                .expect("read/write shmem buff should be initialized")
-                                .borrow()[..bytes_read as usize],
-                        );
-                        Ok((bytes_read, n))
-                    })?,
-                ),
+                Ok((bytes_read, n)) => {
+                    let my_ret = NrProcess::<Ring3Process>::userspace_exec_slice_mut(
+                        uslice,
+                        Box::try_new(move |ubuf: &mut [u8]| {
+                            (&mut ubuf[..bytes_read as usize]).copy_from_slice(
+                                &RW_SHMEM_BUF
+                                    .get()
+                                    .expect("read/write shmem buff should be initialized")
+                                    .borrow()[..bytes_read as usize],
+                            );
+                            Ok((bytes_read, n))
+                        })?,
+                    );
+                    log::warn!("Read(At)() {:?}", my_ret);
+                    my_ret
+                }
                 Err(e) => Err(e),
             }
         }

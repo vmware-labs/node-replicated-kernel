@@ -8,7 +8,6 @@ use abomonation::{decode, encode, unsafe_abomonate, Abomonation};
 use core2::io::Result as IOResult;
 use core2::io::Write;
 use kpi::io::FileModes;
-use log::{debug, warn};
 
 use rpc::rpc::*;
 use rpc::RPCClient;
@@ -34,7 +33,7 @@ pub(crate) fn rpc_mkdir<P: AsRef<[u8]> + Debug>(
     pathname: P,
     modes: FileModes,
 ) -> KResult<(u64, u64)> {
-    debug!("MkDir({:?})", pathname);
+    log::warn!("MkDir({:?})", pathname);
 
     // Construct request data
     let req = MkDirReq { pid, modes };
@@ -56,7 +55,7 @@ pub(crate) fn rpc_mkdir<P: AsRef<[u8]> + Debug>(
         if remaining.len() > 0 {
             Err(KError::from(RPCError::ExtraData))
         } else {
-            debug!("MkDir() {:?}", res);
+            log::warn!("MkDir() {:?}", res);
             *res
         }
     } else {
@@ -74,7 +73,7 @@ pub(crate) fn handle_mkdir(
     let (pid, modes) = match unsafe { decode::<MkDirReq>(payload) } {
         Some((req, _)) => (req.pid, req.modes),
         None => {
-            warn!("Invalid payload for request: {:?}", hdr);
+            log::error!("Invalid payload for request: {:?}", hdr);
             construct_error_ret(hdr, payload, KError::from(RPCError::MalformedRequest));
             return Ok(state);
         }

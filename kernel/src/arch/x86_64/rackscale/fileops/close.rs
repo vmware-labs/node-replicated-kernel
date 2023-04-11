@@ -4,7 +4,6 @@
 use abomonation::{decode, encode, unsafe_abomonate, Abomonation};
 use core2::io::Result as IOResult;
 use core2::io::Write;
-use log::{debug, warn};
 
 use rpc::rpc::*;
 use rpc::RPCClient;
@@ -26,7 +25,7 @@ pub(crate) struct CloseReq {
 unsafe_abomonate!(CloseReq: pid, fd);
 
 pub(crate) fn rpc_close(pid: usize, fd: FileDescriptor) -> KResult<(u64, u64)> {
-    debug!("Close({:?})", fd);
+    log::warn!("Close({:?})", fd);
 
     // Setup request data
     let req = CloseReq { pid, fd };
@@ -49,7 +48,7 @@ pub(crate) fn rpc_close(pid: usize, fd: FileDescriptor) -> KResult<(u64, u64)> {
         if remaining.len() > 0 {
             Err(KError::from(RPCError::ExtraData))
         } else {
-            debug!("Close() {:?}", res);
+            log::warn!("Close() {:?}", res);
             *res
         }
 
@@ -67,7 +66,7 @@ pub(crate) fn handle_close(
 ) -> Result<ControllerState, RPCError> {
     // Decode request
     let ret = if let Some((req, _)) = unsafe { decode::<CloseReq>(payload) } {
-        debug!("Close(pid={:?}), fd={:?}", req.pid, req.fd);
+        log::debug!("Close(pid={:?}), fd={:?}", req.pid, req.fd);
         cnrfs::MlnrKernelNode::unmap_fd(req.pid, req.fd)
     // Report error if failed to decode request
     } else {

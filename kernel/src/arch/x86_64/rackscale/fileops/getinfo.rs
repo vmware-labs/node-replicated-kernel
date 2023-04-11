@@ -27,7 +27,7 @@ pub(crate) struct GetInfoReq {
 unsafe_abomonate!(GetInfoReq: pid);
 
 pub(crate) fn rpc_getinfo<P: AsRef<[u8]> + Debug>(pid: usize, name: P) -> KResult<(u64, u64)> {
-    debug!("GetInfo({:?})", name);
+    log::warn!("GetInfo({:?})", name);
 
     // Construct request data
     let req = GetInfoReq { pid };
@@ -48,7 +48,7 @@ pub(crate) fn rpc_getinfo<P: AsRef<[u8]> + Debug>(pid: usize, name: P) -> KResul
         if remaining.len() > 0 {
             Err(KError::from(RPCError::ExtraData))
         } else {
-            debug!("GetInfo() {:?}", res);
+            log::warn!("GetInfo() {:?}", res);
             *res
         }
     } else {

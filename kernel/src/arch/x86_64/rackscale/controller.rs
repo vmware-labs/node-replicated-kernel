@@ -4,6 +4,7 @@
 use alloc::boxed::Box;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
+use core::cell::Cell;
 use fallible_collections::FallibleVecGlobal;
 use smoltcp::time::Instant;
 
@@ -22,6 +23,24 @@ const PORT: u16 = 6970;
 
 /// Controller main method
 pub(crate) fn run() {
+    // Create network interface and clock
+    #[derive(Debug)]
+    #[cfg_attr(feature = "defmt", derive(defmt::Format))]
+    pub(crate) struct Clock(Cell<Instant>);
+
+    impl Clock {
+        fn new() -> Clock {
+            let rt = rawtime::Instant::now().as_nanos();
+            let rt_millis = (rt / 1_000_000) as i64;
+            Clock(Cell::new(Instant::from_millis(rt_millis)))
+        }
+
+        fn elapsed(&self) -> Instant {
+            self.0.get()
+        }
+    }
+    let clock = Clock::new();
+
     // Initialize one server per client
     let num_clients = *crate::environment::NUM_MACHINES - 1;
     let mut servers: Vec<Box<dyn RPCServer<ControllerState>>> =
@@ -64,10 +83,13 @@ pub(crate) fn run() {
     } else {
         unreachable!("No supported transport layer specified in kernel argument");
     }
+    log::warn!("Controller created servers.");
 
     let mut controller_state = ControllerState::new(num_clients as usize);
+    log::warn!("Controller created controller state.");
 
     for server in servers.iter_mut() {
+        log::warn!("Controller attempting to add client to server");
         controller_state = server
             .add_client(&CLIENT_REGISTRAR, controller_state)
             .expect("Failed to connect to remote server");
@@ -76,17 +98,12 @@ pub(crate) fn run() {
     // Start running the RPC server
     log::info!("Starting RPC server!");
     loop {
-        if crate::CMDLINE
-            .get()
-            .map_or(false, |c| c.transport == Transport::Ethernet)
-        {
-            match ETHERNET_IFACE.lock().poll(Instant::from_millis(
-                rawtime::duration_since_boot().as_millis() as i64,
-            )) {
-                Ok(_) => {}
-                Err(e) => {
-                    log::warn!("poll error: {}", e);
-                }
+        match ETHERNET_IFACE.lock().poll(Instant::from_millis(
+            rawtime::duration_since_boot().as_millis() as i64,
+        )) {
+            Ok(_) => {}
+            Err(e) => {
+                log::warn!("poll error: {}", e);
             }
         }
 

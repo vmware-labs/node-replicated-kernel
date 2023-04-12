@@ -53,13 +53,14 @@ pub(crate) fn initialize_client(
                 thread_id: hwthread.thread_id as usize,
             })?;
         }
+        assert!(client_threads.len() == num_threads);
         log::info!("client_threads: {:?}", client_threads);
 
         // Construct client registration request
         let req = ClientRegistrationRequest {
             machine_id: *crate::environment::MACHINE_ID,
             shmem_region,
-            num_cores: atopology::MACHINE_TOPOLOGY.num_threads() as u64,
+            num_cores: num_threads as u64,
         };
 
         // Serialize and send the registration request to the controller
@@ -72,7 +73,10 @@ pub(crate) fn initialize_client(
         unsafe { encode(&req, &mut req_data) }.expect("Failed to encode ClientRegistrationRequest");
         unsafe { encode(&client_threads, &mut req_data) }
             .expect("Failed to encode hardware thread vector");
+
+        log::warn!("Calling client.connect()");
         client.connect(&[&req_data])?;
+        log::warn!("Finished client.connect()");
     } else {
         client.connect(&[&[]])?;
     }

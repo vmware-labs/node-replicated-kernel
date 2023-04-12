@@ -449,6 +449,13 @@ fn test_rump_tmpfs() {
     };
 
     let current_gtid = vibrio::syscalls::System::core_id().expect("Can't get core id");
+    {
+        log::warn!("BEFORE CPUIDX");
+        vibrio::rumprt::crt::CPUIDX_TO_GTID
+            .lock()
+            .push(current_gtid);
+        log::warn!("AFTER CPUIDX");
+    }
     let mut scheduler = lineup::scheduler::SmpScheduler::with_upcalls(up);
 
     scheduler.spawn(
@@ -564,6 +571,13 @@ pub fn test_rump_net() {
         context_switch: rumprt::prt::context_switch,
     };
     let current_gtid = vibrio::syscalls::System::core_id().expect("Can't get core id");
+    {
+        log::warn!("BEFORE CPUIDX");
+        vibrio::rumprt::crt::CPUIDX_TO_GTID
+            .lock()
+            .push(current_gtid);
+        log::warn!("AFTER CPUIDX");
+    }
     let scheduler = lineup::scheduler::SmpScheduler::with_upcalls(up);
 
     scheduler.spawn(

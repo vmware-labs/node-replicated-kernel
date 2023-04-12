@@ -9,13 +9,16 @@ use core::ptr;
 use core::sync::atomic::{AtomicBool, Ordering};
 
 use cstr_core::{CStr, CString};
+use lazy_static::lazy_static;
 use log::{debug, error, info, Level};
+use spin::Mutex;
 use x86::current::paging::VAddr;
 
 use super::{c_char, c_int};
 
 use crate::syscalls::Fs;
 use kpi::io::*;
+use kpi::system::GlobalThreadId;
 
 pub mod error;
 pub mod mem;
@@ -38,6 +41,10 @@ pub static mut environ: *mut *const i8 = ptr::null_mut();
 
 static mut main_argc: i32 = 0;
 static mut main_argv: *const *const i8 = ptr::null();
+
+lazy_static! {
+    pub static ref CPUIDX_TO_GTID: spin::Mutex<Vec<GlobalThreadId>> = Mutex::new(Vec::new());
+}
 
 /// The following structure is found at the top of the user stack of each
 /// user process. The ps program uses it to locate argv and environment
@@ -223,6 +230,12 @@ pub extern "C" fn main() {
     let scb: SchedulerControlBlock = SchedulerControlBlock::new(current_core);
     unsafe { scb.preinstall() };
 
+    {
+        log::warn!("BEFORE CPUIDX");
+        crate::rumprt::crt::CPUIDX_TO_GTID.lock().push(current_core);
+        log::warn!("AFTER CPUIDX");
+    }
+
     #[repr(C)]
     struct tmpfs_args {
         ta_version: u64, // c_int
@@ -249,7 +262,7 @@ pub extern "C" fn main() {
 
     unsafe {
         log::set_logger(&crate::writer::LOGGER)
-            .map(|()| log::set_max_level(Level::Error.to_level_filter()))
+            .map(|()| log::set_max_level(Level::Debug.to_level_filter()))
             .expect("Can't set-up logging");
     }
     debug!("Initialized logging");
@@ -270,7 +283,15 @@ pub extern "C" fn main() {
                     hwthread.id,
                     VAddr::from(crate::upcalls::upcall_while_enabled as *const fn() as u64),
                 ) {
-                    Ok(_) => {
+                    Ok(core_token) => {
+                        log::info!("New core gtid is: {:?}", core_token.gtid());
+                        {
+                            log::warn!("BEFORE CPUIDX");
+                            crate::rumprt::crt::CPUIDX_TO_GTID
+                                .lock()
+                                .push(core_token.gtid());
+                            log::warn!("AFTER CPUIDX");
+                        }
                         maximum += 1;
                         if maximum == ncores_to_request {
                             break;

@@ -35,7 +35,7 @@ pub(crate) fn rpc_get_shmem_frames(
     num_frames: usize,
 ) -> KResult<Box<Vec<Frame>>> {
     assert!(num_frames > 0);
-    log::debug!("GetShmemFrames({:?})", num_frames);
+    log::warn!("GetShmemFrames({:?})", num_frames);
 
     let machine_id = if pid.is_none() {
         Some(*crate::environment::MACHINE_ID)
@@ -92,6 +92,7 @@ pub(crate) fn rpc_get_shmem_frames(
                     log::error!("Failed to parse shmem region response from controller");
                     return Err(RPCError::MalformedRequest.into());
                 }
+                log::warn!("GetShmemFrames({:?}) finished", num_frames);
                 Ok(frames)
             }
             Err(e) => Err(*e),

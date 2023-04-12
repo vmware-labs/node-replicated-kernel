@@ -87,7 +87,7 @@ pub fn upcall_while_enabled(control: &mut kpi::arch::VirtualCpu, cmd: u64, arg: 
         // that assumes that we have already called scheduler.run() and we preserve
         // the SchedulerControlBlock register even if we return from run()
         let scheduler = lineup::tls2::Environment::scheduler();
-        //log::info!("got interrupt cmd={} arg={}", cmd, arg);
+        log::info!("got interrupt cmd={} arg={}", cmd, arg);
         assert!(scheduler.pending_irqs.push(cmd).is_ok());
     } else {
         log::error!("got unknown interrupt... {}", cmd);

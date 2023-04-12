@@ -191,15 +191,24 @@ pub unsafe extern "C" fn rumprun_makelwp(
     rump_pub_lwproc_switch(curlwp);
 
     let coreid = (rlid as usize) % AVAILABLE_CORES.load(Ordering::Relaxed);
+    let gtid = {
+        log::warn!("BEFORE CPUIDX");
+        let id = crate::rumprt::crt::CPUIDX_TO_GTID.lock()[coreid];
+        log::warn!("AFTER CPUIDX");
+        id
+    };
     let tid = Environment::thread().spawn_with_args(
         stack,
         Some(rumprun_makelwp_tramp),
         newlwp as *mut u8,
-        coreid,
+        gtid,
         None,
         tls_private,
     );
-    debug!("rumprun_makelwp spawned {:?} on core {}", tid, coreid);
+    debug!(
+        "rumprun_makelwp spawned {:?} on core {} (gtid={:?})",
+        tid, coreid, gtid
+    );
 
     // TODO(smp-correctness): Are we having a race here between new thread accessing
     // rl_thread and us assigning it?

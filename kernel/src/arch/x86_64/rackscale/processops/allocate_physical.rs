@@ -11,7 +11,6 @@ use rpc::RPCClient;
 
 use super::super::controller_state::ControllerState;
 use super::super::dcm::resource_alloc::dcm_resource_alloc;
-use super::super::dcm::DCM_INTERFACE;
 use super::super::kernelrpc::*;
 use crate::arch::process::Ring3Process;
 use crate::arch::rackscale::CLIENT_STATE;

@@ -133,16 +133,17 @@ pub unsafe extern "C" fn rumpcomp_pci_irq_map(
 
     let cur_thread = lineup::tls2::Environment::thread();
 
+    log::warn!("Assigning IRQ thread to core {:?}", cur_thread.current_core);
     cur_thread
         .spawn_irq_thread(
             Some(irq_handler),
             core::ptr::null_mut(),
-            0,
+            cur_thread.current_core,
             vector as u64 + 31,
         )
         .expect("Can't create IRQ thread?");
 
-    crate::syscalls::Irq::irqalloc(vector as u64, 0).ok();
+    crate::syscalls::Irq::irqalloc(vector as u64, cur_thread.current_core as u64).ok();
 
     0
 }

@@ -21,6 +21,7 @@ use crate::runner_args::RunnerArgs;
 /// # Depends on
 /// - `tests/dhcpd.conf`: config file contains match of MAC to IP
 pub const DHCP_ACK_MATCH: &'static str = "DHCPACK on 172.31.0.10 to 56:b4:44:e9:62:d0 via tap0";
+pub const DHCP_ACK_MATCH_NRK2: &'static str = "DHCPACK on 172.31.0.11 to 56:b4:44:e9:62:d1 via br0";
 
 /// Shmem related default values
 pub const SHMEM_PATH: &str = "ivshmem-file";
@@ -117,11 +118,16 @@ pub fn spawn_dcm(r: usize, timeout: u64) -> Result<rexpect::session::PtyReplSess
     Ok(b)
 }
 
+/// Spawns a DHCP server on our host using most common interface: tap0
+pub fn spawn_dhcpd() -> Result<rexpect::session::PtyReplSession> {
+    spawn_dhcpd_with_interface("tap0".to_string())
+}
+
 /// Spawns a DHCP server on our host
 ///
 /// It uses our dhcpd config and listens on the tap0 interface
 /// (that we set up in our run.py script).
-pub fn spawn_dhcpd() -> Result<rexpect::session::PtyReplSession> {
+pub fn spawn_dhcpd_with_interface(interface: String) -> Result<rexpect::session::PtyReplSession> {
     // apparmor prevents reading of ./tests/dhcpd.conf for dhcpd
     // on Ubuntu, so we make sure it is disabled:
     let o = process::Command::new("sudo")
@@ -141,7 +147,12 @@ pub fn spawn_dhcpd() -> Result<rexpect::session::PtyReplSession> {
     // Spawn a bash session for dhcpd, otherwise it seems we
     // can't kill the process since we do not run as root
     let mut b = spawn_bash(Some(45_000))?;
-    b.send_line("sudo dhcpd -f -d tap0 --no-pid -cf ./tests/dhcpd.conf")?;
+    let cmd = format!(
+        "sudo dhcpd -f -d {} --no-pid -cf ./tests/dhcpd.conf",
+        interface
+    );
+    eprintln!("Invoke dhcpd: {}", cmd);
+    b.send_line(&cmd)?;
     Ok(b)
 }
 

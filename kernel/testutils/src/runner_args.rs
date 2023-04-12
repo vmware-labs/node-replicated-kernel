@@ -404,12 +404,21 @@ pub fn check_for_successful_exit(args: &RunnerArgs, r: Result<WaitStatus>, outpu
 }
 
 pub fn log_qemu_out(args: &RunnerArgs, output: String) {
-    if !output.is_empty() {
-        println!("\n===== QEMU LOG =====");
-        println!("{}", &output);
-        println!("===== END QEMU LOG =====");
-    }
+    log_qemu_out_with_name(Some(args), String::from(""), output)
+}
 
+pub fn log_qemu_out_with_name(args: Option<&RunnerArgs>, name: String, output: String) {
+    if !output.is_empty() {
+        println!("\n===== QEMU LOG {}=====", name);
+        println!("{}", &output);
+        println!("===== END QEMU LOG {}=====", name);
+    }
+    if let Some(nrk_args) = args {
+        log_qemu_args(nrk_args)
+    }
+}
+
+pub fn log_qemu_args(args: &RunnerArgs) {
     let quoted_cmd = args
         .as_cmd()
         .into_iter()
@@ -478,27 +487,56 @@ pub fn wait_for_sigterm(args: &RunnerArgs, r: Result<WaitStatus>, output: String
     };
 }
 
-pub fn wait_for_sigterm_or_successful_exit(
+pub fn wait_for_sigterm_or_successful_exit_no_log(
     args: &RunnerArgs,
     r: Result<WaitStatus>,
-    output: String,
+    name: String,
 ) {
-    log_qemu_out(args, output);
     match r {
         Ok(WaitStatus::Signaled(_, SIGTERM, _)) => { /* This is what we expect */ }
         Ok(WaitStatus::Exited(_, code)) => {
             let exit_status: ExitStatus = code.into();
             if exit_status != ExitStatus::Success {
-                panic!("Unexpected exit code from QEMU: {}", exit_status);
+                log_qemu_args(args);
+                panic!("Unexpected exit code from QEMU {}: {}", name, exit_status);
             } // else -> this is what we expect.
         }
         Err(e) => {
-            panic!("Qemu testing failed: {}", e);
+            log_qemu_args(args);
+            panic!("Qemu testing failed: {} {}", name, e);
         }
         e => {
+            log_qemu_args(args);
             panic!(
-                "Something weird happened to the Qemu process, please investigate: {:?}",
-                e
+                "Something weird happened to the Qemu process, please investigate: {} {:?}",
+                name, e
+            );
+        }
+    };
+}
+
+pub fn check_for_successful_exit_no_log(args: &RunnerArgs, r: Result<WaitStatus>, name: String) {
+    match r {
+        Ok(WaitStatus::Signaled(_, signal, _)) => {
+            log_qemu_args(args);
+            panic!("Unexpected signal from QEMU {}: {}", name, signal);
+        }
+        Ok(WaitStatus::Exited(_, code)) => {
+            let exit_status: ExitStatus = code.into();
+            if exit_status != ExitStatus::Success {
+                log_qemu_args(args);
+                panic!("Unexpected exit code from QEMU {}: {}", name, exit_status);
+            } // else -> this is what we expect.
+        }
+        Err(e) => {
+            log_qemu_args(args);
+            panic!("Qemu testing failed: {} {}", name, e);
+        }
+        e => {
+            log_qemu_args(args);
+            panic!(
+                "Something weird happened to the Qemu process, please investigate: {} {:?}",
+                name, e
             );
         }
     };

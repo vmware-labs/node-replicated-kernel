@@ -43,11 +43,17 @@ impl SystemCallDispatch<u64> for Arch86LwkSystemCall {}
 impl VSpaceDispatch<u64> for Arch86LwkSystemCall {
     fn map_mem(&self, base: u64, size: u64) -> Result<(u64, u64), KError> {
         log::warn!("map_mem({:x} {:?})", base, size);
+
         // Implementation mostly copied from map_generic in x86 syscalls.rs
         let base = VAddr::from(base);
         let pcm = try_per_core_mem().ok_or(KError::KcbUnavailable)?;
         let (bp, lp) = crate::memory::utils::size_to_pages(size as usize);
         let mut frames = Vec::try_with_capacity(bp + lp)?;
+
+        // This is necessary because map_frames -> MemMapFrames seems to assume
+        // that base pages follow large pages.
+        let mut initial_base_frames = Vec::try_with_capacity(bp)?;
+
         let pid = current_pid()?;
 
         let mut total_needed_large_pages = lp;
@@ -78,12 +84,7 @@ impl VSpaceDispatch<u64> for Arch86LwkSystemCall {
                 // TODO(rackscale performance): should be debug assert
                 assert!(is_shmem_frame(frame, false, false));
 
-                total_len += frame.size;
-                if paddr.is_none() {
-                    paddr = Some(frame.base);
-                }
-
-                frames
+                initial_base_frames
                     .try_push(frame)
                     .expect("Can't fail see `try_with_capacity`");
             }
@@ -98,13 +99,11 @@ impl VSpaceDispatch<u64> for Arch86LwkSystemCall {
 
         if total_needed_large_pages > 0 {
             // Query controller (DCM) to get frames of shmem
-            let mut allocated_frames =
-                { rpc_get_shmem_frames(Some(pid), total_needed_large_pages)? };
+            let mut allocated_frames = rpc_get_shmem_frames(Some(pid), total_needed_large_pages)?;
 
             for i in 0..lp {
                 // TODO(rackscale performance): should be debug assert
                 assert!(is_shmem_frame(allocated_frames[i], false, false));
-
                 total_len += allocated_frames[i].size;
                 unsafe { allocated_frames[i].zero() };
                 frames
@@ -168,6 +167,18 @@ impl VSpaceDispatch<u64> for Arch86LwkSystemCall {
                 );
                 }
             }
+        }
+
+        // Add initial base pages into frame array. doing this in the end ensures
+        // that the order of the frames is large pages and then base pages.
+        for f in initial_base_frames {
+            total_len += f.size;
+            if paddr.is_none() {
+                paddr = Some(f.base);
+            }
+            frames
+                .try_push(f)
+                .expect("Can't fail see `try_with_capacity`");
         }
 
         log::warn!("map_mem({:x} {:?}) before NrProc operation", base, size);

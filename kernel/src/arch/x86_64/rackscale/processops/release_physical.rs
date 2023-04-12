@@ -17,7 +17,7 @@ use crate::nrproc::NrProcess;
 use crate::process::Pid;
 
 use super::super::dcm::resource_release::dcm_resource_release;
-use super::super::dcm::{DCMNodeId, DCM_INTERFACE};
+use super::super::dcm::DCMNodeId;
 use super::super::kernelrpc::*;
 use super::super::ControllerState;
 use super::super::CLIENT_STATE;

@@ -3,7 +3,6 @@
 
 //! rumpkernel "kernel" threads implementation.
 
-use core::convert::TryInto;
 use core::ops::Add;
 use core::sync::atomic::Ordering;
 
@@ -50,7 +49,7 @@ pub unsafe extern "C" fn rumpuser_thread_create(
     let core_id = if cpuidx == -1 { 0 } else { cpuidx };
     let gtid = {
         log::warn!("BEFORE CPUIDX");
-        let id = crate::rumprt::crt::CPUIDX_TO_GTID.lock()[core_id as usize];
+        let id = crate::rumprt::CPUIDX_TO_GTID.lock()[core_id as usize];
         log::warn!("AFTER CPUIDX");
         id
     };

@@ -9,16 +9,13 @@ use core::ptr;
 use core::sync::atomic::{AtomicBool, Ordering};
 
 use cstr_core::{CStr, CString};
-use lazy_static::lazy_static;
 use log::{debug, error, info, Level};
-use spin::Mutex;
 use x86::current::paging::VAddr;
 
 use super::{c_char, c_int};
 
 use crate::syscalls::Fs;
 use kpi::io::*;
-use kpi::system::GlobalThreadId;
 
 pub mod error;
 pub mod mem;
@@ -41,10 +38,6 @@ pub static mut environ: *mut *const i8 = ptr::null_mut();
 
 static mut main_argc: i32 = 0;
 static mut main_argv: *const *const i8 = ptr::null();
-
-lazy_static! {
-    pub static ref CPUIDX_TO_GTID: spin::Mutex<Vec<GlobalThreadId>> = Mutex::new(Vec::new());
-}
 
 /// The following structure is found at the top of the user stack of each
 /// user process. The ps program uses it to locate argv and environment
@@ -232,7 +225,7 @@ pub extern "C" fn main() {
 
     {
         log::warn!("BEFORE CPUIDX");
-        crate::rumprt::crt::CPUIDX_TO_GTID.lock().push(current_core);
+        crate::rumprt::CPUIDX_TO_GTID.lock().push(current_core);
         log::warn!("AFTER CPUIDX");
     }
 
@@ -287,9 +280,7 @@ pub extern "C" fn main() {
                         log::info!("New core gtid is: {:?}", core_token.gtid());
                         {
                             log::warn!("BEFORE CPUIDX");
-                            crate::rumprt::crt::CPUIDX_TO_GTID
-                                .lock()
-                                .push(core_token.gtid());
+                            crate::rumprt::CPUIDX_TO_GTID.lock().push(core_token.gtid());
                             log::warn!("AFTER CPUIDX");
                         }
                         maximum += 1;

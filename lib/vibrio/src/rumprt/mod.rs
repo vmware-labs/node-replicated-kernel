@@ -19,6 +19,7 @@
 //! Once the implementation grows we can think about having a safe wrapper/layer.
 
 use crate::alloc::boxed::Box;
+use crate::alloc::vec::Vec;
 use crate::alloc::{alloc, format};
 use core::alloc::Layout;
 use core::arch::x86_64::_rdrand16_step;
@@ -27,10 +28,13 @@ use core::sync::atomic::{AtomicPtr, Ordering};
 use core::{ptr, slice};
 
 use cstr_core::CStr;
+use lazy_static::lazy_static;
 
 use log::{info, trace};
 
+use kpi::system::GlobalThreadId;
 use lineup::mutex::Mutex;
+use spin;
 
 pub mod dev;
 pub mod errno;
@@ -43,6 +47,10 @@ pub mod threads;
 #[cfg(target_os = "nrk")]
 pub mod crt;
 pub mod prt;
+
+lazy_static! {
+    pub static ref CPUIDX_TO_GTID: spin::Mutex<Vec<GlobalThreadId>> = spin::Mutex::new(Vec::new());
+}
 
 const RUMPUSER_CLOCK_RELWALL: u64 = 0;
 const RUMPUSER_CLOCK_ABSMONO: u64 = 1;

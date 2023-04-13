@@ -193,7 +193,7 @@ pub unsafe extern "C" fn rumprun_makelwp(
     let coreid = (rlid as usize) % AVAILABLE_CORES.load(Ordering::Relaxed);
     let gtid = {
         log::warn!("BEFORE CPUIDX");
-        let id = crate::rumprt::crt::CPUIDX_TO_GTID.lock()[coreid];
+        let id = crate::rumprt::CPUIDX_TO_GTID.lock()[coreid];
         log::warn!("AFTER CPUIDX");
         id
     };

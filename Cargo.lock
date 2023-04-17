@@ -750,7 +750,7 @@ dependencies = [
  "atomic-polyfill",
  "hash32",
  "rustc_version 0.4.0",
- "spin 0.9.3",
+ "spin 0.9.8",
  "stable_deref_trait",
 ]
 
@@ -929,7 +929,7 @@ dependencies = [
  "kpi",
  "log",
  "rawtime",
- "spin 0.9.3",
+ "spin 0.9.8",
  "x86 0.52.0",
 ]
 
@@ -1137,7 +1137,7 @@ dependencies = [
  "serde_cbor",
  "slabmalloc",
  "smoltcp 0.8.1",
- "spin 0.9.3",
+ "spin 0.9.8",
  "static_assertions",
  "testutils",
  "uefi",
@@ -1651,7 +1651,7 @@ dependencies = [
  "log",
  "rawtime",
  "smoltcp 0.8.1",
- "spin 0.9.3",
+ "spin 0.9.8",
  "vmxnet3",
 ]
 
@@ -1833,9 +1833,9 @@ checksum = "6e63cff320ae2c57904679ba7cb63280a3dc4613885beafb148ee7bf9aa9042d"
 
 [[package]]
 name = "spin"
-version = "0.9.3"
+version = "0.9.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c530c2b0d0bf8b69304b39fe2001993e267461948b890cd037d8ad4293fa1a0d"
+checksum = "6980e8d7511241f8acf4aebddbb1ff938df5eebe98691418c4468d0b72a96a67"
 dependencies = [
  "lock_api",
 ]
@@ -2032,7 +2032,7 @@ dependencies = [
  "rumpkernel",
  "serde_cbor",
  "slabmalloc",
- "spin 0.9.3",
+ "spin 0.9.8",
  "x86 0.52.0",
 ]
 

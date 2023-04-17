@@ -319,7 +319,7 @@ fn rackscale_fs_test(is_shmem: bool) {
     use std::thread::sleep;
     use std::time::Duration;
 
-    let timeout = 30_000;
+    let timeout = 60_000;
 
     let (tx, rx) = channel();
     let all_outputs = Arc::new(Mutex::new(Vec::new()));

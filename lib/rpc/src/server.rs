@@ -12,13 +12,13 @@ use crate::rpc::*;
 use crate::transport::Transport;
 
 pub struct Server<'a, S> {
-    transport: Box<dyn Transport + 'a>,
+    transport: Box<dyn Transport + Send + 'a>,
     handlers: RefCell<HashMap<RPCType, &'a RPCHandler<S>>>,
     mbuf: UnsafeCell<MBuf>,
 }
 
 impl<'t, 'a, S> Server<'a, S> {
-    pub fn new<T: 't + Transport>(transport: Box<T>) -> Server<'a, S>
+    pub fn new<T: 't + Transport + Send>(transport: Box<T>) -> Server<'a, S>
     where
         't: 'a,
     {

@@ -4,13 +4,10 @@
 use alloc::vec::Vec;
 
 use fallible_collections::FallibleVecGlobal;
-use smoltcp::socket::UdpSocket;
-use smoltcp::time::Instant;
 
 use rpc::rpc::RPCType;
 use rpc::RPCClient;
-
-use crate::transport::ethernet::ETHERNET_IFACE;
+use rpc::RPCServer;
 
 use super::super::kernelrpc::*;
 use super::{DCMNodeId, DCMOps, DCM_INTERFACE};
@@ -54,27 +51,6 @@ impl ResourceAllocResponse {
     }
 }
 
-#[derive(Debug, Default)]
-#[repr(C)]
-struct ResourceAllocAssignment {
-    alloc_id: u64,
-    node: DCMNodeId,
-}
-pub(crate) const ALLOC_LEN: usize = core::mem::size_of::<ResourceAllocAssignment>();
-
-impl ResourceAllocAssignment {
-    /// # Safety
-    /// - `self` must be valid ResourceAllocAssignment
-    pub unsafe fn as_mut_bytes(&mut self) -> &mut [u8; ALLOC_LEN] {
-        ::core::slice::from_raw_parts_mut(
-            (self as *const ResourceAllocAssignment) as *mut u8,
-            ALLOC_LEN,
-        )
-        .try_into()
-        .expect("slice with incorrect length")
-    }
-}
-
 pub(crate) fn dcm_resource_alloc(
     pid: usize,
     cores: u64,
@@ -96,10 +72,6 @@ pub(crate) fn dcm_resource_alloc(
     };
 
     let mut res = ResourceAllocResponse { alloc_id: 0 };
-    let mut assignment = ResourceAllocAssignment {
-        alloc_id: 0,
-        node: 0,
-    };
 
     // Send call, get allocation response in return
     {
@@ -122,46 +94,25 @@ pub(crate) fn dcm_resource_alloc(
         Vec::try_with_capacity(memslices as usize).expect("Failed to allocate memory");
 
     while received_allocations < cores + memslices {
-        {
-            let mut my_iface = ETHERNET_IFACE.lock();
-            let socket = my_iface.get_socket::<UdpSocket>(DCM_INTERFACE.lock().udp_handle);
-            if socket.can_recv() {
-                match socket.recv_slice(unsafe { assignment.as_mut_bytes() }) {
-                    Ok((_, endpoint)) => {
-                        log::debug!(
-                            "Received assignment: {:?} to node {:?}",
-                            assignment.alloc_id,
-                            assignment.node
-                        );
-                        if assignment.alloc_id > res.alloc_id + cores + memslices
-                            || assignment.alloc_id < res.alloc_id
-                        {
-                            panic!("AllocIds do not match!");
-                        }
-                        socket
-                            .send_slice(&[1u8], endpoint)
-                            .expect("Failed to send UDP message to DCM");
-                        if assignment.alloc_id - res.alloc_id < cores {
-                            dcm_node_for_cores.push(assignment.node);
-                        } else {
-                            dcm_node_for_memslices.push(assignment.node);
-                        }
-                        received_allocations += 1;
-                    }
-                    Err(e) => {
-                        log::debug!("Received nothing? {:?}", e);
-                    }
+        let dcm_interface = DCM_INTERFACE.lock();
+        match dcm_interface.server.handle(None) {
+            Ok(Some((alloc_id, node))) => {
+                log::warn!("Received assignment: {:?} to node {:?}", alloc_id, node);
+                if alloc_id > res.alloc_id + cores + memslices || alloc_id < res.alloc_id {
+                    panic!("AllocIds do not match!");
                 }
+                if alloc_id - res.alloc_id < cores {
+                    dcm_node_for_cores.push(node);
+                } else {
+                    dcm_node_for_memslices.push(node);
+                }
+                received_allocations += 1;
             }
-        }
-
-        match ETHERNET_IFACE.lock().poll(Instant::from_millis(
-            rawtime::duration_since_boot().as_millis() as i64,
-        )) {
-            Ok(_) => {}
-            Err(e) => {
-                log::warn!("poll error: {}", e);
+            Err(err) => {
+                log::error!("Failed to get assignment from DCM: {:?}", err);
+                panic!("Failed to get assignment from DCM");
             }
+            _ => unreachable!("Should not reach here"),
         }
     }
     (dcm_node_for_cores, dcm_node_for_memslices)

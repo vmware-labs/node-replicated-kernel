@@ -327,7 +327,7 @@ fn s11_rackscale_shmem_leveldb_benchmark() {
     );
 
     let _machine = Machine::determine();
-    let max_cores = 1; // machines.max_cores();
+    let max_cores = 4; // machines.max_cores();
 
     // level-DB arguments
     let (reads, num, val_size) = if cfg!(feature = "smoke") {

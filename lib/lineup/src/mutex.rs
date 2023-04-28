@@ -187,13 +187,24 @@ impl MutexInner {
     }
 
     fn enter_nowrap(&self) {
+        let yielder: &mut ThreadControlBlock = Environment::thread();
+
         loop {
             // Wait till lock is free (counter is 0):
             #[cfg(feature = "latency")]
             let start = rawtime::Instant::now();
+
             while self.counter.load(Ordering::SeqCst) != 0 {
+                // relinquish() was added after finding a bug where no progress was able to be made.
+                // in this case, there were two threads scheduled on the same core who wanted this
+                // mutex, and the thread who woke up first went into enter_nowrap (this function),
+                // entered the spin loop, and did not give up the core to the other thread who could
+                // have made progress. Relinquish gives a different thread a chance to get the mutex.
+                yielder.relinquish();
+
                 spin_loop();
             }
+
             #[cfg(feature = "latency")]
             if start.elapsed() > core::time::Duration::from_nanos(200) {
                 warn!("spun for {:?}", start.elapsed());

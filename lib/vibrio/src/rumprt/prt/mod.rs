@@ -191,12 +191,7 @@ pub unsafe extern "C" fn rumprun_makelwp(
     rump_pub_lwproc_switch(curlwp);
 
     let coreid = (rlid as usize) % AVAILABLE_CORES.load(Ordering::Relaxed);
-    let gtid = {
-        log::warn!("BEFORE CPUIDX");
-        let id = crate::rumprt::CPUIDX_TO_GTID.lock()[coreid];
-        log::warn!("AFTER CPUIDX");
-        id
-    };
+    let gtid = crate::rumprt::CPUIDX_TO_GTID.lock()[coreid];
     let tid = Environment::thread().spawn_with_args(
         stack,
         Some(rumprun_makelwp_tramp),
@@ -234,7 +229,7 @@ pub unsafe extern "C" fn _lwp_ctl(ctl: c_int, data: *mut *mut lwpctl) -> c_int {
     *data = (&mut (*lwp).rl_lwpctl) as *mut lwpctl;
     assert_ne!(*data, ptr::null_mut());
 
-    log::trace!(
+    trace!(
         "_lwp_ctl ctl={} data={:p}  set *data to {:p}",
         ctl,
         data,
@@ -448,7 +443,7 @@ pub unsafe extern "C" fn _lwp_unpark_all(
     count: c_size_t,
     hint: *const c_void,
 ) -> c_ssize_t {
-    log::trace!(
+    trace!(
         "_lwp_unpark_all targets={:p} count={} hint={:p}",
         targets,
         count,

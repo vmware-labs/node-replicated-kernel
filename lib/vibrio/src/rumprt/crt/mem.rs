@@ -46,9 +46,14 @@ mod rump {
         fd: c_int,
         pos: c_int,
     ) -> *mut c_void {
-        debug!(
+        log::debug!(
             "mmap addr={:p} len={} prot={} flags={} fd={} pos={}",
-            addr, len, prot, flags, fd, pos
+            addr,
+            len,
+            prot,
+            flags,
+            fd,
+            pos
         );
         let args = sys_mmap_args {
             addr: addr as u64,
@@ -216,7 +221,7 @@ pub unsafe extern "C" fn posix_memalign(
     align: c_size_t,
     nbytes: c_size_t,
 ) -> c_int {
-    log::debug!(
+    trace!(
         "posix memalign {:p} align={}, nbytes={}",
         ptr,
         align,

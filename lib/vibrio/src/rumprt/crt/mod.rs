@@ -223,11 +223,7 @@ pub extern "C" fn main() {
     let scb: SchedulerControlBlock = SchedulerControlBlock::new(current_core);
     unsafe { scb.preinstall() };
 
-    {
-        log::warn!("BEFORE CPUIDX");
-        crate::rumprt::CPUIDX_TO_GTID.lock().push(current_core);
-        log::warn!("AFTER CPUIDX");
-    }
+    crate::rumprt::CPUIDX_TO_GTID.lock().push(current_core);
 
     #[repr(C)]
     struct tmpfs_args {
@@ -277,12 +273,8 @@ pub extern "C" fn main() {
                     VAddr::from(crate::upcalls::upcall_while_enabled as *const fn() as u64),
                 ) {
                     Ok(core_token) => {
-                        log::info!("New core gtid is: {:?}", core_token.gtid());
-                        {
-                            log::warn!("BEFORE CPUIDX");
-                            crate::rumprt::CPUIDX_TO_GTID.lock().push(core_token.gtid());
-                            log::warn!("AFTER CPUIDX");
-                        }
+                        info!("New core gtid is: {:?}", core_token.gtid());
+                        crate::rumprt::CPUIDX_TO_GTID.lock().push(core_token.gtid());
                         maximum += 1;
                         if maximum == ncores_to_request {
                             break;

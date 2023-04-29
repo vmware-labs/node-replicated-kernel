@@ -132,8 +132,6 @@ pub unsafe extern "C" fn rumpcomp_pci_irq_map(
     IRQS[0].cookie = cookie;
 
     let cur_thread = lineup::tls2::Environment::thread();
-
-    log::warn!("Assigning IRQ thread to core {:?}", cur_thread.current_core);
     cur_thread
         .spawn_irq_thread(
             Some(irq_handler),
@@ -184,7 +182,7 @@ pub unsafe extern "C" fn rumpcomp_pci_irq_establish(
     trace!("rumpcomp_pci_irq_establish {:#x} {:p}", cookie, arg);
     IRQS[0].handler = handler;
     IRQS[0].arg = arg;
-    warn!("register for IRQ {}", IRQS[0].vector as usize + 31);
+    trace!("register for IRQ {}", IRQS[0].vector as usize + 31);
 
     &mut IRQS[0] as *mut _ as *mut c_void
 }

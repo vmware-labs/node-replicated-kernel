@@ -47,16 +47,11 @@ pub unsafe extern "C" fn rumpuser_thread_create(
         .unwrap_or("[unknown]");
 
     let core_id = if cpuidx == -1 { 0 } else { cpuidx };
-    let gtid = {
-        log::warn!("BEFORE CPUIDX");
-        let id = crate::rumprt::CPUIDX_TO_GTID.lock()[core_id as usize];
-        log::warn!("AFTER CPUIDX");
-        id
-    };
+    let gtid = crate::rumprt::CPUIDX_TO_GTID.lock()[core_id as usize];
 
     let s = lineup::tls2::Environment::thread();
     let tid = s.spawn_on_core(fun, arg, gtid);
-    log::warn!(
+    trace!(
         "rumpuser_thread_create {} {:?} {:p} join={} prio={} cpu={} gtid={:?} cookie={:p} tid={:?}",
         tname,
         fun,

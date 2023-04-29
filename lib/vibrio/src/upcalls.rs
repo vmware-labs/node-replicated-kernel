@@ -65,7 +65,6 @@ pub fn upcall_while_enabled(control: &mut kpi::arch::VirtualCpu, cmd: u64, arg: 
     if cmd == kpi::upcall::NEW_CORE {
         use lineup::tls2::SchedulerControlBlock;
         let core_id = arg;
-        log::info!("Got a new core ({}) assigned to us.", core_id);
         CORES_ONLINE.fetch_add(1, Ordering::SeqCst);
 
         #[cfg(feature = "rumprt")]
@@ -87,7 +86,6 @@ pub fn upcall_while_enabled(control: &mut kpi::arch::VirtualCpu, cmd: u64, arg: 
         // that assumes that we have already called scheduler.run() and we preserve
         // the SchedulerControlBlock register even if we return from run()
         let scheduler = lineup::tls2::Environment::scheduler();
-        log::info!("got interrupt cmd={} arg={}", cmd, arg);
         assert!(scheduler.pending_irqs.push(cmd).is_ok());
     } else {
         log::error!("got unknown interrupt... {}", cmd);

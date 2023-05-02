@@ -673,8 +673,6 @@ fn s11_rackscale_leveldb_benchmark() {
         // TODO(rackscale): probably scale with nclients?
         let shmem_size = SHMEM_SIZE * 2;
 
-        let all_outputs = Arc::new(Mutex::new(Vec::new()));
-
         let build = Arc::new({
             BuildArgs::default()
                 .module("rkapps")
@@ -689,6 +687,7 @@ fn s11_rackscale_leveldb_benchmark() {
         for &ncores in threads.iter() {
             // TODO(rackscale): this is probably too high, but oh well.
             let timeout = 240_000 + 20000 * (ncores * nclients) as u64;
+            let all_outputs = Arc::new(Mutex::new(Vec::new()));
 
             let (tx, rx) = channel();
             let rx_mut = Arc::new(Mutex::new(rx));

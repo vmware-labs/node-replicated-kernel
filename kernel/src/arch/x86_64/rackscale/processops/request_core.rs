@@ -26,7 +26,7 @@ pub(crate) struct RequestCoreReq {
 unsafe_abomonate!(RequestCoreReq: pid, new_pid, entry_point);
 
 pub(crate) fn rpc_request_core(pid: Pid, new_pid: bool, entry_point: u64) -> KResult<(u64, u64)> {
-    log::warn!("RequestCore({:?}, {:?}, {:?})", pid, new_pid, entry_point);
+    log::debug!("RequestCore({:?}, {:?}, {:?})", pid, new_pid, entry_point);
 
     // Construct request data
     let req = RequestCoreReq {
@@ -50,7 +50,7 @@ pub(crate) fn rpc_request_core(pid: Pid, new_pid: bool, entry_point: u64) -> KRe
         if remaining.len() > 0 {
             return Err(KError::from(RPCError::ExtraData));
         }
-        log::warn!("RequestCore() {:?}", res);
+        log::debug!("RequestCore() {:?}", res);
         *res
     } else {
         Err(KError::from(RPCError::MalformedResponse))
@@ -69,7 +69,7 @@ pub(crate) fn handle_request_core(
     let core_req = match unsafe { decode::<RequestCoreReq>(payload) } {
         Some((req, _)) => req,
         None => {
-            log::warn!("Invalid payload for request: {:?}", hdr);
+            log::error!("Invalid payload for request: {:?}", hdr);
             construct_error_ret(hdr, payload, KError::from(RPCError::MalformedRequest));
             return Ok(state);
         }

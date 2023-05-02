@@ -77,7 +77,7 @@ impl ClientState {
             per_process_base_pages.push(FrameCacheBase::new(SHARED_AFFINITY));
         }
 
-        log::warn!("Finished initializing client state");
+        log::debug!("Finished initializing client state");
         ClientState {
             rpc_client,
             frame_map: NrLock::default(),

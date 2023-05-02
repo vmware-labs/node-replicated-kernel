@@ -35,7 +35,7 @@ pub(crate) fn rpc_get_shmem_frames(
     num_frames: usize,
 ) -> KResult<Box<Vec<Frame>>> {
     assert!(num_frames > 0);
-    log::warn!("GetShmemFrames({:?})", num_frames);
+    log::debug!("GetShmemFrames({:?})", num_frames);
 
     let machine_id = if pid.is_none() {
         Some(*crate::environment::MACHINE_ID)
@@ -92,7 +92,7 @@ pub(crate) fn rpc_get_shmem_frames(
                     log::error!("Failed to parse shmem region response from controller");
                     return Err(RPCError::MalformedRequest.into());
                 }
-                log::warn!("GetShmemFrames({:?}) finished", num_frames);
+                log::debug!("GetShmemFrames({:?}) finished", num_frames);
                 Ok(frames)
             }
             Err(e) => Err(*e),
@@ -114,7 +114,7 @@ pub(crate) fn handle_get_shmem_frames(
     let (machine_id, pid, num_frames) = match unsafe { decode::<ShmemFrameReq>(payload) } {
         Some((req, _)) => (req.machine_id, req.pid, req.num_frames),
         None => {
-            log::warn!("Invalid payload for request: {:?}", hdr);
+            log::error!("Invalid payload for request: {:?}", hdr);
             construct_error_ret(hdr, payload, KError::from(RPCError::MalformedRequest));
             return Ok(state);
         }
@@ -127,7 +127,7 @@ pub(crate) fn handle_get_shmem_frames(
         let node_id = state.mid_to_dcm_id(mid);
         // TODO: if it fails, ask for memory from somewhere else??
         if !dcm_affinity_alloc(node_id, num_frames) {
-            log::warn!("GetShmemFrames failed due to lack of memory");
+            log::error!("GetShmemFrames failed due to lack of memory");
             construct_error_ret(hdr, payload, KError::DCMNotEnoughMemory);
             return Ok(state);
         }

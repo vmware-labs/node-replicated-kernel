@@ -45,7 +45,7 @@ fn rpc_open_create<P: AsRef<[u8]> + Debug>(
     modes: FileModes,
     rpc_type: RPCType,
 ) -> KResult<(u64, u64)> {
-    log::warn!("Open({:?}, {:?}, {:?})", pathname, flags, modes);
+    log::debug!("Open({:?}, {:?}, {:?})", pathname, flags, modes);
 
     // Construct request data
     let req = OpenReq { pid, flags, modes };
@@ -67,7 +67,7 @@ fn rpc_open_create<P: AsRef<[u8]> + Debug>(
         if remaining.len() > 0 {
             return Err(KError::from(RPCError::ExtraData));
         }
-        log::warn!("Open() {:?}", res);
+        log::debug!("Open() {:?}", res);
         *res
     } else {
         Err(KError::from(RPCError::MalformedResponse))

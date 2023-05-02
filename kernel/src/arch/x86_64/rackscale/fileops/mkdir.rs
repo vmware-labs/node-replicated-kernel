@@ -33,7 +33,7 @@ pub(crate) fn rpc_mkdir<P: AsRef<[u8]> + Debug>(
     pathname: P,
     modes: FileModes,
 ) -> KResult<(u64, u64)> {
-    log::warn!("MkDir({:?})", pathname);
+    log::debug!("MkDir({:?})", pathname);
 
     // Construct request data
     let req = MkDirReq { pid, modes };
@@ -55,7 +55,7 @@ pub(crate) fn rpc_mkdir<P: AsRef<[u8]> + Debug>(
         if remaining.len() > 0 {
             Err(KError::from(RPCError::ExtraData))
         } else {
-            log::warn!("MkDir() {:?}", res);
+            log::debug!("MkDir() {:?}", res);
             *res
         }
     } else {

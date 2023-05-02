@@ -32,7 +32,7 @@ pub(crate) fn rpc_rename<P: AsRef<[u8]> + Debug>(
     oldname: P,
     newname: P,
 ) -> KResult<(u64, u64)> {
-    log::warn!("Rename({:?}, {:?})", oldname, newname);
+    log::debug!("Rename({:?}, {:?})", oldname, newname);
 
     // Construct request data
     let req = RenameReq {
@@ -57,7 +57,7 @@ pub(crate) fn rpc_rename<P: AsRef<[u8]> + Debug>(
         if remaining.len() > 0 {
             return Err(KError::from(RPCError::ExtraData));
         }
-        log::warn!("Rename() {:?}", res);
+        log::debug!("Rename() {:?}", res);
         *res
     } else {
         log::error!("Rename(): Malformed response");

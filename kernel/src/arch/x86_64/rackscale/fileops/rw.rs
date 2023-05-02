@@ -49,7 +49,7 @@ pub(crate) fn rpc_writeat(
     offset: i64,
     data: &[u8],
 ) -> KResult<(u64, u64)> {
-    log::warn!("Write({:?}, {:?})", fd, offset);
+    log::debug!("Write({:?}, {:?})", fd, offset);
 
     // Constrcut request data
     let req = RWReq {
@@ -81,7 +81,7 @@ pub(crate) fn rpc_writeat(
         if remaining.len() > 0 {
             return Err(KError::from(RPCError::ExtraData));
         }
-        log::warn!("Write() {:?}", res);
+        log::debug!("Write() {:?}", res);
         return *res;
     } else {
         return Err(KError::from(RPCError::MalformedResponse));
@@ -100,7 +100,7 @@ pub(crate) fn rpc_readat(
     offset: i64,
 ) -> KResult<(u64, u64)> {
     let uslice_len = uslice.len();
-    log::warn!("Read({:?}, {:?})", uslice_len, offset);
+    log::debug!("Read({:?}, {:?})", uslice_len, offset);
     assert!(
         uslice_len <= RW_SHMEM_BUF_LEN,
         "Read too long - not supported!"
@@ -143,8 +143,6 @@ pub(crate) fn rpc_readat(
             Err(KError::from(RPCError::ExtraData))
         } else {
             let ret = *res;
-            log::warn!("Read(At)() before NrProc operation {:?}", ret);
-
             // Copy the read data into the user slice
             match ret {
                 Ok((bytes_read, n)) => {
@@ -160,7 +158,7 @@ pub(crate) fn rpc_readat(
                             Ok((bytes_read, n))
                         })?,
                     );
-                    log::warn!("Read(At)() {:?}", my_ret);
+                    log::debug!("Read(At)() {:?}", my_ret);
                     my_ret
                 }
                 Err(e) => Err(e),

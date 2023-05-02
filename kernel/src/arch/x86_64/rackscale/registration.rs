@@ -54,7 +54,7 @@ pub(crate) fn initialize_client(
             })?;
         }
         assert!(client_threads.len() == num_threads);
-        log::info!("client_threads: {:?}", client_threads);
+        log::debug!("client_threads: {:?}", client_threads);
 
         // Construct client registration request
         let req = ClientRegistrationRequest {
@@ -73,10 +73,7 @@ pub(crate) fn initialize_client(
         unsafe { encode(&req, &mut req_data) }.expect("Failed to encode ClientRegistrationRequest");
         unsafe { encode(&client_threads, &mut req_data) }
             .expect("Failed to encode hardware thread vector");
-
-        log::warn!("Calling client.connect()");
         client.connect(&[&req_data])?;
-        log::warn!("Finished client.connect()");
     } else {
         client.connect(&[&[]])?;
     }
@@ -89,7 +86,7 @@ pub(crate) fn register_client(
     payload: &mut [u8],
     mut state: ControllerState,
 ) -> Result<ControllerState, RPCError> {
-    log::warn!("register_client start");
+    log::debug!("register_client start");
     // Decode client registration request
     if let Some((req, hwthreads_data)) =
         unsafe { decode::<ClientRegistrationRequest>(&mut payload[..hdr.msg_len as usize]) }
@@ -135,7 +132,6 @@ pub(crate) fn register_client(
 
         let client_state = PerClientState::new(req.machine_id, shmem_manager, client_threads);
         state.add_client(dcm_node_id, client_state);
-        log::warn!("register_client end");
         Ok(state)
     } else {
         log::error!("Failed to decode client registration request during register_client");

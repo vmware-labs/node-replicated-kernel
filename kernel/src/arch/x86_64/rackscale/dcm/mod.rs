@@ -41,7 +41,6 @@ pub(crate) fn register_dcm_client(
     payload: &mut [u8],
     mut state: Option<(u64, u64)>,
 ) -> Result<Option<(u64, u64)>, RPCError> {
-    log::warn!("register_dcm_client start");
     Ok(None)
 }
 
@@ -62,7 +61,6 @@ fn handle_dcm_node_assignment(
     payload: &mut [u8],
     _state: Option<(u64, u64)>,
 ) -> Result<Option<(u64, u64)>, RPCError> {
-    log::warn!("handle_dcm_node_assignment start");
     // Decode request
     if let Some((req, _)) = unsafe { decode::<NodeAssignment>(payload) } {
         log::debug!(

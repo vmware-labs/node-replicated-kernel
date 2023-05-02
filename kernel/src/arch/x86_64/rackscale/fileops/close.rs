@@ -25,7 +25,7 @@ pub(crate) struct CloseReq {
 unsafe_abomonate!(CloseReq: pid, fd);
 
 pub(crate) fn rpc_close(pid: usize, fd: FileDescriptor) -> KResult<(u64, u64)> {
-    log::warn!("Close({:?})", fd);
+    log::debug!("Close({:?})", fd);
 
     // Setup request data
     let req = CloseReq { pid, fd };
@@ -48,7 +48,7 @@ pub(crate) fn rpc_close(pid: usize, fd: FileDescriptor) -> KResult<(u64, u64)> {
         if remaining.len() > 0 {
             Err(KError::from(RPCError::ExtraData))
         } else {
-            log::warn!("Close() {:?}", res);
+            log::debug!("Close() {:?}", res);
             *res
         }
 

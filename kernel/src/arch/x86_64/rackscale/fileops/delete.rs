@@ -26,7 +26,7 @@ pub(crate) struct DeleteReq {
 unsafe_abomonate!(DeleteReq: pid);
 
 pub(crate) fn rpc_delete(pid: usize, pathname: String) -> KResult<(u64, u64)> {
-    log::warn!("Delete({:?})", pathname);
+    log::debug!("Delete({:?})", pathname);
 
     // Construct request data
     let req = DeleteReq { pid };
@@ -49,7 +49,7 @@ pub(crate) fn rpc_delete(pid: usize, pathname: String) -> KResult<(u64, u64)> {
         if remaining.len() > 0 {
             return Err(KError::from(RPCError::ExtraData));
         }
-        log::warn!("Delete() {:?}", res);
+        log::debug!("Delete() {:?}", res);
         return *res;
     } else {
         return Err(KError::from(RPCError::MalformedResponse));

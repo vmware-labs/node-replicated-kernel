@@ -6,7 +6,6 @@ use core::fmt::Debug;
 use abomonation::{decode, encode, unsafe_abomonate, Abomonation};
 use core2::io::Result as IOResult;
 use core2::io::Write;
-use log::{debug, warn};
 use rpc::rpc::*;
 use rpc::RPCClient;
 
@@ -27,7 +26,7 @@ pub(crate) struct GetInfoReq {
 unsafe_abomonate!(GetInfoReq: pid);
 
 pub(crate) fn rpc_getinfo<P: AsRef<[u8]> + Debug>(pid: usize, name: P) -> KResult<(u64, u64)> {
-    log::warn!("GetInfo({:?})", name);
+    log::debug!("GetInfo({:?})", name);
 
     // Construct request data
     let req = GetInfoReq { pid };
@@ -48,7 +47,7 @@ pub(crate) fn rpc_getinfo<P: AsRef<[u8]> + Debug>(pid: usize, name: P) -> KResul
         if remaining.len() > 0 {
             Err(KError::from(RPCError::ExtraData))
         } else {
-            log::warn!("GetInfo() {:?}", res);
+            log::debug!("GetInfo() {:?}", res);
             *res
         }
     } else {
@@ -66,7 +65,7 @@ pub(crate) fn handle_getinfo(
     let pid = match unsafe { decode::<GetInfoReq>(payload) } {
         Some((req, _)) => req.pid,
         None => {
-            warn!("Invalid payload for request: {:?}", hdr);
+            log::error!("Invalid payload for request: {:?}", hdr);
             construct_error_ret(hdr, payload, KError::from(RPCError::MalformedRequest));
             return Ok(state);
         }

@@ -25,7 +25,7 @@ pub(crate) fn rpc_get_hardware_threads(
     vaddr_buf: u64,
     vaddr_buf_len: u64,
 ) -> KResult<(u64, u64)> {
-    log::warn!("GetHardwareThreads()");
+    log::debug!("GetHardwareThreads()");
 
     // Setup result
     // TODO: make dynamic, for now, size copied from kpi implementation
@@ -48,7 +48,7 @@ pub(crate) fn rpc_get_hardware_threads(
                     &mut user_slice,
                     &remaining[..*data_len as usize],
                 )?;
-                log::warn!("GetHardwareThreads() = {:?}", res);
+                log::debug!("GetHardwareThreads() = {:?}", res);
                 Ok((*data_len, *n))
             } else {
                 log::error!(

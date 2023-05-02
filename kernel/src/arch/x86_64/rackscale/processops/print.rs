@@ -71,7 +71,7 @@ pub(crate) fn handle_log(
             &remaining[0..(hdr.msg_len as usize - core::mem::size_of::<LogReq>())],
         ) {
             Ok(msg_str) => sprint!("RemoteLog({}) {}", res.machine_id, msg_str),
-            Err(e) => log::warn!(
+            Err(e) => log::error!(
                 "log: invalid UTF-8 string: {:?}",
                 &payload[0..hdr.msg_len as usize]
             ),

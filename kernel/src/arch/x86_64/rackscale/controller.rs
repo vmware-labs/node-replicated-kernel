@@ -83,13 +83,10 @@ pub(crate) fn run() {
     } else {
         unreachable!("No supported transport layer specified in kernel argument");
     }
-    log::warn!("Controller created servers.");
 
     let mut controller_state = ControllerState::new(num_clients as usize);
-    log::warn!("Controller created controller state.");
 
     for server in servers.iter_mut() {
-        log::warn!("Controller attempting to add client to server");
         controller_state = server
             .add_client(&CLIENT_REGISTRAR, controller_state)
             .expect("Failed to connect to remote server");

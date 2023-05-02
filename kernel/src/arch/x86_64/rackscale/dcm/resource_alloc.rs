@@ -97,7 +97,7 @@ pub(crate) fn dcm_resource_alloc(
         let dcm_interface = DCM_INTERFACE.lock();
         match dcm_interface.server.handle(None) {
             Ok(Some((alloc_id, node))) => {
-                log::warn!("Received assignment: {:?} to node {:?}", alloc_id, node);
+                log::debug!("Received assignment: {:?} to node {:?}", alloc_id, node);
                 if alloc_id > res.alloc_id + cores + memslices || alloc_id < res.alloc_id {
                     panic!("AllocIds do not match!");
                 }

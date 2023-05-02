@@ -97,7 +97,7 @@ pub(crate) fn handle_get_shmem_structure(
     let shmem_structure = if let Some((req, _)) = unsafe { decode::<ShmemStructure>(payload) } {
         req
     } else {
-        log::warn!("Invalid payload for request: {:?}", hdr);
+        log::error!("Invalid payload for request: {:?}", hdr);
         construct_error_ret(hdr, payload, KError::from(RPCError::MalformedRequest));
         return Ok(state);
     };

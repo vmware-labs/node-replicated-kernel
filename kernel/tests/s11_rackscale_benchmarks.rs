@@ -352,32 +352,33 @@ fn rackscale_vmops_benchmark(is_shmem: bool) {
     let mut baseline_set = HashSet::new();
 
     // TODO(rackscale): assert that there are enough threads/nodes on the machine for these settings?
-    let _machine = Machine::determine();
+    //let _machine = Machine::determine();
     let threads = [1, 2, 4];
-    let max_cores = *threads.iter().max().unwrap();
-
     let num_clients = if is_shmem { vec![1, 2, 4] } else { vec![1] };
-    let max_clients = *num_clients.iter().max().unwrap();
 
     for i in 0..num_clients.len() {
         let nclients = num_clients[i];
 
         for &cores in threads.iter() {
             // TODO(rackscale): this is probably too high, but oh well.
-            let timeout = 120_000 + 20000 * (cores + nclients) as u64;
+            let total_cores = cores * nclients;
+            eprintln!(
+                "\tRunning vmops test total_cores={:?}, nclients={:?}, cores_per_client={:?}",
+                total_cores, nclients, cores
+            );
+            let timeout = 120_000 + 20000 * total_cores as u64;
 
             // TODO(rackscale): probably scale with nclients?
             let shmem_size = SHMEM_SIZE;
             let all_outputs = Arc::new(Mutex::new(Vec::new()));
 
             // Run baseline test if needed
-            let baseline_cores = cores * nclients;
-            if !baseline_set.contains(&baseline_cores) {
+            if !baseline_set.contains(&total_cores) {
                 setup_network(1);
                 let mut shmem_server = spawn_shmem_server(SHMEM_PATH, shmem_size)
                     .expect("Failed to start shmem server");
 
-                let baseline_cmdline = format!("initargs={}", baseline_cores);
+                let baseline_cmdline = format!("initargs={}", total_cores);
 
                 let mut cmdline_baseline =
                     RunnerArgs::new_with_build("userspace-smp", &build_baseline)
@@ -387,7 +388,7 @@ fn rackscale_vmops_benchmark(is_shmem: bool) {
                         .tap("tap0")
                         .no_network_setup()
                         .workers(1)
-                        .cores(max_cores * max_clients)
+                        .cores(total_cores)
                         .use_vmxnet3()
                         .cmd(baseline_cmdline.as_str());
 
@@ -398,7 +399,11 @@ fn rackscale_vmops_benchmark(is_shmem: bool) {
                 }
 
                 let mut output = String::new();
-                let mut qemu_run = |cores| -> Result<WaitStatus> {
+                let mut qemu_run = |baseline_cores| -> Result<WaitStatus> {
+                    eprintln!(
+                        "\tRunning NrOS vmops baseline with {} core(s)",
+                        baseline_cores
+                    );
                     let mut p = spawn_nrk(&cmdline_baseline)?;
 
                     // Parse lines like
@@ -407,7 +412,7 @@ fn rackscale_vmops_benchmark(is_shmem: bool) {
                     let expected_lines = if cfg!(feature = "smoke") {
                         1
                     } else {
-                        cores * 11
+                        baseline_cores * 11
                     };
 
                     for _i in 0..expected_lines {
@@ -443,9 +448,9 @@ fn rackscale_vmops_benchmark(is_shmem: bool) {
                     output += p.exp_eof()?.as_str();
                     p.process.exit()
                 };
-                check_for_successful_exit(&cmdline_baseline, qemu_run(baseline_cores), output);
+                check_for_successful_exit(&cmdline_baseline, qemu_run(total_cores), output);
                 let _ignore = shmem_server.send_control('c');
-                baseline_set.insert(baseline_cores);
+                baseline_set.insert(total_cores);
             }
 
             // Now run rackscale test
@@ -483,7 +488,11 @@ fn rackscale_vmops_benchmark(is_shmem: bool) {
                 }
 
                 let mut output = String::new();
-                let mut qemu_run = |nclients| -> Result<WaitStatus> {
+                let mut qemu_run = |controller_clients, application_cores| -> Result<WaitStatus> {
+                    eprintln!(
+                        "\tRunning rackscale NrOS vmops controller with {} client(s) for a total of {} application core(s)",
+                        controller_clients, application_cores
+                    );
                     let mut p = spawn_nrk(&cmdline_controller)?;
 
                     // Parse lines like
@@ -492,7 +501,7 @@ fn rackscale_vmops_benchmark(is_shmem: bool) {
                     let expected_lines = if cfg!(feature = "smoke") {
                         1
                     } else {
-                        cores * 11
+                        application_cores * 11
                     };
 
                     for _i in 0..expected_lines {
@@ -518,7 +527,7 @@ fn rackscale_vmops_benchmark(is_shmem: bool) {
                         let parts: Vec<&str> = matched.split("init::vmops: ").collect();
                         let r = csv_file.write(format!("{},", env!("GIT_HASH")).as_bytes());
                         assert!(r.is_ok());
-                        let r = csv_file.write(format!("{},", nclients).as_bytes());
+                        let r = csv_file.write(format!("{},", controller_clients).as_bytes());
                         assert!(r.is_ok());
                         let r = csv_file.write(parts[1].as_bytes());
                         assert!(r.is_ok());
@@ -531,7 +540,7 @@ fn rackscale_vmops_benchmark(is_shmem: bool) {
                     }
                     p.process.kill(SIGTERM)
                 };
-                let ret = qemu_run(nclients);
+                let ret = qemu_run(nclients, total_cores);
                 controller_output_array
                     .lock()
                     .push((String::from("Controller"), output));
@@ -549,7 +558,7 @@ fn rackscale_vmops_benchmark(is_shmem: bool) {
                 let kernel_cmdline = format!(
                     "mode=client transport={} initargs={}",
                     if is_shmem { "shmem" } else { "ethernet" },
-                    cores,
+                    total_cores,
                 );
 
                 let tap = format!("tap{}", 2 * nclient);
@@ -567,7 +576,7 @@ fn rackscale_vmops_benchmark(is_shmem: bool) {
                         .tap(&tap)
                         .no_network_setup()
                         .workers(nclients + 1)
-                        .cores(max_cores)
+                        .cores(cores)
                         .use_vmxnet3()
                         .nobuild()
                         .cmd(kernel_cmdline.as_str());
@@ -579,7 +588,11 @@ fn rackscale_vmops_benchmark(is_shmem: bool) {
                     }
 
                     let mut output = String::new();
-                    let mut qemu_run = |_with_cores: usize| -> Result<WaitStatus> {
+                    let mut qemu_run = |with_cores: usize| -> Result<WaitStatus> {
+                        eprintln!(
+                            "\tRunning rackscale NrOS vmops client with {} core(s)",
+                            with_cores
+                        );
                         let mut p = spawn_nrk(&cmdline_client)?;
 
                         let rx = my_rx_mut.lock();

@@ -106,6 +106,10 @@ pub fn spawn_dcm(r: usize, timeout: u64) -> Result<rexpect::session::PtyReplSess
     dcm_args.push("-r".to_string());
     dcm_args.push(format!("{}", r));
 
+    // Set a short poll interval
+    dcm_args.push("-p".to_string());
+    dcm_args.push(format!("{}", 5));
+
     // Start DCM
     let cmd = format!(
         "java -jar ../target/dcm-scheduler.jar {} > {}",

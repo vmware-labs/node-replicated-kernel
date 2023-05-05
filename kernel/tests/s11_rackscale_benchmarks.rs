@@ -353,19 +353,25 @@ fn rackscale_vmops_benchmark(is_shmem: bool) {
 
     // TODO(rackscale): assert that there are enough threads/nodes on the machine for these settings?
     //let _machine = Machine::determine();
-    let threads = [1, 2, 4];
+    let threads = [1, 2, 4, 8, 16];
+    let max_cores = *threads.iter().max().unwrap();
     let num_clients = if is_shmem { vec![1, 2, 4] } else { vec![1] };
 
     for i in 0..num_clients.len() {
         let nclients = num_clients[i];
 
         for &cores in threads.iter() {
-            // TODO(rackscale): this is probably too high, but oh well.
             let total_cores = cores * nclients;
+            if total_cores > max_cores {
+                break;
+            }
+
             eprintln!(
                 "\tRunning vmops test total_cores={:?}, nclients={:?}, cores_per_client={:?}",
                 total_cores, nclients, cores
             );
+
+            // TODO(rackscale): this is probably too high, but oh well.
             let timeout = 120_000 + 20000 * total_cores as u64;
 
             // TODO(rackscale): probably scale with nclients?
@@ -389,6 +395,7 @@ fn rackscale_vmops_benchmark(is_shmem: bool) {
                         .no_network_setup()
                         .workers(1)
                         .cores(total_cores)
+                        .setaffinity()
                         .use_vmxnet3()
                         .cmd(baseline_cmdline.as_str());
 
@@ -479,6 +486,7 @@ fn rackscale_vmops_benchmark(is_shmem: bool) {
                     .tap("tap0")
                     .no_network_setup()
                     .workers(nclients + 1)
+                    .setaffinity()
                     .use_vmxnet3();
 
                 if cfg!(feature = "smoke") {
@@ -577,6 +585,7 @@ fn rackscale_vmops_benchmark(is_shmem: bool) {
                         .no_network_setup()
                         .workers(nclients + 1)
                         .cores(cores)
+                        .setaffinity()
                         .use_vmxnet3()
                         .nobuild()
                         .cmd(kernel_cmdline.as_str());

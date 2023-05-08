@@ -533,16 +533,5 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
 
 /// For cores that advances the replica eagerly. This avoids additional IPI costs.
 pub(crate) fn advance_fs_replica() {
-    #[cfg(feature = "rackscale")]
-    if crate::CMDLINE
-        .get()
-        .map_or(false, |c| c.mode == crate::cmdline::Mode::Client)
-    {
-        log::trace!("Client does not have a fs replica");
-    } else {
-        tlb::eager_advance_fs_replica();
-    }
-
-    #[cfg(not(feature = "rackscale"))]
     tlb::eager_advance_fs_replica();
 }

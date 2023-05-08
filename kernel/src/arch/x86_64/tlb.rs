@@ -226,6 +226,16 @@ pub(crate) fn remote_dequeue(mid: kpi::system::MachineId) {
 }
 
 fn advance_log(log_id: usize) {
+    // Synchronize Mlnr-replica.
+    #[cfg(feature = "rackscale")]
+    if crate::CMDLINE
+        .get()
+        .map_or(false, |c| c.mode == crate::cmdline::Mode::Client)
+    {
+        // Clients don't have an fs log.
+        return;
+    }
+
     // All metadata operations are done using log 1. So, make sure that the
     // replica has applied all those operation before any other log sync.
     if log_id != 1 {
@@ -254,6 +264,16 @@ pub(crate) fn eager_advance_fs_replica() {
             }
         }
         None => {
+            #[cfg(feature = "rackscale")]
+            if crate::CMDLINE
+                .get()
+                .map_or(false, |c| c.mode == crate::cmdline::Mode::Client)
+            {
+                // Synchronize NR-replica
+                let _ignore = nr::KernelNode::synchronize();
+                return;
+            }
+
             let cnrfs = crate::fs::cnrfs::CNRFS.borrow();
             match cnrfs.as_ref() {
                 Some(replica) => {
@@ -471,17 +491,7 @@ pub(crate) fn remote_shootdown(handles: Vec<TlbFlushHandle>) {
 
 pub(crate) fn advance_replica(mtid: kpi::system::MachineThreadId, log_id: usize) {
     trace!("Send AdvanceReplica IPI for {} to {}", log_id, mtid);
-
-    #[cfg(feature = "rackscale")]
-    if crate::CMDLINE
-        .get()
-        .map_or(false, |c| c.mode == crate::cmdline::Mode::Client)
-    {
-        panic!("Clients should not need to advance_replica as this is for cnrfs exclusively");
-    }
-
     let apic_id = atopology::MACHINE_TOPOLOGY.threads[mtid as usize].apic_id();
-
     enqueue(mtid, WorkItem::AdvanceReplica(log_id));
     send_ipi_to_apic(apic_id);
 }

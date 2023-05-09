@@ -441,7 +441,6 @@ impl KernelAllocator {
                 }
             }
 
-            log::warn!("Before asking DCM for memory");
             // Refill by asking DCM for memory.
             {
                 let pcm = try_per_core_mem().ok_or(KError::KcbUnavailable)?;
@@ -452,16 +451,13 @@ impl KernelAllocator {
             }
 
             // Query controller (DCM) to get frames of shmem
-            log::warn!("Before RPC");
             let large_shmem_frames = rpc_get_shmem_frames(None, total_needed_large_pages)?;
-            log::warn!("After RPC");
 
             // Reset to shmem manager
             let pcm = try_per_core_mem().ok_or(KError::KcbUnavailable)?;
             pcm.set_mem_affinity(SHARED_AFFINITY)
                 .expect("Can't change affinity");
             let mut mem_manager = pcm.try_mem_manager()?;
-            log::warn!("After asking DCM for memory");
 
             // Grow large pages
             for i in 0..needed_large_pages {
@@ -502,7 +498,6 @@ impl KernelAllocator {
                 }
 
                 // Add any remaining base pages to the cache, if there's space.
-                log::warn!("Before grabbing client base pages");
                 let mut bp_manager = CLIENT_STATE.base_pages.lock();
                 let base_pages_to_save =
                     core::cmp::min(base_page_iter.len(), bp_manager.spare_base_page_capacity());
@@ -518,7 +513,6 @@ impl KernelAllocator {
                         .grow_base_pages(&[frame])
                         .expect("We ensure not to overfill the FrameCacheBase above.");
                 }
-                log::warn!("After grabbing client base pages");
 
                 if base_page_iter.len() > 0 {
                     log::error!(

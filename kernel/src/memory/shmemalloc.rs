@@ -21,7 +21,7 @@ pub(crate) struct ShmemAlloc();
 
 unsafe impl Allocator for ShmemAlloc {
     fn allocate(&self, layout: Layout) -> Result<NonNull<[u8]>, AllocError> {
-        log::warn!("ShmemAlloc - allocating");
+        log::trace!("ShmemAlloc - allocating");
         let affinity = {
             // We want to allocate the logs in shared memory
             let pcm = per_core_mem();
@@ -50,7 +50,7 @@ unsafe impl Allocator for ShmemAlloc {
         pcm.set_mem_affinity(affinity)
             .expect("Can't change affinity");
 
-        log::warn!("ShmemAlloc - allocating finished.");
+        log::trace!("ShmemAlloc - allocating finished.");
         ret
     }
 

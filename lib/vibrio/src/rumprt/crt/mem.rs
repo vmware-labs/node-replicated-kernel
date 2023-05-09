@@ -11,7 +11,7 @@ use crate::rumprt::{c_int, c_size_t, c_void};
 use lineup::core_id_to_index;
 use lineup::tls2::Environment;
 
-use log::{debug, info, trace, warn};
+use log::{info, trace, warn};
 const MAP_FAILED: u64 = u64::MAX;
 
 /// Implementes mmap by forwarding it to the rumpkernel and then to

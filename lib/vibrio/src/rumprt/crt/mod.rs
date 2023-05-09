@@ -16,6 +16,7 @@ use super::{c_char, c_int};
 
 use crate::syscalls::Fs;
 use kpi::io::*;
+use lineup::tls2::Environment;
 
 pub mod error;
 pub mod mem;
@@ -362,14 +363,15 @@ pub extern "C" fn main() {
             let nic_model = b"wm0\0";
             let iface = CStr::from_bytes_with_nul(nic_model);
 
-            info!("before rump_pub_netconfig_dhcp_ipv4_oneshot");
-
-            let r = rump_pub_netconfig_dhcp_ipv4_oneshot(iface.unwrap().as_ptr());
-            assert_eq!(r, 0, "rump_pub_netconfig_dhcp_ipv4_oneshot");
-            info!(
-                "rump_pub_netconfig_dhcp_ipv4_oneshot done in {:?}",
-                start.elapsed()
-            );
+            // This is a hack - for rackscale, we want to ignore all devices
+            if Environment::scheduler().core_id < kpi::process::MAX_CORES {
+                let r = rump_pub_netconfig_dhcp_ipv4_oneshot(iface.unwrap().as_ptr());
+                assert_eq!(r, 0, "rump_pub_netconfig_dhcp_ipv4_oneshot");
+                info!(
+                    "rump_pub_netconfig_dhcp_ipv4_oneshot done in {:?}",
+                    start.elapsed()
+                );
+            }
 
             // Set up a garbage environment
             let mut c_environ = vec![

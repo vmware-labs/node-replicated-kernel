@@ -9,7 +9,7 @@ use core::{fmt, ptr};
 use hashbrown::HashMap;
 use lineup::core_id_to_index;
 use lineup::tls2::Environment;
-use log::{error, trace, warn};
+use log::{error, trace};
 use spin::Mutex;
 use x86::current::paging::{PAddr, VAddr};
 use x86::io;
@@ -41,6 +41,11 @@ pub unsafe extern "C" fn rumpcomp_pci_confread(
     reg: c_int,
     value: *mut c_uint,
 ) -> c_int {
+    // This is a hack - for rackscale, we want to ignore all devices
+    if Environment::scheduler().core_id > kpi::process::MAX_CORES {
+        return 0;
+    }
+
     let addr = pci_bus_address(bus, dev, fun, reg);
 
     let _l = CONFSPACE_LOCK.lock();
@@ -65,16 +70,8 @@ pub unsafe extern "C" fn rumpcomp_pci_confwrite(
     reg: c_int,
     value: c_uint,
 ) -> c_int {
-    // Device 4 is the ivshmem device set by run.py
-    if dev == 0x6 {
-        warn!(
-            "Skipping rumpcomp_pci_confwrite of ivshmem device ({:#x} {:#x} {:#x}) reg({:#x}) = value({:#x})",
-            bus,
-            dev,
-            fun,
-            reg,
-            value
-        );
+    // This is a hack - for rackscale, we want to ignore all devices
+    if Environment::scheduler().core_id > kpi::process::MAX_CORES {
         return 0;
     }
     trace!(

@@ -21,9 +21,8 @@ use rexpect::process::wait::WaitStatus;
 
 use testutils::builder::{BuildArgs, Machine};
 use testutils::helpers::{
-    notify_controller_of_termination, setup_network, spawn_dcm, spawn_dhcpd_with_interface,
-    spawn_nrk, spawn_shmem_server, wait_for_client_termination, CLIENT_BUILD_DELAY,
-    DHCP_ACK_MATCH_NRK2, SHMEM_PATH, SHMEM_SIZE,
+    notify_controller_of_termination, setup_network, spawn_dcm, spawn_nrk, spawn_shmem_server,
+    wait_for_client_termination, CLIENT_BUILD_DELAY, SHMEM_PATH, SHMEM_SIZE,
 };
 use testutils::runner_args::{
     check_for_successful_exit, log_qemu_out_with_name, wait_for_sigterm_or_successful_exit_no_log,
@@ -670,10 +669,8 @@ fn s11_rackscale_leveldb_benchmark() {
 
     // TODO(rackscale): assert that there are enough threads/nodes on the machine for these settings?
     let _machine = Machine::determine();
-    let threads = [1, 2, 4]; //[1, 2, 4];
-    let max_cores = *threads.iter().max().unwrap();
-
-    let num_clients = [1]; // vec![1, 2, 4];
+    let threads = vec![1, 2, 4];
+    let num_clients = vec![1, 2, 4];
 
     for i in 0..num_clients.len() {
         let nclients = num_clients[i];
@@ -695,7 +692,7 @@ fn s11_rackscale_leveldb_benchmark() {
 
         for &ncores in threads.iter() {
             // TODO(rackscale): this is probably too high, but oh well.
-            let timeout = 240_000 + 20000 * (ncores * nclients) as u64;
+            let timeout = 240_000 + 30000 * (ncores * nclients) as u64;
             let all_outputs = Arc::new(Mutex::new(Vec::new()));
 
             let (tx, rx) = channel();
@@ -813,7 +810,7 @@ fn s11_rackscale_leveldb_benchmark() {
                         .tap(&tap)
                         .no_network_setup()
                         .workers(nclients + 1)
-                        .cores(max_cores)
+                        .cores(ncores)
                         .use_virtio()
                         .cmd(client_cmdline.as_str());
 
@@ -825,18 +822,12 @@ fn s11_rackscale_leveldb_benchmark() {
 
                     let mut output = String::new();
                     let mut qemu_run = |_with_cores: usize| -> Result<WaitStatus> {
-                        let mut dhcp_server = spawn_dhcpd_with_interface("br0".to_string())?;
                         let mut p = spawn_nrk(&cmdline_client)?;
-
-                        // TODO: exp_string only waits 4500, which is insufficient as it's incredibly slow atm
-                        sleep(Duration::from_millis(120_000));
-                        output += dhcp_server.exp_string(DHCP_ACK_MATCH_NRK2)?.as_str();
 
                         let rx = my_rx_mut.lock();
                         let _ = wait_for_client_termination::<()>(&rx);
                         let ret = p.process.kill(SIGTERM);
                         output += p.exp_eof()?.as_str();
-                        dhcp_server.send_control('c')?;
                         ret
                     };
                     // Could exit with 'success' or from sigterm, depending on number of clients.

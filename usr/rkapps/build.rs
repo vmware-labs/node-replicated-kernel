@@ -112,9 +112,9 @@ fn main() {
             .status()
             .unwrap();
 
-        println!("CHECKOUT ccde0e7 {:?}", out_dir);
+        println!("CHECKOUT 52d5bd4 {:?}", out_dir);
         Command::new("git")
-            .args(&["checkout", "ccde0e7ba9e8238f998e42a88ffe9f9a10fed942"])
+            .args(&["checkout", "52d5bd44df02db4645a469ade7a67bb4705ab8a9"])
             .current_dir(&Path::new(&out_dir))
             .status()
             .unwrap();

@@ -17,14 +17,17 @@ pub type MachineId = usize;
 /// High bits are for MachineId, low bits are for MachineThreadId.
 pub type GlobalThreadId = usize;
 
+#[inline(always)]
 pub fn new_gtid(mtid: MachineThreadId, mid: MachineId) -> GlobalThreadId {
     (mid << (usize::BITS >> 1) as usize) | mtid
 }
 
+#[inline(always)]
 pub fn mtid_from_gtid(gtid: GlobalThreadId) -> MachineThreadId {
     (gtid << (usize::BITS >> 1) as usize) >> (usize::BITS >> 1) as usize
 }
 
+#[inline(always)]
 pub fn mid_from_gtid(gtid: GlobalThreadId) -> MachineId {
     gtid >> (usize::BITS >> 1) as usize
 }

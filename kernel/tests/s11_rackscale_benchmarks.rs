@@ -669,17 +669,14 @@ fn rackscale_leveldb_benchmark(is_shmem: bool) {
     let _ignore = std::fs::remove_file(file_name);
 
     let build = Arc::new({
-        let mut build = BuildArgs::default()
+        BuildArgs::default()
             .module("rkapps")
             .user_feature("rkapps:leveldb-bench")
             .kernel_feature("shmem")
             .kernel_feature("ethernet")
             .kernel_feature("rackscale")
-            .release();
-        if cfg!(feature = "smoke") {
-            build = build.user_feature("smoke");
-        }
-        build.build()
+            .release()
+            .build()
     });
 
     let build_baseline = Arc::new({

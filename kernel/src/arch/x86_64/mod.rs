@@ -24,6 +24,8 @@ use core::mem::transmute;
 use core::sync::atomic::AtomicBool;
 use core::sync::atomic::Ordering;
 
+#[cfg(feature = "rackscale")]
+use crate::nr::NR_LOG;
 pub use bootloader_shared::*;
 use cnr::Replica as MlnrReplica;
 use fallible_collections::TryClone;
@@ -31,7 +33,6 @@ use klogger::sprint;
 use log::{debug, error, info};
 use node_replication::Replica;
 use x86::{controlregs, cpuid};
-
 #[cfg(not(feature = "rackscale"))]
 use {crate::nr::Op, node_replication::Log};
 
@@ -422,7 +423,6 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
             }
         }
         // Initialize the workqueues used for distributed TLB shootdowns
-        // TODO: this should be done in the controller, only, since it does not receive interrupts??
         log::warn!("About to initialize rackscale client workqueues");
         lazy_static::initialize(&crate::arch::tlb::RACKSCALE_CLIENT_WORKQUEUES);
         log::warn!("Finished inititializing client work queues");
@@ -498,7 +498,6 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
             lazy_static::initialize(&process::PROCESS_TABLE);
             crate::nrproc::register_thread_with_process_replicas();
         }
-        use crate::nr::NR_LOG;
 
         // this calls an RPC on the client, which is why we do this later in initialization than in non-rackscale
         lazy_static::initialize(&NR_LOG);

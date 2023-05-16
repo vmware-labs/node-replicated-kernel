@@ -28,6 +28,7 @@ type CoreId = usize;
 
 /// A utility function that converts a core_id (which may not be sequential)
 /// to a form more easily used for indexing
+#[inline(always)]
 pub fn core_id_to_index(core_id: CoreId) -> usize {
     let machine_id = kpi::system::mid_from_gtid(core_id);
     if machine_id == 0 {

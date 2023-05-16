@@ -10,7 +10,7 @@ use core::sync::atomic::{AtomicI32, AtomicUsize, Ordering};
 
 use hashbrown::HashMap;
 use lazy_static::lazy_static;
-use log::{debug, trace};
+use log::{debug, trace, warn};
 
 use lineup::threads::ThreadId;
 use lineup::tls2::Environment;
@@ -242,7 +242,7 @@ pub unsafe extern "C" fn _lwp_ctl(ctl: c_int, data: *mut *mut lwpctl) -> c_int {
 pub unsafe extern "C" fn _lwp_exit() {
     let t = Environment::thread();
     loop {
-        trace!(
+        warn!(
             "_lwp_exit tid={:?} oncore={}",
             Environment::tid(),
             Environment::scheduler().core_id

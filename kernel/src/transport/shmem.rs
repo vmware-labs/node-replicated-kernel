@@ -410,6 +410,7 @@ pub(crate) fn get_affinity_shmem_by_mid(mid: MachineId) -> ShmemRegion {
 }
 
 #[cfg(feature = "rackscale")]
+#[inline(always)]
 pub(crate) fn is_shmem_frame(frame: Frame, is_affinity: bool, is_kaddr: bool) -> bool {
     is_shmem_addr(frame.base.as_u64(), is_affinity, is_kaddr)
         && is_shmem_addr(
@@ -420,6 +421,7 @@ pub(crate) fn is_shmem_frame(frame: Frame, is_affinity: bool, is_kaddr: bool) ->
 }
 
 #[cfg(feature = "rackscale")]
+#[inline(always)]
 pub(crate) fn is_shmem_addr(addr: u64, is_affinity: bool, is_kaddr: bool) -> bool {
     let offset = if is_kaddr { KERNEL_BASE } else { 0 };
 

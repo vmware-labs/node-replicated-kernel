@@ -1064,6 +1064,7 @@ impl Ring3Process {
     }
 
     #[cfg(feature = "rackscale")]
+    #[inline(always)]
     fn get_executor_index(
         &self,
         affinity: atopology::NodeId,

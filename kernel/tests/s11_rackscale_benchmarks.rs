@@ -650,13 +650,57 @@ fn rackscale_vmops_benchmark(is_shmem: bool) {
 
 #[test]
 #[cfg(not(feature = "baremetal"))]
-fn s11_rackscale_leveldb_benchmark() {
+fn s11_rackscale_shmem_leveldb_benchmark() {
+    rackscale_leveldb_benchmark(true);
+}
+
+#[cfg(not(feature = "baremetal"))]
+fn rackscale_leveldb_benchmark(is_shmem: bool) {
+    use std::collections::HashSet;
     use std::sync::Arc;
     use std::thread::sleep;
     use std::time::Duration;
 
-    let file_name = "rackscale_shmem_leveldb_benchmark.csv";
+    let file_name = if is_shmem {
+        "rackscale_shmem_leveldb_benchmark.csv"
+    } else {
+        "rackscale_ethernet_leveldb_benchmark.csv"
+    };
     let _ignore = std::fs::remove_file(file_name);
+
+    let build = Arc::new({
+        let mut build = BuildArgs::default()
+            .module("rkapps")
+            .user_feature("rkapps:leveldb-bench")
+            .kernel_feature("shmem")
+            .kernel_feature("ethernet")
+            .kernel_feature("rackscale")
+            .release();
+        if cfg!(feature = "smoke") {
+            build = build.user_feature("smoke");
+        }
+        build.build()
+    });
+
+    let build_baseline = Arc::new({
+        let mut build = BuildArgs::default()
+            .module("rkapps")
+            .user_feature("rkapps:leveldb-bench")
+            .kernel_feature("shmem")
+            .kernel_feature("ethernet")
+            .release();
+        if cfg!(feature = "smoke") {
+            build = build.user_feature("smoke");
+        }
+        build.build()
+    });
+    //let mut baseline_set = HashSet::new();
+
+    // TODO(rackscale): assert that there are enough threads/nodes on the machine for these settings?
+    //let _machine = Machine::determine();
+    let threads = [1, 2, 4, 8, 16];
+    let max_cores = *threads.iter().max().unwrap();
+    let num_clients = if is_shmem { vec![1, 2, 4] } else { vec![1] };
 
     // level-DB arguments
     let (reads, num, val_size) = if cfg!(feature = "smoke") {
@@ -667,34 +711,112 @@ fn s11_rackscale_leveldb_benchmark() {
         (10_000, 5_000, 4096)
     };
 
-    // TODO(rackscale): assert that there are enough threads/nodes on the machine for these settings?
-    let _machine = Machine::determine();
-    let threads = vec![1, 2, 4];
-    let num_clients = vec![1, 2, 4];
-
     for i in 0..num_clients.len() {
         let nclients = num_clients[i];
-        setup_network(nclients + 1);
 
-        // TODO(rackscale): probably scale with nclients?
-        let shmem_size = SHMEM_SIZE * 2;
+        for &cores in threads.iter() {
+            let total_cores = cores * nclients;
+            if total_cores > max_cores {
+                break;
+            }
 
-        let build = Arc::new({
-            BuildArgs::default()
-                .module("rkapps")
-                .user_feature("rkapps:leveldb-bench")
-                .kernel_feature("shmem")
-                .kernel_feature("ethernet")
-                .kernel_feature("rackscale")
-                .release()
-                .build()
-        });
-
-        for &ncores in threads.iter() {
             // TODO(rackscale): this is probably too high, but oh well.
-            let timeout = 240_000 + 30000 * (ncores * nclients) as u64;
+            let timeout = 60_000 * 7;
+
+            // TODO(rackscale): probably scale with nclients?
+            let shmem_size = SHMEM_SIZE * 2;
+
             let all_outputs = Arc::new(Mutex::new(Vec::new()));
 
+            /*
+            // TODO: Run baseline test if needed
+            if !baseline_set.contains(&total_cores) {
+                setup_network(1);
+                let mut shmem_server = spawn_shmem_server(SHMEM_PATH, shmem_size)
+                    .expect("Failed to start shmem server");
+
+                let baseline_cmdline = format!(
+                    r#"init=dbbench.bin initargs={} appcmd='--threads={} --benchmarks=fillseq,readrandom --reads={} --num={} --value_size={}'"#,
+                    total_cores, total_cores, reads, num, val_size
+                );
+
+                let mut cmdline_baseline =
+                    RunnerArgs::new_with_build("userspace-smp", &build_baseline)
+                        .timeout(timeout)
+                        .shmem_size(shmem_size as usize)
+                        .shmem_path(SHMEM_PATH)
+                        .tap("tap0")
+                        .no_network_setup()
+                        .workers(1)
+                        .cores(total_cores)
+                        //.setaffinity()
+                        .use_vmxnet3()
+                        .cmd(baseline_cmdline.as_str());
+
+                if cfg!(feature = "smoke") {
+                    cmdline_baseline = cmdline_baseline.memory(8192);
+                } else {
+                    cmdline_baseline = cmdline_baseline.memory(80_000);
+                }
+
+                let mut output = String::new();
+                let mut qemu_run = |baseline_cores| -> Result<WaitStatus> {
+                    eprintln!(
+                        "\tRunning NrOS leveldb baseline with {} core(s)",
+                        baseline_cores
+                    );
+                    let mut p = spawn_nrk(&cmdline_baseline)?;
+
+                    let (prev, matched) = p.exp_regex(r#"readrandom(.*)"#)?;
+                    println!("{}", matched);
+                    output += prev.as_str();
+                    output += matched.as_str();
+
+                    // Append parsed results to a CSV file
+                    let write_headers = !Path::new(file_name).exists();
+                    let mut csv_file = OpenOptions::new()
+                        .append(true)
+                        .create(true)
+                        .open(file_name)
+                        .expect("Can't open file");
+                    if write_headers {
+                        let row =
+                            "git_rev,benchmark,nclients,ncores,reads,num,val_size,operations\n";
+                        let r = csv_file.write(row.as_bytes());
+                        assert!(r.is_ok());
+                    }
+
+                    let parts: Vec<&str> = matched.split("ops/sec").collect();
+                    let mut parts: Vec<&str> = parts[0].split(" ").collect();
+                    parts.pop();
+                    let r = csv_file.write(format!("{},", env!("GIT_HASH")).as_bytes());
+                    assert!(r.is_ok());
+                    let out = format!(
+                        "readrandom,{},{},{},{},{},{}",
+                        0,
+                        total_cores,
+                        reads,
+                        num,
+                        val_size,
+                        parts.last().unwrap()
+                    );
+                    let r = csv_file.write(out.as_bytes());
+                    assert!(r.is_ok());
+                    let r = csv_file.write("\n".as_bytes());
+                    assert!(r.is_ok());
+
+                    output += p.exp_eof()?.as_str();
+                    p.process.exit()
+                };
+
+                check_for_successful_exit(&cmdline_baseline, qemu_run(total_cores), output);
+                let _ignore = shmem_server.send_control('c');
+                baseline_set.insert(total_cores);
+            }
+            */
+
+            // Now run rackscale test
+            setup_network(nclients + 1);
             let (tx, rx) = channel();
             let rx_mut = Arc::new(Mutex::new(rx));
 
@@ -702,10 +824,14 @@ fn s11_rackscale_leveldb_benchmark() {
                 spawn_shmem_server(SHMEM_PATH, shmem_size).expect("Failed to start shmem server");
             let mut dcm = spawn_dcm(1, timeout).expect("Failed to start DCM");
 
+            let controller_cmdline = format!(
+                "mode=controller transport={}",
+                if is_shmem { "shmem" } else { "ethernet" }
+            );
+
             // Create controller
-            let controller_cmdline = "mode=controller transport=shmem";
-            let controller_output_array = all_outputs.clone();
             let build1 = build.clone();
+            let controller_output_array = all_outputs.clone();
             let controller = std::thread::spawn(move || {
                 let mut cmdline_controller = RunnerArgs::new_with_build("userspace-smp", &build1)
                     .timeout(timeout)
@@ -715,6 +841,7 @@ fn s11_rackscale_leveldb_benchmark() {
                     .tap("tap0")
                     .no_network_setup()
                     .workers(nclients + 1)
+                    //.setaffinity()
                     .use_vmxnet3();
 
                 if cfg!(feature = "smoke") {
@@ -724,7 +851,11 @@ fn s11_rackscale_leveldb_benchmark() {
                 }
 
                 let mut output = String::new();
-                let mut qemu_run = |nclients| -> Result<WaitStatus> {
+                let mut qemu_run = |controller_clients, application_cores| -> Result<WaitStatus> {
+                    eprintln!(
+                        "\tRunning rackscale NrOS leveldb controller with {} client(s) for a total of {} application core(s)",
+                        controller_clients, application_cores
+                    );
                     let mut p = spawn_nrk(&cmdline_controller)?;
 
                     let (prev, matched) = p.exp_regex(r#"readrandom(.*)"#)?;
@@ -754,7 +885,7 @@ fn s11_rackscale_leveldb_benchmark() {
                     let out = format!(
                         "readrandom,{},{},{},{},{},{}",
                         nclients,
-                        ncores,
+                        cores * nclients,
                         reads,
                         num,
                         val_size,
@@ -770,8 +901,7 @@ fn s11_rackscale_leveldb_benchmark() {
                     }
                     p.process.kill(SIGTERM)
                 };
-
-                let ret = qemu_run(nclients);
+                let ret = qemu_run(nclients, total_cores);
                 controller_output_array
                     .lock()
                     .push((String::from("Controller"), output));
@@ -788,8 +918,8 @@ fn s11_rackscale_leveldb_benchmark() {
             for nclient in 1..(nclients + 1) {
                 let client_cmdline = format!(
                     r#"mode=client transport=shmem init=dbbench.bin initargs={} appcmd='--threads={} --benchmarks=fillseq,readrandom --reads={} --num={} --value_size={}'"#,
-                    ncores * nclients,
-                    ncores * nclients,
+                    cores * nclients,
+                    cores * nclients,
                     reads,
                     num,
                     val_size
@@ -803,6 +933,7 @@ fn s11_rackscale_leveldb_benchmark() {
                     sleep(Duration::from_millis(
                         CLIENT_BUILD_DELAY * (nclient as u64 + 1),
                     ));
+
                     let mut cmdline_client = RunnerArgs::new_with_build("userspace-smp", &build2)
                         .timeout(timeout)
                         .shmem_size(shmem_size as usize)
@@ -810,18 +941,24 @@ fn s11_rackscale_leveldb_benchmark() {
                         .tap(&tap)
                         .no_network_setup()
                         .workers(nclients + 1)
-                        .cores(ncores)
-                        .use_virtio()
+                        .cores(cores)
+                        //.setaffinity()
+                        .use_vmxnet3()
+                        .nobuild()
                         .cmd(client_cmdline.as_str());
 
-                    if cfg!(feature = "smoke") {
-                        cmdline_client = cmdline_client.memory(8192);
+                    cmdline_client = if cfg!(feature = "smoke") {
+                        cmdline_client.memory(8192)
                     } else {
-                        cmdline_client = cmdline_client.memory(80_000);
-                    }
+                        cmdline_client.memory(80_000)
+                    };
 
                     let mut output = String::new();
-                    let mut qemu_run = |_with_cores: usize| -> Result<WaitStatus> {
+                    let mut qemu_run = |with_cores: usize| -> Result<WaitStatus> {
+                        eprintln!(
+                            "\tRunning rackscale NrOS leveldb client with {} core(s)",
+                            with_cores
+                        );
                         let mut p = spawn_nrk(&cmdline_client)?;
 
                         let rx = my_rx_mut.lock();
@@ -831,7 +968,7 @@ fn s11_rackscale_leveldb_benchmark() {
                         ret
                     };
                     // Could exit with 'success' or from sigterm, depending on number of clients.
-                    let ret = qemu_run(ncores);
+                    let ret = qemu_run(cores);
                     my_output_array
                         .lock()
                         .push((format!("Client{}", nclient), output));

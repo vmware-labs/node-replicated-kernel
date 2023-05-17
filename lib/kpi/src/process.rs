@@ -7,12 +7,15 @@ use serde::{Deserialize, Serialize};
 use x86::bits64::paging::PML4_SLOT_SIZE;
 
 /// Max number of machines supported by the process allocator.
-pub const MAX_MACHINES: usize = 4;
+pub const MAX_MACHINES: usize = 8;
 
-pub const MAX_CORES_PER_MACHINE: usize = 24;
+pub const MAX_CORES_PER_MACHINE: usize = 12;
 
 /// Max number of cores supported by the process allocator.
 pub const MAX_CORES: usize = 96; // MAX_MACHINES * MAX_CORES_PER_MACHINE;
+
+// Make sure the rackscale configuration respects the max cores config
+static_assertions::const_assert!(MAX_MACHINES * MAX_CORES_PER_MACHINE <= MAX_CORES);
 
 /// Offset in address-space for ELF binary relocation.
 pub const ELF_OFFSET: usize = 0x20_0000_0000;
@@ -29,7 +32,6 @@ pub const HEAP_PER_CORE_REGION: usize = 0x2_0000_0000;
 /// End of Heap memory.
 pub const HEAP_END: usize = HEAP_START + ((MAX_CORES + 1) * HEAP_PER_CORE_REGION);
 
-// TODO(rackscale): is it okay to exceed this in order to allow greater total system size?
 // Make sure that all our process regions are in the first PML4 slot. This isn't
 // really necessary for anything except benchmarking: it helps for scalability
 // benchmarks if we know that all other slots are "empty" and we don't

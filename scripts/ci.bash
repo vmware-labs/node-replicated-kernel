@@ -13,6 +13,8 @@ rm -f fxmark_benchmark.csv
 rm -f leveldb_benchmark.csv
 
 rm -f rackscale_shmem_vmops_benchmark.csv
+rm -f rackscale_shmem_vmops_latency_benchmark.csv
+rm -f rackscale_shmem_fxmark_benchmark.csv
 
 # For vmops: --features prealloc can improve performance further (at the expense of test duration)
 RUST_TEST_THREADS=1 cargo test --test s10* -- s10_vmops_benchmark --nocapture
@@ -23,6 +25,8 @@ RUST_TEST_THREADS=1 cargo test --test s10* -- s10_leveldb_benchmark --nocapture
 RUST_TEST_THREADS=1 cargo test --test s10* -- s10_fxmark_bench --nocapture
 
 RUST_TEST_THREADS=1 cargo test --test s11* -- s11_rackscale_shmem_vmops_benchmark --nocapture
+RUST_TEST_THREADS=1 cargo test --test s11* -- s11_rackscale_shmem_vmops_latency_benchmark --nocapture
+RUST_TEST_THREADS=1 cargo test --test s11* -- s11_rackscale_shmem_fxmark_bench --nocapture
 
 # Clone repo
 rm -rf gh-pages
@@ -102,7 +106,20 @@ fi
 mkdir -p ${DEPLOY_DIR}
 cp gh-pages/rackscale/vmops/index.markdown ${DEPLOY_DIR}
 mv rackscale_shmem_vmops_benchmark.csv ${DEPLOY_DIR}
+mv rackscale_shmem_vmops_latency_benchmark.csv ${DEPLOY_DIR}
 gzip ${DEPLOY_DIR}/rackscale_shmem_vmops_benchmark.csv
+gzip ${DEPLOY_DIR}/rackscale_shmem_vmops_latency_benchmark.csv
+
+# Copy rackscale memfs results
+DEPLOY_DIR="gh-pages/rackscale/memfs/${CI_MACHINE_TYPE}/${GIT_REV_CURRENT}/"
+if [ -d "${DEPLOY_DIR}" ]; then
+    # If we already have results (created the directory),
+    # we will add the new results in a subdir
+    DEPLOY_DIR=${DEPLOY_DIR}${DATE_PREFIX}
+fi
+mkdir -p ${DEPLOY_DIR}
+mv rackscale_shmem_fxmark_benchmark.csv ${DEPLOY_DIR}
+gzip ${DEPLOY_DIR}/rackscale_shmem_fxmark_benchmark.csv
 
 # Update CI history plots
 python3 gh-pages/_scripts/ci_history.py --append --machine $CI_MACHINE_TYPE

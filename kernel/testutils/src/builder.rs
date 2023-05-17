@@ -79,6 +79,35 @@ impl Machine {
         threads
     }
 
+    /// Return a set of cores per client to run benchmark, run fewer total iterations
+    /// and instead more with high core counts.
+    pub fn rackscale_thread_defaults_low_mid_high(&self, nclients: usize) -> Vec<usize> {
+        if cfg!(feature = "smoke") {
+            return vec![1];
+        }
+
+        let uniform_threads = self.rackscale_thread_defaults_uniform(nclients);
+        let mut threads = Vec::with_capacity(6);
+
+        for low in uniform_threads.iter().take(2) {
+            threads.push(*low);
+        }
+
+        let mid = uniform_threads.len() / 2;
+        if let Some(e) = uniform_threads.get(mid) {
+            threads.push(*e);
+        }
+
+        for high in uniform_threads.iter().rev().take(3) {
+            threads.push(*high);
+        }
+
+        threads.sort_unstable();
+        threads.dedup();
+
+        threads
+    }
+
     /// Return a set of cores to run benchmark on sampled uniform between
     /// 1..self.max_cores().
     pub fn thread_defaults_uniform(&self) -> Vec<usize> {
@@ -114,6 +143,46 @@ impl Machine {
         threads.push(max_cores / nodes);
         threads.push(max_cores);
 
+        threads.sort_unstable();
+        threads.dedup();
+
+        threads
+    }
+
+    /// Return a set of cores to run benchmark on sampled uniform between
+    /// 1..self.max_cores().
+    pub fn rackscale_thread_defaults_uniform(&self, nclients: usize) -> Vec<usize> {
+        if cfg!(feature = "smoke") {
+            return vec![1];
+        }
+
+        // Leave some extra cores for controller, ivshmem server, dcm, etc.
+        let max_cores = self.max_cores();
+        let max_cores_per_client = (max_cores - 4) / nclients;
+
+        let mut threads = Vec::with_capacity(12);
+        // On larger machines thread increments are bigger than on smaller
+        // machines:
+        let thread_incremements = if max_cores > 96 {
+            16
+        } else if max_cores > 24 {
+            8
+        } else if max_cores > 16 {
+            4
+        } else {
+            2
+        } / nclients;
+
+        for t in (0..(max_cores_per_client + 1)).step_by(thread_incremements) {
+            if t == 0 {
+                // Can't run on 0 threads
+                threads.push(t + 1);
+            } else {
+                threads.push(t);
+            }
+        }
+
+        threads.push(max_cores_per_client);
         threads.sort_unstable();
         threads.dedup();
 

@@ -28,8 +28,9 @@ the ivshmem server code. Open ```contrib/ivshmem-server/ivshmem-server.c```.
 Go to the function```ivshmem_server_ftruncate```. Replace it with:
 ```c
 static int
-ivshmem_server_ftruncate(int fd, unsigned shmsize)
+ivshmem_server_ftruncate(int fd, uint64_t shmsize)
 {
+    int ret;
     struct stat mapstat;
 
     /* align shmsize to next power of 2 */
@@ -39,7 +40,19 @@ ivshmem_server_ftruncate(int fd, unsigned shmsize)
         return 0;
     }
 
-    return ftruncate(fd, shmsize);
+    /*
+     * This is a do-while loop in case
+     * shmsize > IVSHMEM_SERVER_MAX_HUGEPAGE_SIZE
+     */
+    do {
+        ret = ftruncate64(fd, shmsize);
+        if (ret == 0) {
+            return ret;
+        }
+        shmsize *= 2;
+    } while (shmsize <= IVSHMEM_SERVER_MAX_HUGEPAGE_SIZE);
+
+    return -1;
 }
 ```
 
@@ -56,3 +69,8 @@ qemu-system-x86_64 --version
 You can also add `--enable-debug` to the configure script which will add debug
 information (useful for source information when stepping through qemu code in
 gdb).
+
+Note that if you are only updating the ```ivshmem-server```, it may not install
+correctly with the ```make install``` command above. Instead, you can use
+```which ivshmem-server``` to find the current location and then overwrite it
+with ```qemu-6.0.0/build/contrib/ivshmem-server/ivshmem-server```. 

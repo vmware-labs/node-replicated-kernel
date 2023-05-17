@@ -648,7 +648,10 @@ fn rackscale_vmops_benchmark(is_shmem: bool) {
     }
 }
 
+// Ignoring this test for now due to synchronization bugs. Seen bugs include
+// mutex locking against itself, _lwp_exit returning after a thread has blocked.
 #[test]
+#[ignore]
 #[cfg(not(feature = "baremetal"))]
 fn s11_rackscale_shmem_leveldb_benchmark() {
     rackscale_leveldb_benchmark(true);

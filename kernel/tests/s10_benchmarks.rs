@@ -128,7 +128,7 @@ fn s10_vmops_benchmark() {
         let kernel_cmdline = format!("initargs={}", cores);
         let mut cmdline = RunnerArgs::new_with_build("userspace-smp", &build)
             .cores(machine.max_cores())
-            .setaffinity()
+            .setaffinity(Vec::new())
             .timeout(12_000 + cores as u64 * 3000)
             .cmd(kernel_cmdline.as_str());
 
@@ -213,7 +213,7 @@ fn s10_shootdown_simple() {
         let kernel_cmdline = format!("initargs={}", cores);
         let mut cmdline = RunnerArgs::new_with_build("shootdown-simple", &build)
             .cores(cores)
-            .setaffinity()
+            .setaffinity(Vec::new())
             .timeout(12_000 + cores as u64 * 3000)
             .cmd(kernel_cmdline.as_str());
 
@@ -294,7 +294,7 @@ fn s10_vmops_latency_benchmark() {
         let kernel_cmdline = format!("initargs={}", cores);
         let mut cmdline = RunnerArgs::new_with_build("userspace-smp", &build)
             .cores(machine.max_cores())
-            .setaffinity()
+            .setaffinity(Vec::new())
             .timeout(25_000 + cores as u64 * 100_000)
             .cmd(kernel_cmdline.as_str());
 
@@ -376,7 +376,7 @@ fn s10_vmops_unmaplat_latency_benchmark() {
         let kernel_cmdline = format!("initargs={}", cores);
         let mut cmdline = RunnerArgs::new_with_build("userspace-smp", &build)
             .cores(machine.max_cores())
-            .setaffinity()
+            .setaffinity(Vec::new())
             .timeout(35_000 + cores as u64 * 100_000)
             .cmd(kernel_cmdline.as_str());
 
@@ -480,7 +480,7 @@ fn s10_fxmark_benchmark() {
                     .memory(1024)
                     .timeout(num_microbenchs * (25_000 + cores as u64 * 1000))
                     .cores(machine.max_cores())
-                    .setaffinity()
+                    .setaffinity(Vec::new())
                     .cmd(kernel_cmdline.as_str());
 
                 if cfg!(feature = "smoke") {
@@ -698,7 +698,7 @@ fn s10_memcached_benchmark() {
                 .timeout(25_000)
                 .cores(max_cores)
                 .nodes(1)
-                .setaffinity()
+                .setaffinity(Vec::new())
                 .no_network_setup()
                 .cmd(kernel_cmdline.as_str());
 
@@ -769,7 +769,7 @@ fn s10_leveldb_benchmark() {
             .cores(machine.max_cores())
             .nodes(2)
             .use_virtio()
-            .setaffinity()
+            .setaffinity(Vec::new())
             .cmd(kernel_cmdline.as_str())
             .no_network_setup();
 

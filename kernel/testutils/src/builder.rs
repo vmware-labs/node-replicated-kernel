@@ -6,7 +6,7 @@ use std::path::Path;
 use std::sync::{Mutex, MutexGuard};
 use std::{io, process};
 
-use hwloc2::{ObjectType, Topology};
+use hwloc2::{ObjectType, Topology, TopologyObject};
 use lazy_static::lazy_static;
 
 /// Environment variable that points to machine config (for baremetal booting)
@@ -147,6 +147,71 @@ impl Machine {
                 _ => unreachable!("unknown machine"),
             }
         }
+    }
+
+    pub fn rackscale_core_affinity(&self, cores_per_vm: Vec<usize>) -> Vec<Vec<u32>> {
+        let max_cores = self.max_cores();
+        let max_numa_nodes = self.max_numa_nodes();
+
+        // Sanity checking
+        assert!(max_cores % max_numa_nodes == 0);
+        assert!(cores_per_vm.iter().sum::<usize>() <= max_cores);
+
+        // Get cores by NUMA node
+        let topo = Topology::new().expect("Can't retrieve system topology");
+        let packages = topo
+            .objects_with_type(&ObjectType::Package)
+            .expect("Failed to get packages");
+        assert!(max_numa_nodes == packages.len());
+        let mut cpus_by_node = Vec::new();
+        for package in packages {
+            let mut cores = self.get_cores(package, Vec::new());
+            cores.sort();
+            cpus_by_node.push(cores);
+        }
+
+        // This could maybe be a proper bin packing problem, but we'll just
+        // use a naive round-robin of nodes instead
+        let mut node_indices = vec![0; max_numa_nodes];
+        let mut placement_cores = Vec::new();
+        let mut node_index = 0;
+        for vm_cores in cores_per_vm {
+            let mut cores_allocated = Vec::new();
+            while cores_allocated.len() < vm_cores {
+                let start_index = node_indices[node_index];
+                let end_index = core::cmp::min(
+                    start_index + (vm_cores - cores_allocated.len()),
+                    cpus_by_node[node_index].len(),
+                );
+
+                cores_allocated
+                    .extend_from_slice(&cpus_by_node[node_index][start_index..end_index]);
+
+                node_indices[node_index] = end_index;
+                node_index = (node_index + 1) % max_numa_nodes;
+            }
+            placement_cores.push(cores_allocated);
+        }
+
+        // Returns an array of cores per vm that the vm should be pinned to.
+        return placement_cores;
+    }
+
+    /// This mimics the output of corealloc -c max_cores -t interleave
+    fn get_cores<'a>(&self, to: &'a TopologyObject, mut cores: Vec<u32>) -> Vec<u32> {
+        if to.object_type() == ObjectType::Core {
+            // Choose the id of the lowest processing unit
+            let mut ids = Vec::new();
+            for child in to.children() {
+                ids.push(child.os_index());
+            }
+            cores.push(*ids.iter().min().unwrap());
+        } else {
+            for child in to.children() {
+                cores = self.get_cores(child, cores);
+            }
+        }
+        cores
     }
 }
 

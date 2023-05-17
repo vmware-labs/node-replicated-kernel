@@ -51,7 +51,7 @@ fn rackscale_userspace_smoke_test(is_shmem: bool) {
 
     let mut shmem_server =
         spawn_shmem_server(SHMEM_PATH, SHMEM_SIZE).expect("Failed to start shmem server");
-    let mut dcm = spawn_dcm(1, timeout).expect("Failed to start DCM");
+    let mut dcm = spawn_dcm(1).expect("Failed to start DCM");
 
     // Create build for both controller and client
     let build = Arc::new(
@@ -170,7 +170,7 @@ fn rackscale_userspace_smoke_test(is_shmem: bool) {
     let controller_ret = controller.join();
 
     let _ignore = shmem_server.send_control('c');
-    let _ignore = dcm.send_control('c');
+    let _ignore = dcm.process.kill(SIGTERM);
 
     // If there's been an error, print everything
     if controller_ret.is_err() || client_ret.is_err() {
@@ -199,7 +199,7 @@ fn s06_rackscale_phys_alloc_test() {
 
     let mut shmem_server =
         spawn_shmem_server(SHMEM_PATH, SHMEM_SIZE).expect("Failed to start shmem server");
-    let mut dcm = spawn_dcm(1, timeout).expect("Failed to start DCM");
+    let mut dcm = spawn_dcm(1).expect("Failed to start DCM");
 
     let (tx, rx) = channel();
     let all_outputs = Arc::new(Mutex::new(Vec::new()));
@@ -289,7 +289,7 @@ fn s06_rackscale_phys_alloc_test() {
     let client_ret = client.join();
     let controller_ret = controller.join();
 
-    let _ignore = dcm.send_control('c');
+    let _ignore = dcm.process.kill(SIGTERM);
     let _ignore = shmem_server.send_control('c');
 
     // If there's been an error, print everything
@@ -334,7 +334,7 @@ fn rackscale_fs_test(is_shmem: bool) {
 
     let mut shmem_server =
         spawn_shmem_server(SHMEM_PATH, SHMEM_SIZE).expect("Failed to start shmem server");
-    let mut dcm = spawn_dcm(1, timeout).expect("Failed to start DCM");
+    let mut dcm = spawn_dcm(1).expect("Failed to start DCM");
 
     // Create build for both controller and client
     let build = Arc::new(
@@ -437,7 +437,7 @@ fn rackscale_fs_test(is_shmem: bool) {
     let controller_ret = controller.join();
 
     let _ignore = shmem_server.send_control('c');
-    let _ignore = dcm.send_control('c');
+    let _ignore = dcm.process.kill(SIGTERM);
 
     // If there's been an error, print everything
     let outputs = all_outputs
@@ -468,7 +468,7 @@ fn s06_rackscale_shmem_fs_prop_test() {
 
     let mut shmem_server =
         spawn_shmem_server(SHMEM_PATH, shmem_size).expect("Failed to start shmem server");
-    let mut dcm = spawn_dcm(1, timeout).expect("Failed to start DCM");
+    let mut dcm = spawn_dcm(1).expect("Failed to start DCM");
 
     let (tx, rx) = channel();
     let all_outputs = Arc::new(Mutex::new(Vec::new()));
@@ -559,7 +559,7 @@ fn s06_rackscale_shmem_fs_prop_test() {
     let controller_ret = controller.join();
 
     let _ignore = shmem_server.send_control('c');
-    let _ignore = dcm.send_control('c');
+    let _ignore = dcm.process.kill(SIGTERM);
 
     // If there's been an error, print everything
     let outputs = all_outputs
@@ -592,7 +592,7 @@ fn s06_rackscale_shmem_shootdown_test() {
 
     let mut shmem_server =
         spawn_shmem_server(SHMEM_PATH, SHMEM_SIZE).expect("Failed to start shmem server");
-    let mut dcm = spawn_dcm(1, timeout).expect("Failed to start DCM");
+    let mut dcm = spawn_dcm(1).expect("Failed to start DCM");
 
     let (tx, rx) = channel();
     let all_outputs = Arc::new(Mutex::new(Vec::new()));
@@ -710,7 +710,7 @@ fn s06_rackscale_shmem_shootdown_test() {
     let controller_ret = controller.join();
 
     let _ignore = shmem_server.send_control('c');
-    let _ignore = dcm.send_control('c');
+    let _ignore = dcm.process.kill(SIGTERM);
 
     // If there's been an error, print everything
     if controller_ret.is_err() || (&client_rets).into_iter().any(|ret| ret.is_err()) {
@@ -760,7 +760,7 @@ fn rackscale_userspace_multicore_test(is_shmem: bool) {
     let mut shmem_server =
         spawn_shmem_server(SHMEM_PATH, SHMEM_SIZE).expect("Failed to start shmem server");
 
-    let mut dcm = spawn_dcm(1, timeout).expect("Failed to start DCM");
+    let mut dcm = spawn_dcm(1).expect("Failed to start DCM");
 
     // Create build for both controller and client
     let build = Arc::new(
@@ -876,7 +876,7 @@ fn rackscale_userspace_multicore_test(is_shmem: bool) {
     let controller_ret = controller.join();
 
     let _ignore = shmem_server.send_control('c');
-    let _ignore = dcm.send_control('c');
+    let _ignore = dcm.process.kill(SIGTERM);
 
     // If there's been an error, print everything
     let outputs = all_outputs
@@ -911,7 +911,7 @@ fn s06_rackscale_shmem_userspace_multicore_multiclient() {
     let mut shmem_server =
         spawn_shmem_server(SHMEM_PATH, SHMEM_SIZE).expect("Failed to start shmem server");
 
-    let mut dcm = spawn_dcm(1, timeout).expect("Failed to start DCM");
+    let mut dcm = spawn_dcm(1).expect("Failed to start DCM");
 
     // Create build for both controller and client
     let build = Arc::new(
@@ -1081,7 +1081,7 @@ fn s06_rackscale_shmem_userspace_multicore_multiclient() {
     let controller_ret = controller.join();
 
     let _ignore = shmem_server.send_control('c');
-    let _ignore = dcm.send_control('c');
+    let _ignore = dcm.process.kill(SIGTERM);
 
     let outputs = all_outputs
         .lock()
@@ -1123,7 +1123,7 @@ fn rackscale_userspace_rumprt_fs(is_shmem: bool) {
     // Setup ivshmem file
     let mut shmem_server =
         spawn_shmem_server(SHMEM_PATH, SHMEM_SIZE).expect("Failed to start shmem server");
-    let mut dcm = spawn_dcm(1, timeout).expect("Failed to start DCM");
+    let mut dcm = spawn_dcm(1).expect("Failed to start DCM");
 
     // Create build for both controller and client
     let build = Arc::new(
@@ -1228,7 +1228,7 @@ fn rackscale_userspace_rumprt_fs(is_shmem: bool) {
     let controller_ret = controller.join();
 
     let _ignore = shmem_server.send_control('c');
-    let _ignore = dcm.send_control('c');
+    let _ignore = dcm.process.kill(SIGTERM);
 
     let outputs = all_outputs
         .lock()

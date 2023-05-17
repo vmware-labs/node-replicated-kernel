@@ -38,7 +38,7 @@ pub struct RunnerArgs<'a> {
     /// Default network interface for QEMU
     nic: &'static str,
     /// Pin QEMU cpu threads
-    setaffinity: bool,
+    setaffinity: Option<Vec<u32>>,
     /// Pre-alloc host memory for guest
     prealloc: bool,
     /// Use large-pages for host memory
@@ -76,7 +76,7 @@ impl<'a> RunnerArgs<'a> {
             qemu_args: Vec::new(),
             timeout: Some(15_000),
             nic: "e1000",
-            setaffinity: false,
+            setaffinity: None,
             prealloc: false,
             large_pages: false,
             kgdb: false,
@@ -110,7 +110,7 @@ impl<'a> RunnerArgs<'a> {
             qemu_args: Vec::new(),
             timeout: Some(15_000),
             nic: "e1000",
-            setaffinity: false,
+            setaffinity: None,
             prealloc: false,
             large_pages: false,
             kgdb: false,
@@ -221,8 +221,8 @@ impl<'a> RunnerArgs<'a> {
         self
     }
 
-    pub fn setaffinity(mut self) -> RunnerArgs<'a> {
-        self.setaffinity = true;
+    pub fn setaffinity(mut self, cores: Vec<u32>) -> RunnerArgs<'a> {
+        self.setaffinity = Some(cores);
         self
     }
 
@@ -331,8 +331,9 @@ impl<'a> RunnerArgs<'a> {
                     cmd.push(format!("{}", self.tap.as_ref().unwrap()));
                 }
 
-                if self.setaffinity {
+                if self.setaffinity.is_some() {
                     cmd.push(String::from("--qemu-affinity"));
+                    cmd.push(format!("{:?}", self.setaffinity.as_ref().unwrap()));
                 }
 
                 if self.prealloc {

@@ -97,11 +97,8 @@ pub fn spawn_nrk(args: &RunnerArgs) -> Result<rexpect::session::PtySession> {
 ///
 /// Uses target/dcm-scheduler.jar that is set up by run.py
 /// -r => number of requests per solve
-pub fn spawn_dcm(r: usize, timeout: u64) -> Result<rexpect::session::PtyReplSession> {
-    // Remove existing DCM log file
-    let file_name = "dcm.log";
-    let _ignore = remove_file(file_name);
-
+/// -p => poll interval
+pub fn spawn_dcm(r: usize) -> Result<rexpect::session::PtySession> {
     let mut dcm_args = Vec::new();
     dcm_args.push("-r".to_string());
     dcm_args.push(format!("{}", r));
@@ -112,14 +109,12 @@ pub fn spawn_dcm(r: usize, timeout: u64) -> Result<rexpect::session::PtyReplSess
 
     // Start DCM
     let cmd = format!(
-        "java -jar ../target/dcm-scheduler.jar {} > {}",
+        "java -jar ../target/dcm-scheduler.jar {}",
         dcm_args.join(" "),
-        file_name
     );
     eprintln!("Invoke DCM: {}", cmd);
-    let mut b = spawn_bash(Some(timeout))?;
-    b.send_line(&cmd)?;
-    Ok(b)
+    let ret = spawn(&cmd, None);
+    ret
 }
 
 /// Spawns a DHCP server on our host using most common interface: tap0

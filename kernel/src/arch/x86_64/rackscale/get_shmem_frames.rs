@@ -141,6 +141,15 @@ pub(crate) fn handle_get_shmem_frames(
                 .shmem_manager
                 .as_mut()
                 .expect("No shmem manager found for client");
+            log::warn!(
+                "Manager for client {:?} ({:?}) free_bp={:?} free_lp={:?} need_lp={:?}",
+                mid,
+                node_id,
+                manager.free_base_pages(),
+                manager.free_large_pages(),
+                num_frames
+            );
+
             for _i in 0..num_frames {
                 let frame = manager
                     .allocate_large_page()

@@ -57,7 +57,7 @@ MAX_WORKERS = 16
 NETWORK_CONFIG = get_network_config(MAX_WORKERS)
 NETWORK_INFRA_IP = '172.31.0.20/24'
 
-DCM_SCHEDULER_VERSION = "1.1.10"
+DCM_SCHEDULER_VERSION = "1.1.13"
 
 #
 # Important globals
@@ -116,8 +116,8 @@ parser.add_argument("--qemu-memory", type=int,
                     help="How much total memory in MiB (will get evenly divided among nodes).", default=1024)
 parser.add_argument("--qemu-pmem", type=int,
                     help="How much total peristent memory in MiB (will get evenly divided among nodes).", required=False, default=0)
-parser.add_argument("--qemu-affinity", action="store_true", default=False,
-                    help="Pin QEMU instance to dedicated host cores.")
+parser.add_argument("--qemu-affinity", type=str,
+                    help="Pin QEMU instance to dedicated host cores.", required=False, default=None)
 parser.add_argument("--qemu-prealloc", action="store_true", default=False,
                     help="Pre-alloc memory for the guest", required=False)
 parser.add_argument("--qemu-large-pages", action="store_true", default=False,
@@ -520,8 +520,13 @@ def run_qemu(args):
     LocalCommand.QUOTE_LEVEL = 3
 
     if args.qemu_cores and args.qemu_affinity:
-        affinity_list = str(corealloc['-c',
-                                      str(args.qemu_cores), '-t', 'interleave']()).strip()
+        if args.qemu_affinity == "[]":
+            # Use corealloc to choose cores (suitable for single qemu instance at a time)
+            affinity_list = str(corealloc['-c',
+                                        str(args.qemu_cores), '-t', 'interleave']()).strip()
+        else:
+            # Use provided cores (suitable for rackscale, where multiple qemu instances run at once)
+            affinity_list = args.qemu_affinity[1:-1].replace(",", "")
         # For big machines it can take a while to spawn all threads in qemu
         # if but if the threads are not spawned qemu_affinity.py fails, so we sleep
         sleep(2.00)

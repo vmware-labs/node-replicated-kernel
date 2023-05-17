@@ -120,7 +120,7 @@ fn rackscale_fxmark_benchmark(is_shmem: bool) {
 
                     let mut shmem_server = spawn_shmem_server(SHMEM_PATH, shmem_size)
                         .expect("Failed to start shmem server");
-                    let mut dcm = spawn_dcm(1, timeout).expect("Failed to start DCM");
+                    let mut dcm = spawn_dcm(1).expect("Failed to start DCM");
 
                     let controller_cmdline = format!(
                         "mode=controller transport={}",
@@ -352,7 +352,7 @@ fn rackscale_vmops_benchmark(is_shmem: bool) {
     let mut baseline_set = HashSet::new();
 
     // TODO(rackscale): assert that there are enough threads/nodes on the machine for these settings?
-    //let _machine = Machine::determine();
+    let machine = Machine::determine();
     let threads = [1, 2, 4, 8, 16];
     let max_cores = *threads.iter().max().unwrap();
     let num_clients = if is_shmem { vec![1, 2, 4] } else { vec![1] };
@@ -395,7 +395,7 @@ fn rackscale_vmops_benchmark(is_shmem: bool) {
                         .no_network_setup()
                         .workers(1)
                         .cores(total_cores)
-                        .setaffinity()
+                        .setaffinity(Vec::new())
                         .use_vmxnet3()
                         .cmd(baseline_cmdline.as_str());
 
@@ -462,12 +462,17 @@ fn rackscale_vmops_benchmark(is_shmem: bool) {
 
             // Now run rackscale test
             setup_network(nclients + 1);
+
+            let mut vm_cores = vec![cores; nclients]; // client vms
+            vm_cores.push(1); // controller
+            let placement_cores = machine.rackscale_core_affinity(vm_cores);
+
             let (tx, rx) = channel();
             let rx_mut = Arc::new(Mutex::new(rx));
 
             let mut shmem_server =
                 spawn_shmem_server(SHMEM_PATH, shmem_size).expect("Failed to start shmem server");
-            let mut dcm = spawn_dcm(1, timeout).expect("Failed to start DCM");
+            let mut dcm = spawn_dcm(1).expect("Failed to start DCM");
 
             let controller_cmdline = format!(
                 "mode=controller transport={}",
@@ -477,6 +482,7 @@ fn rackscale_vmops_benchmark(is_shmem: bool) {
             // Create controller
             let build1 = build.clone();
             let controller_output_array = all_outputs.clone();
+            let controller_placement_cores = placement_cores.clone();
             let controller = std::thread::spawn(move || {
                 let mut cmdline_controller = RunnerArgs::new_with_build("userspace-smp", &build1)
                     .timeout(timeout)
@@ -486,7 +492,7 @@ fn rackscale_vmops_benchmark(is_shmem: bool) {
                     .tap("tap0")
                     .no_network_setup()
                     .workers(nclients + 1)
-                    .setaffinity()
+                    .setaffinity(controller_placement_cores[nclients].clone())
                     .use_vmxnet3();
 
                 if cfg!(feature = "smoke") {
@@ -573,6 +579,7 @@ fn rackscale_vmops_benchmark(is_shmem: bool) {
                 let tap = format!("tap{}", 2 * nclient);
                 let my_rx_mut = rx_mut.clone();
                 let my_output_array = all_outputs.clone();
+                let my_placement_cores = placement_cores.clone();
                 let build2 = build.clone();
                 let client = std::thread::spawn(move || {
                     sleep(Duration::from_millis(
@@ -586,7 +593,7 @@ fn rackscale_vmops_benchmark(is_shmem: bool) {
                         .no_network_setup()
                         .workers(nclients + 1)
                         .cores(cores)
-                        .setaffinity()
+                        .setaffinity(my_placement_cores[nclient - 1].clone())
                         .use_vmxnet3()
                         .nobuild()
                         .cmd(kernel_cmdline.as_str());
@@ -633,13 +640,21 @@ fn rackscale_vmops_benchmark(is_shmem: bool) {
             }
 
             let _ignore = shmem_server.send_control('c');
-            let _ignore = dcm.send_control('c');
+            let _ignore = dcm.process.kill(rexpect::process::signal::Signal::SIGKILL);
 
             // If there's been an error, print everything
             if controller_ret.is_err() || (&client_rets).into_iter().any(|ret| ret.is_err()) {
                 let outputs = all_outputs.lock().expect("Failed to get output lock");
                 for (name, output) in outputs.iter() {
                     log_qemu_out_with_name(None, name.to_string(), output.to_string());
+                }
+                if controller_ret.is_err() {
+                    let dcm_log = dcm.exp_eof();
+                    if dcm_log.is_ok() {
+                        log_qemu_out_with_name(None, "DCM".to_string(), dcm_log.unwrap());
+                    } else {
+                        eprintln!("FAILED TO PRINT DCM LOG");
+                    }
                 }
             }
 
@@ -674,7 +689,7 @@ fn rackscale_leveldb_benchmark(is_shmem: bool) {
     };
     let _ignore = std::fs::remove_file(file_name);
 
-    let build = Arc::new({
+    let build = Arc::new(
         BuildArgs::default()
             .module("rkapps")
             .user_feature("rkapps:leveldb-bench")
@@ -682,22 +697,22 @@ fn rackscale_leveldb_benchmark(is_shmem: bool) {
             .kernel_feature("ethernet")
             .kernel_feature("rackscale")
             .release()
-            .build()
-    });
+            .build(),
+    );
 
-    let _build_baseline = Arc::new({
+    let _build_baseline = Arc::new(
         BuildArgs::default()
             .module("rkapps")
             .user_feature("rkapps:leveldb-bench")
             .kernel_feature("shmem")
             .kernel_feature("ethernet")
             .release()
-            .build()
-    });
+            .build(),
+    );
     //let mut baseline_set = HashSet::new();
 
     // TODO(rackscale): assert that there are enough threads/nodes on the machine for these settings?
-    //let _machine = Machine::determine();
+    let machine = Machine::determine();
     let threads = [1, 2, 4, 8, 16];
     let max_cores = *threads.iter().max().unwrap();
     let num_clients = if is_shmem { vec![1, 2, 4] } else { vec![1] };
@@ -749,7 +764,7 @@ fn rackscale_leveldb_benchmark(is_shmem: bool) {
                         .no_network_setup()
                         .workers(1)
                         .cores(total_cores)
-                        //.setaffinity()
+                        //.setaffinity(Vec::new())
                         .use_vmxnet3()
                         .cmd(baseline_cmdline.as_str());
 
@@ -822,14 +837,19 @@ fn rackscale_leveldb_benchmark(is_shmem: bool) {
 
             let mut shmem_server =
                 spawn_shmem_server(SHMEM_PATH, shmem_size).expect("Failed to start shmem server");
-            let mut dcm = spawn_dcm(1, timeout).expect("Failed to start DCM");
+            let mut dcm = spawn_dcm(1).expect("Failed to start DCM");
 
             let controller_cmdline = format!(
                 "mode=controller transport={}",
                 if is_shmem { "shmem" } else { "ethernet" }
             );
 
+            let mut vm_cores = vec![cores; nclients]; // client vms
+            vm_cores.push(1); // controller
+            let placement_cores = machine.rackscale_core_affinity(vm_cores);
+
             // Create controller
+            let controller_placement_cores = placement_cores.clone();
             let build1 = build.clone();
             let controller_output_array = all_outputs.clone();
             let controller = std::thread::spawn(move || {
@@ -841,7 +861,7 @@ fn rackscale_leveldb_benchmark(is_shmem: bool) {
                     .tap("tap0")
                     .no_network_setup()
                     .workers(nclients + 1)
-                    //.setaffinity()
+                    .setaffinity(controller_placement_cores[nclients].clone()) // controller is last in the list of placement cores
                     .use_vmxnet3();
 
                 if cfg!(feature = "smoke") {
@@ -926,6 +946,7 @@ fn rackscale_leveldb_benchmark(is_shmem: bool) {
                     val_size
                 );
 
+                let my_placement_cores = placement_cores.clone();
                 let tap = format!("tap{}", 2 * nclient);
                 let my_rx_mut = rx_mut.clone();
                 let my_output_array = all_outputs.clone();
@@ -943,7 +964,7 @@ fn rackscale_leveldb_benchmark(is_shmem: bool) {
                         .no_network_setup()
                         .workers(nclients + 1)
                         .cores(cores)
-                        //.setaffinity()
+                        .setaffinity(my_placement_cores[nclient - 1].clone())
                         .use_vmxnet3()
                         .nobuild()
                         .cmd(client_cmdline.as_str());

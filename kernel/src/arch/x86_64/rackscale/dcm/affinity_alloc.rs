@@ -54,8 +54,8 @@ pub(crate) fn dcm_affinity_alloc(node_id: DCMNodeId, num_memslices: usize) -> bo
         num_cores: 0,
         num_memslices: num_memslices as u64,
     };
-    log::debug!(
-        "dcm_affinity_alloc({:?}, {:?}, {:?})",
+    log::warn!(
+        "dcm_affinity_alloc(node={:?}, cores={:?}, memslices={:?})",
         node_id,
         0,
         num_memslices
@@ -71,6 +71,6 @@ pub(crate) fn dcm_affinity_alloc(node_id: DCMNodeId, num_memslices: usize) -> bo
             unsafe { &mut [res.as_mut_bytes()] },
         )
         .expect("Failed to send resource alloc RPC to DCM");
-    log::debug!("Can the allocation be satisfied? {:?}", res.can_satisfy);
+    log::warn!("Can the allocation be satisfied? {:?}", res.can_satisfy);
     return res.can_satisfy;
 }

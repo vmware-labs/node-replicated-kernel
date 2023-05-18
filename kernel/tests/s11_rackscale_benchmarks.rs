@@ -15,7 +15,7 @@ use std::path::Path;
 use std::sync::{mpsc::channel, Mutex};
 
 use rexpect::errors::*;
-use rexpect::process::signal::SIGTERM;
+use rexpect::process::signal::{SIGKILL, SIGTERM};
 use rexpect::process::wait::WaitStatus;
 
 use testutils::builder::{BuildArgs, Machine};
@@ -282,7 +282,7 @@ fn rackscale_fxmark_benchmark(is_shmem: bool) {
                     }
 
                     let _ignore = shmem_server.send_control('c');
-                    let _ignore = dcm.send_control('c');
+                    let _ignore = dcm.process.kill(SIGKILL);
 
                     // If there's been an error, print everything
                     if controller_ret.is_err() || (&client_rets).into_iter().any(|ret| ret.is_err())
@@ -640,7 +640,7 @@ fn rackscale_vmops_benchmark(is_shmem: bool) {
             }
 
             let _ignore = shmem_server.send_control('c');
-            let _ignore = dcm.process.kill(SIGTERM);
+            let _ignore = dcm.process.kill(SIGKILL);
 
             // If there's been an error, print everything
             if controller_ret.is_err() || (&client_rets).into_iter().any(|ret| ret.is_err()) {
@@ -1011,7 +1011,7 @@ fn rackscale_leveldb_benchmark(is_shmem: bool) {
             }
 
             let _ignore = shmem_server.send_control('c');
-            let _ignore = dcm.send_control('c');
+            let _ignore = dcm.process.kill(SIGKILL);
 
             // If there's been an error, print everything
             if controller_ret.is_err() || (&client_rets).into_iter().any(|ret| ret.is_err()) {

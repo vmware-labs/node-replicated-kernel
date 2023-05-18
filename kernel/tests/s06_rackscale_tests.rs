@@ -11,7 +11,7 @@
 use std::sync::{mpsc::channel, Mutex};
 
 use rexpect::errors::*;
-use rexpect::process::signal::SIGTERM;
+use rexpect::process::signal::{SIGKILL, SIGTERM};
 use rexpect::process::wait::WaitStatus;
 
 use testutils::builder::{BuildArgs, Machine};
@@ -170,7 +170,7 @@ fn rackscale_userspace_smoke_test(is_shmem: bool) {
     let controller_ret = controller.join();
 
     let _ignore = shmem_server.send_control('c');
-    let _ignore = dcm.process.kill(SIGTERM);
+    let _ignore = dcm.process.kill(SIGKILL);
 
     // If there's been an error, print everything
     if controller_ret.is_err() || client_ret.is_err() {
@@ -289,7 +289,7 @@ fn s06_rackscale_phys_alloc_test() {
     let client_ret = client.join();
     let controller_ret = controller.join();
 
-    let _ignore = dcm.process.kill(SIGTERM);
+    let _ignore = dcm.process.kill(SIGKILL);
     let _ignore = shmem_server.send_control('c');
 
     // If there's been an error, print everything
@@ -437,7 +437,7 @@ fn rackscale_fs_test(is_shmem: bool) {
     let controller_ret = controller.join();
 
     let _ignore = shmem_server.send_control('c');
-    let _ignore = dcm.process.kill(SIGTERM);
+    let _ignore = dcm.process.kill(SIGKILL);
 
     // If there's been an error, print everything
     let outputs = all_outputs
@@ -559,7 +559,7 @@ fn s06_rackscale_shmem_fs_prop_test() {
     let controller_ret = controller.join();
 
     let _ignore = shmem_server.send_control('c');
-    let _ignore = dcm.process.kill(SIGTERM);
+    let _ignore = dcm.process.kill(SIGKILL);
 
     // If there's been an error, print everything
     let outputs = all_outputs
@@ -710,7 +710,7 @@ fn s06_rackscale_shmem_shootdown_test() {
     let controller_ret = controller.join();
 
     let _ignore = shmem_server.send_control('c');
-    let _ignore = dcm.process.kill(SIGTERM);
+    let _ignore = dcm.process.kill(SIGKILL);
 
     // If there's been an error, print everything
     if controller_ret.is_err() || (&client_rets).into_iter().any(|ret| ret.is_err()) {
@@ -876,7 +876,7 @@ fn rackscale_userspace_multicore_test(is_shmem: bool) {
     let controller_ret = controller.join();
 
     let _ignore = shmem_server.send_control('c');
-    let _ignore = dcm.process.kill(SIGTERM);
+    let _ignore = dcm.process.kill(SIGKILL);
 
     // If there's been an error, print everything
     let outputs = all_outputs
@@ -1081,7 +1081,7 @@ fn s06_rackscale_shmem_userspace_multicore_multiclient() {
     let controller_ret = controller.join();
 
     let _ignore = shmem_server.send_control('c');
-    let _ignore = dcm.process.kill(SIGTERM);
+    let _ignore = dcm.process.kill(SIGKILL);
 
     let outputs = all_outputs
         .lock()
@@ -1228,7 +1228,7 @@ fn rackscale_userspace_rumprt_fs(is_shmem: bool) {
     let controller_ret = controller.join();
 
     let _ignore = shmem_server.send_control('c');
-    let _ignore = dcm.process.kill(SIGTERM);
+    let _ignore = dcm.process.kill(SIGKILL);
 
     let outputs = all_outputs
         .lock()

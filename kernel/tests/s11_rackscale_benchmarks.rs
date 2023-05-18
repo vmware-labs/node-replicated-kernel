@@ -375,7 +375,7 @@ fn rackscale_vmops_benchmark(is_shmem: bool) {
             let timeout = 120_000 + 20000 * total_cores as u64;
 
             // TODO(rackscale): probably scale with nclients?
-            let shmem_size = SHMEM_SIZE;
+            let shmem_size = SHMEM_SIZE * 2;
             let all_outputs = Arc::new(Mutex::new(Vec::new()));
 
             // Run baseline test if needed

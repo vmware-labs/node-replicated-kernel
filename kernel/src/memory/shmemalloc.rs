@@ -33,17 +33,17 @@ unsafe impl Allocator for ShmemAlloc {
 
         let ptr = unsafe { alloc(layout) };
 
-        // TODO(rackscale performance): should probably be debug_assert
-        assert!(
-            is_shmem_addr(ptr as u64, true, true),
-            "allocated pointer ({}) isn't shmem: {} {} {}",
-            ptr as u64,
-            is_shmem_addr(ptr as u64, false, false),
-            is_shmem_addr(ptr as u64, false, true),
-            is_shmem_addr(ptr as u64, true, false)
-        );
-
         let ret = if !ptr.is_null() {
+            // TODO(rackscale performance): should probably be debug_assert
+            assert!(
+                is_shmem_addr(ptr as u64, true, true),
+                "allocated pointer ({}) isn't shmem: {} {} {}",
+                ptr as u64,
+                is_shmem_addr(ptr as u64, false, false),
+                is_shmem_addr(ptr as u64, false, true),
+                is_shmem_addr(ptr as u64, true, false)
+            );
+
             Ok(unsafe {
                 let nptr = NonNull::new_unchecked(ptr);
                 NonNull::slice_from_raw_parts(nptr, layout.size())

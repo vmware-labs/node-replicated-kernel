@@ -640,7 +640,7 @@ fn rackscale_vmops_benchmark(is_shmem: bool) {
             }
 
             let _ignore = shmem_server.send_control('c');
-            let _ignore = dcm.process.kill(rexpect::process::signal::Signal::SIGKILL);
+            let _ignore = dcm.process.kill(SIGTERM);
 
             // If there's been an error, print everything
             if controller_ret.is_err() || (&client_rets).into_iter().any(|ret| ret.is_err()) {

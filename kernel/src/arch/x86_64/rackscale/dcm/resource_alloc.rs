@@ -58,7 +58,7 @@ pub(crate) fn dcm_resource_alloc(
 ) -> (Vec<DCMNodeId>, Vec<DCMNodeId>) {
     // TODO(rackscale): make debug assert
     assert!(cores > 0 || memslices > 0);
-    log::warn!(
+    log::debug!(
         "Asking DCM for {:?} cores and {:?} memslices for pid {:?}",
         cores,
         memslices,
@@ -85,7 +85,7 @@ pub(crate) fn dcm_resource_alloc(
             )
             .expect("Failed to send resource alloc RPC to DCM");
     }
-    log::warn!("Received allocation id in response: {:?}", res.alloc_id);
+    log::debug!("Received allocation id in response: {:?}", res.alloc_id);
 
     let mut received_allocations = 0;
     let mut dcm_node_for_cores =
@@ -115,7 +115,5 @@ pub(crate) fn dcm_resource_alloc(
             _ => unreachable!("Should not reach here"),
         }
     }
-    assert!(dcm_node_for_cores.len() as u64 == cores);
-    assert!(dcm_node_for_memslices.len() as u64 == memslices);
     (dcm_node_for_cores, dcm_node_for_memslices)
 }

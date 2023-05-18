@@ -110,7 +110,7 @@ pub(crate) fn handle_get_shmem_frames(
     mut payload: &mut [u8],
     state: ControllerState,
 ) -> Result<ControllerState, RPCError> {
-    log::warn!("Handling get_shmem_frames()");
+    log::debug!("Handling get_shmem_frames()");
 
     // Parse request
     let (machine_id, pid, num_frames) = match unsafe { decode::<ShmemFrameReq>(payload) } {
@@ -141,14 +141,6 @@ pub(crate) fn handle_get_shmem_frames(
                 .shmem_manager
                 .as_mut()
                 .expect("No shmem manager found for client");
-            log::warn!(
-                "Manager for client {:?} ({:?}) free_bp={:?} free_lp={:?} need_lp={:?}",
-                mid,
-                node_id,
-                manager.free_base_pages(),
-                manager.free_large_pages(),
-                num_frames
-            );
 
             for _i in 0..num_frames {
                 let frame = manager
@@ -165,7 +157,7 @@ pub(crate) fn handle_get_shmem_frames(
         let (_, dcm_ids) = dcm_resource_alloc(pid, 0, num_frames as u64);
         for i in 0..num_frames {
             let dcm_id = dcm_ids[i];
-            log::warn!("Received node assignment from DCM: node {:?}", dcm_id);
+            log::debug!("Received node assignment from DCM: node {:?}", dcm_id);
 
             // TODO(error_handling): should handle errors gracefully here, maybe percolate to client?
             let mut client_state = state.get_client_state_by_dcm_id(dcm_id).lock();
@@ -173,13 +165,6 @@ pub(crate) fn handle_get_shmem_frames(
                 .shmem_manager
                 .as_mut()
                 .expect("No shmem manager found for client");
-
-            // TODO(error): this is where things fail
-            log::warn!(
-                "About to allocate large page from shmem manager: free_large:{:?} free_base:{:?}",
-                manager.free_large_pages(),
-                manager.free_base_pages()
-            );
             let frame = manager
                 .allocate_large_page()
                 .expect("DCM OK'd allocation, this should succeed");
@@ -201,7 +186,7 @@ pub(crate) fn handle_get_shmem_frames(
     let additional_data = end - start;
     unsafe { encode(&regions, &mut &mut payload[start..end]) }
         .expect("Failed to encode shmem region vector");
-    log::warn!(
+    log::debug!(
         "Sending back {:?} bytes of data ({:?} frames)",
         additional_data,
         regions.len()

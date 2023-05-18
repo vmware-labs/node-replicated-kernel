@@ -21,6 +21,29 @@ sudo apt build-dep qemu
 wget https://download.qemu.org/qemu-6.0.0.tar.xz
 tar xvJf qemu-6.0.0.tar.xz
 cd qemu-6.0.0
+```
+
+If you are planning on running the rackscale NrOS build, you'll need to modify
+the ivshmem server code. Open ```contrib/ivshmem-server/ivshmem-server.c```.
+Go to the function```ivshmem_server_ftruncate```. Replace it with:
+```c
+static int
+ivshmem_server_ftruncate(int fd, unsigned shmsize)
+{
+    struct stat mapstat;
+
+    /* align shmsize to next power of 2 */
+    shmsize = pow2ceil(shmsize);
+
+    if (fstat(fd, &mapstat) != -1 && mapstat.st_size == shmsize) {
+        return 0;
+    }
+
+    return ftruncate(fd, shmsize);
+}
+```
+
+```bash
 ./configure --enable-rdma --enable-libpmem
 make -j 28
 sudo make -j28 install

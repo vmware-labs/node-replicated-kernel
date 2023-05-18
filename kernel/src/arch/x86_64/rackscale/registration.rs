@@ -16,6 +16,7 @@ use rpc::RPCClient;
 use super::dcm::{node_registration::dcm_register_node, DCMNodeId};
 use crate::arch::rackscale::controller_state::{ControllerState, PerClientState};
 use crate::error::KResult;
+use crate::memory::backends::AllocatorStatistics;
 use crate::memory::LARGE_PAGE_SIZE;
 use crate::transport::shmem::{get_affinity_shmem, ShmemRegion};
 
@@ -91,9 +92,13 @@ pub(crate) fn register_client(
     if let Some((req, hwthreads_data)) =
         unsafe { decode::<ClientRegistrationRequest>(&mut payload[..hdr.msg_len as usize]) }
     {
-        let memslices = req.shmem_region.size / (LARGE_PAGE_SIZE as u64);
-        log::info!("Received registration request from client {:?} with {:?} cores and shmem {:x?}-{:x?} ({:?} memslices)",
-            req.machine_id, req.num_cores, req.shmem_region.base, req.shmem_region.base + req.shmem_region.size, memslices);
+        log::info!(
+            "Received registration request from client {:?} with {:?} cores and shmem {:x?}-{:x?}",
+            req.machine_id,
+            req.num_cores,
+            req.shmem_region.base,
+            req.shmem_region.base + req.shmem_region.size
+        );
 
         // Parse out hw_threads
         let hw_threads = match unsafe { decode::<Vec<CpuThread>>(hwthreads_data) } {
@@ -113,21 +118,27 @@ pub(crate) fn register_client(
         for hwthread in hw_threads {
             client_threads.push((*hwthread, false));
         }
-        log::info!("client_threads: {:?}", client_threads);
+        log::debug!("client_threads: {:?}", client_threads);
+
+        // Create shmem memory manager
+        let shmem_manager = req.shmem_region.get_shmem_manager(0);
+        let memslices = if let Some(ref manager) = shmem_manager {
+            manager.free_large_pages() as u64
+        } else {
+            0
+        };
+        log::info!(
+            "Created shmem manager on behalf of client {:?}: {:?} ({:?} memslices)",
+            req.machine_id,
+            shmem_manager,
+            memslices
+        );
 
         // Register client resources with DCM
         let dcm_node_id = dcm_register_node(req.num_cores, memslices);
         log::info!(
             "Registered client DCM, assigned dcm_node_id={:?}",
             dcm_node_id
-        );
-
-        // Create shmem memory manager
-        let shmem_manager = req.shmem_region.get_shmem_manager(0);
-        log::info!(
-            "Created shmem manager on behalf of client {:?}: {:?}",
-            req.machine_id,
-            shmem_manager
         );
 
         let client_state = PerClientState::new(req.machine_id, shmem_manager, client_threads);

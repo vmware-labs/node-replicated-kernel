@@ -8,13 +8,11 @@
 //! The naming scheme of the tests ensures a somewhat useful order of test
 //! execution taking into account the dependency chain:
 //! * `s06_*`: Rackscale (distributed) tests
-use std::sync::mpsc::channel;
+use std::sync::{mpsc::channel, Mutex};
 
 use rexpect::errors::*;
 use rexpect::process::signal::SIGTERM;
 use rexpect::process::wait::WaitStatus;
-
-use spin::Mutex;
 
 use testutils::builder::{BuildArgs, Machine};
 use testutils::helpers::{
@@ -108,6 +106,7 @@ fn rackscale_userspace_smoke_test(is_shmem: bool) {
             let ret = qemu_run();
             controller_output_array
                 .lock()
+                .expect("Failed to get mutex to output array")
                 .push((String::from("Controller"), output));
 
             // This will only find sigterm, that's okay
@@ -161,6 +160,7 @@ fn rackscale_userspace_smoke_test(is_shmem: bool) {
             let ret = qemu_run();
             client_output_array
                 .lock()
+                .expect("Failed to get mutex for output array")
                 .push((String::from("Client"), output.clone()));
             check_for_successful_exit_no_log(&cmdline_client, ret, String::from("Client"));
         })
@@ -174,7 +174,9 @@ fn rackscale_userspace_smoke_test(is_shmem: bool) {
 
     // If there's been an error, print everything
     if controller_ret.is_err() || client_ret.is_err() {
-        let outputs = all_outputs.lock();
+        let outputs = all_outputs
+            .lock()
+            .expect("Failed to get mutex to output array");
         for (name, output) in outputs.iter() {
             log_qemu_out_with_name(None, name.to_string(), output.to_string());
         }
@@ -238,6 +240,7 @@ fn s06_rackscale_phys_alloc_test() {
             let ret = qemu_run();
             controller_output_array
                 .lock()
+                .expect("Failed to get mutex to output array")
                 .push((String::from("Controller"), output));
 
             // This will only find sigterm, that's okay
@@ -277,6 +280,7 @@ fn s06_rackscale_phys_alloc_test() {
             let ret = qemu_run();
             client_output_array
                 .lock()
+                .expect("Failed to get mutex to output array")
                 .push((String::from("Client"), output.clone()));
             check_for_successful_exit_no_log(&cmdline_client, ret, String::from("Client"));
         })
@@ -289,7 +293,9 @@ fn s06_rackscale_phys_alloc_test() {
     let _ignore = shmem_server.send_control('c');
 
     // If there's been an error, print everything
-    let outputs = all_outputs.lock();
+    let outputs = all_outputs
+        .lock()
+        .expect("Failed to get mutex to output array");
     assert!(outputs.len() == 2);
     if controller_ret.is_err() || client_ret.is_err() {
         for (name, output) in outputs.iter() {
@@ -375,6 +381,7 @@ fn rackscale_fs_test(is_shmem: bool) {
             let ret = qemu_run();
             controller_output_array
                 .lock()
+                .expect("Failed to get mutex to output array")
                 .push((String::from("Controller"), output));
 
             // This will only find sigterm, that's okay
@@ -420,6 +427,7 @@ fn rackscale_fs_test(is_shmem: bool) {
             let ret = qemu_run();
             client_output_array
                 .lock()
+                .expect("Failed to get mutex to output array")
                 .push((String::from("Client"), output.clone()));
             check_for_successful_exit_no_log(&cmdline_client, ret, String::from("Client"));
         })
@@ -432,7 +440,9 @@ fn rackscale_fs_test(is_shmem: bool) {
     let _ignore = dcm.send_control('c');
 
     // If there's been an error, print everything
-    let outputs = all_outputs.lock();
+    let outputs = all_outputs
+        .lock()
+        .expect("Failed to get mutex to output array");
     assert!(outputs.len() == 2);
     if controller_ret.is_err() || client_ret.is_err() {
         for (name, output) in outputs.iter() {
@@ -499,6 +509,7 @@ fn s06_rackscale_shmem_fs_prop_test() {
             let ret = qemu_run();
             controller_output_array
                 .lock()
+                .expect("Failed to get mutex to output array")
                 .push((String::from("Controller"), output));
 
             // This will only find sigterm, that's okay
@@ -538,6 +549,7 @@ fn s06_rackscale_shmem_fs_prop_test() {
             let ret = qemu_run();
             client_output_array
                 .lock()
+                .expect("Failed to get mutex to output array")
                 .push((String::from("Client"), output.clone()));
             check_for_successful_exit_no_log(&cmdline_client, ret, String::from("Client"));
         })
@@ -550,7 +562,9 @@ fn s06_rackscale_shmem_fs_prop_test() {
     let _ignore = dcm.send_control('c');
 
     // If there's been an error, print everything
-    let outputs = all_outputs.lock();
+    let outputs = all_outputs
+        .lock()
+        .expect("Failed to get mutex to output array");
     assert!(outputs.len() == 2);
     if controller_ret.is_err() || client_ret.is_err() {
         for (name, output) in outputs.iter() {
@@ -628,6 +642,7 @@ fn s06_rackscale_shmem_shootdown_test() {
             let ret = qemu_run();
             controller_output_array
                 .lock()
+                .expect("Failed to get mutex to output array")
                 .push((String::from("Controller"), output));
 
             // This will only find sigterm, that's okay
@@ -665,7 +680,7 @@ fn s06_rackscale_shmem_shootdown_test() {
                     let mut p = spawn_nrk(&cmdline_client)?;
 
                     // Wait for the shootdown client to complete
-                    let rx = my_rx_mut.lock();
+                    let rx = my_rx_mut.lock().expect("Failed to unwrap rx mutex");
                     wait_for_client_termination::<()>(&rx);
 
                     let ret = p.process.kill(SIGTERM);
@@ -676,6 +691,7 @@ fn s06_rackscale_shmem_shootdown_test() {
                 let ret = qemu_run();
                 my_output_array
                     .lock()
+                    .expect("Failed to get mutex to output array")
                     .push((format!("Client{}", i + 1), output));
                 wait_for_sigterm_or_successful_exit_no_log(
                     &cmdline_client,
@@ -698,7 +714,9 @@ fn s06_rackscale_shmem_shootdown_test() {
 
     // If there's been an error, print everything
     if controller_ret.is_err() || (&client_rets).into_iter().any(|ret| ret.is_err()) {
-        let outputs = all_outputs.lock();
+        let outputs = all_outputs
+            .lock()
+            .expect("Failed to extract output strings");
         for (name, output) in outputs.iter() {
             log_qemu_out_with_name(None, name.to_string(), output.to_string());
         }
@@ -789,6 +807,7 @@ fn rackscale_userspace_multicore_test(is_shmem: bool) {
             let ret = qemu_run();
             controller_output_array
                 .lock()
+                .expect("Failed to get mutex to output array")
                 .push((String::from("Controller"), output));
 
             // This will only find sigterm, that's okay
@@ -843,6 +862,7 @@ fn rackscale_userspace_multicore_test(is_shmem: bool) {
             let ret = qemu_run();
             client_output_array
                 .lock()
+                .expect("Failed to get mutex to output array")
                 .push((String::from("Client"), output));
             wait_for_sigterm_or_successful_exit_no_log(
                 &cmdline_client,
@@ -859,7 +879,9 @@ fn rackscale_userspace_multicore_test(is_shmem: bool) {
     let _ignore = dcm.send_control('c');
 
     // If there's been an error, print everything
-    let outputs = all_outputs.lock();
+    let outputs = all_outputs
+        .lock()
+        .expect("Failed to get mutex to output array");
     if controller_ret.is_err() || client_ret.is_err() {
         for (name, output) in outputs.iter() {
             log_qemu_out_with_name(None, name.to_string(), output.to_string());
@@ -940,6 +962,7 @@ fn s06_rackscale_shmem_userspace_multicore_multiclient() {
             let ret = qemu_run();
             controller_output_array
                 .lock()
+                .expect("Failed to get mutex to output array")
                 .push((String::from("Controller"), output));
 
             // This will only find sigterm, that's okay
@@ -992,6 +1015,7 @@ fn s06_rackscale_shmem_userspace_multicore_multiclient() {
             let ret = qemu_run();
             client1_output_array
                 .lock()
+                .expect("Failed to get mutex to output array")
                 .push((String::from("Client1"), output));
             wait_for_sigterm_or_successful_exit_no_log(
                 &cmdline_client,
@@ -1042,6 +1066,7 @@ fn s06_rackscale_shmem_userspace_multicore_multiclient() {
             let ret = qemu_run();
             client2_output_array
                 .lock()
+                .expect("Failed to get mutex to output array")
                 .push((String::from("Client2"), output));
             wait_for_sigterm_or_successful_exit_no_log(
                 &cmdline_client,
@@ -1058,7 +1083,9 @@ fn s06_rackscale_shmem_userspace_multicore_multiclient() {
     let _ignore = shmem_server.send_control('c');
     let _ignore = dcm.send_control('c');
 
-    let outputs = all_outputs.lock();
+    let outputs = all_outputs
+        .lock()
+        .expect("Failed to get mutex to output array");
     if controller_ret.is_err() || client2_ret.is_err() || client_ret.is_err() {
         for (name, output) in outputs.iter() {
             log_qemu_out_with_name(None, name.to_string(), output.to_string());
@@ -1144,6 +1171,7 @@ fn rackscale_userspace_rumprt_fs(is_shmem: bool) {
             let ret = qemu_run();
             controller_output_array
                 .lock()
+                .expect("Failed to get mutex to output array")
                 .push((String::from("Controller"), output));
 
             // This will only find sigterm, that's okay
@@ -1190,6 +1218,7 @@ fn rackscale_userspace_rumprt_fs(is_shmem: bool) {
             let ret = qemu_run();
             client_output_array
                 .lock()
+                .expect("Failed to get mutex to output array")
                 .push((String::from("Client"), output.clone()));
             check_for_successful_exit_no_log(&cmdline_client, ret, String::from("Client"));
         })
@@ -1201,7 +1230,9 @@ fn rackscale_userspace_rumprt_fs(is_shmem: bool) {
     let _ignore = shmem_server.send_control('c');
     let _ignore = dcm.send_control('c');
 
-    let outputs = all_outputs.lock();
+    let outputs = all_outputs
+        .lock()
+        .expect("Failed to get mutex to output array");
     if controller_ret.is_err() || client_ret.is_err() {
         for (name, output) in outputs.iter() {
             log_qemu_out_with_name(None, name.to_string(), output.to_string());

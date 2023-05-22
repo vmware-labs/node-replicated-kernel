@@ -38,7 +38,6 @@ CARGO_NOSTD_BUILD_ARGS = ["-Z", "build-std=core,alloc",
                           "-Z", "build-std-features=compiler-builtins-mem"]
 ARCH = "x86_64"
 
-# Start at 5, since we assume ivshmem is 4
 IVSHMEM_DEVICE_ADDR = 6
 
 def get_network_config(workers):

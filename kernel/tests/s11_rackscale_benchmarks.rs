@@ -9,11 +9,10 @@
 //! execution taking into account the dependency chain:
 //! * `s11_*`: Rackscale (distributed) benchmarks
 
-use spin::Mutex;
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::Path;
-use std::sync::mpsc::channel;
+use std::sync::{mpsc::channel, Mutex};
 
 use rexpect::errors::*;
 use rexpect::process::signal::SIGTERM;
@@ -202,6 +201,7 @@ fn rackscale_fxmark_benchmark(is_shmem: bool) {
                         let ret = qemu_run(nclients);
                         controller_output_array
                             .lock()
+                            .expect("Failed to get output mutex")
                             .push((String::from("Controller"), output));
 
                         // This will only find sigterm, that's okay
@@ -254,7 +254,7 @@ fn rackscale_fxmark_benchmark(is_shmem: bool) {
                             let mut qemu_run = |_with_cores: usize| -> Result<WaitStatus> {
                                 let mut p = spawn_nrk(&cmdline_client)?;
 
-                                let rx = my_rx_mut.lock();
+                                let rx = my_rx_mut.lock().expect("Failed to get rx lock");
                                 let _ = wait_for_client_termination::<()>(&rx);
                                 let ret = p.process.kill(SIGTERM);
                                 output += p.exp_eof()?.as_str();
@@ -264,6 +264,7 @@ fn rackscale_fxmark_benchmark(is_shmem: bool) {
                             let ret = qemu_run(cores);
                             my_output_array
                                 .lock()
+                                .expect("Failed to get lock for outputs")
                                 .push((format!("Client{}", nclient), output));
                             wait_for_sigterm_or_successful_exit_no_log(
                                 &cmdline_client,
@@ -286,7 +287,7 @@ fn rackscale_fxmark_benchmark(is_shmem: bool) {
                     // If there's been an error, print everything
                     if controller_ret.is_err() || (&client_rets).into_iter().any(|ret| ret.is_err())
                     {
-                        let outputs = all_outputs.lock();
+                        let outputs = all_outputs.lock().expect("Failed to get lock for outputs");
                         for (name, output) in outputs.iter() {
                             log_qemu_out_with_name(None, name.to_string(), output.to_string());
                         }
@@ -550,6 +551,7 @@ fn rackscale_vmops_benchmark(is_shmem: bool) {
                 let ret = qemu_run(nclients, total_cores);
                 controller_output_array
                     .lock()
+                    .expect("Failed to get output lock")
                     .push((String::from("Controller"), output));
 
                 // This will only find sigterm, that's okay
@@ -603,7 +605,7 @@ fn rackscale_vmops_benchmark(is_shmem: bool) {
                         );
                         let mut p = spawn_nrk(&cmdline_client)?;
 
-                        let rx = my_rx_mut.lock();
+                        let rx = my_rx_mut.lock().expect("Failed to get rx lock");
                         let _ = wait_for_client_termination::<()>(&rx);
                         let ret = p.process.kill(SIGTERM);
                         output += p.exp_eof()?.as_str();
@@ -613,6 +615,7 @@ fn rackscale_vmops_benchmark(is_shmem: bool) {
                     let ret = qemu_run(cores);
                     my_output_array
                         .lock()
+                        .expect("Failed to get output lock")
                         .push((format!("Client{}", nclient), output));
                     wait_for_sigterm_or_successful_exit_no_log(
                         &cmdline_client,
@@ -634,7 +637,7 @@ fn rackscale_vmops_benchmark(is_shmem: bool) {
 
             // If there's been an error, print everything
             if controller_ret.is_err() || (&client_rets).into_iter().any(|ret| ret.is_err()) {
-                let outputs = all_outputs.lock();
+                let outputs = all_outputs.lock().expect("Failed to get output lock");
                 for (name, output) in outputs.iter() {
                     log_qemu_out_with_name(None, name.to_string(), output.to_string());
                 }
@@ -659,7 +662,7 @@ fn s11_rackscale_shmem_leveldb_benchmark() {
 
 #[cfg(not(feature = "baremetal"))]
 fn rackscale_leveldb_benchmark(is_shmem: bool) {
-    use std::collections::HashSet;
+    //use std::collections::HashSet;
     use std::sync::Arc;
     use std::thread::sleep;
     use std::time::Duration;
@@ -682,7 +685,7 @@ fn rackscale_leveldb_benchmark(is_shmem: bool) {
             .build()
     });
 
-    let build_baseline = Arc::new({
+    let _build_baseline = Arc::new({
         BuildArgs::default()
             .module("rkapps")
             .user_feature("rkapps:leveldb-bench")
@@ -901,6 +904,7 @@ fn rackscale_leveldb_benchmark(is_shmem: bool) {
                 let ret = qemu_run(nclients, total_cores);
                 controller_output_array
                     .lock()
+                    .expect("Failed to get outputs lock")
                     .push((String::from("Controller"), output));
 
                 // This will only find sigterm, that's okay
@@ -958,7 +962,7 @@ fn rackscale_leveldb_benchmark(is_shmem: bool) {
                         );
                         let mut p = spawn_nrk(&cmdline_client)?;
 
-                        let rx = my_rx_mut.lock();
+                        let rx = my_rx_mut.lock().expect("Failed to get rx lock");
                         let _ = wait_for_client_termination::<()>(&rx);
                         let ret = p.process.kill(SIGTERM);
                         output += p.exp_eof()?.as_str();
@@ -968,6 +972,7 @@ fn rackscale_leveldb_benchmark(is_shmem: bool) {
                     let ret = qemu_run(cores);
                     my_output_array
                         .lock()
+                        .expect("Failed to get output lock")
                         .push((format!("Client{}", nclient), output));
                     wait_for_sigterm_or_successful_exit_no_log(
                         &cmdline_client,
@@ -989,7 +994,7 @@ fn rackscale_leveldb_benchmark(is_shmem: bool) {
 
             // If there's been an error, print everything
             if controller_ret.is_err() || (&client_rets).into_iter().any(|ret| ret.is_err()) {
-                let outputs = all_outputs.lock();
+                let outputs = all_outputs.lock().expect("Failed to get ouput lock");
                 for (name, output) in outputs.iter() {
                     log_qemu_out_with_name(None, name.to_string(), output.to_string());
                 }

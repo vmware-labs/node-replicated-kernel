@@ -41,6 +41,7 @@ pub unsafe extern "C" fn _sched_setparam() {
 pub unsafe extern "C" fn sched_yield() {
     // error stmt here because untested and sched_yield doesn't seeem to happen
     // except in failure case for our current applications...
+    log::warn!("sched_yield called");
     use lineup::tls2::Environment;
     Environment::thread().relinquish()
 }

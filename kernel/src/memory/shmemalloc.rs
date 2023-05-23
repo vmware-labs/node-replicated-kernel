@@ -37,11 +37,8 @@ unsafe impl Allocator for ShmemAlloc {
             // TODO(rackscale performance): should probably be debug_assert
             assert!(
                 is_shmem_addr(ptr as u64, true, true),
-                "allocated pointer ({}) isn't shmem: {} {} {}",
+                "allocated pointer ({}) isn't a shmem address",
                 ptr as u64,
-                is_shmem_addr(ptr as u64, false, false),
-                is_shmem_addr(ptr as u64, false, true),
-                is_shmem_addr(ptr as u64, true, false)
             );
 
             Ok(unsafe {

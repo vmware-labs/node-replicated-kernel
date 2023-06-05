@@ -614,7 +614,7 @@ fn rackscale_vmops_benchmark(is_shmem: bool, is_unmaplat: bool) {
                         };
                         let r = csv_file.write(format!("{},", env!("GIT_HASH")).as_bytes());
                         assert!(r.is_ok());
-                        let r = csv_file.write(format!("{},", 0).as_bytes());
+                        let r = csv_file.write(format!("{},", controller_clients).as_bytes());
                         assert!(r.is_ok());
                         let r = csv_file.write(parts[1].as_bytes());
                         assert!(r.is_ok());

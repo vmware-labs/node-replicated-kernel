@@ -306,31 +306,62 @@ fn rackscale_fxmark_benchmark(is_shmem: bool) {
 #[test]
 #[cfg(not(feature = "baremetal"))]
 fn s11_rackscale_shmem_vmops_benchmark() {
-    rackscale_vmops_benchmark(true);
+    rackscale_vmops_benchmark(true, false);
+}
+
+#[test]
+#[cfg(not(feature = "baremetal"))]
+fn s11_rackscale_shmem_vmops_unmaplat_benchmark() {
+    rackscale_vmops_benchmark(true, true);
 }
 
 #[cfg(not(feature = "baremetal"))]
-fn rackscale_vmops_benchmark(is_shmem: bool) {
+fn rackscale_vmops_benchmark(is_shmem: bool, is_unmaplat: bool) {
     use std::collections::HashSet;
     use std::sync::Arc;
     use std::thread::sleep;
     use std::time::Duration;
 
     let file_name = if is_shmem {
-        "rackscale_shmem_vmops_benchmark.csv"
+        if is_unmaplat {
+            "rackscale_shmem_vmops_unmaplat_benchmark.csv"
+        } else {
+            "rackscale_shmem_vmops_benchmark.csv"
+        }
     } else {
-        "rackscale_ethernet_vmops_benchmark.csv"
+        if is_unmaplat {
+            "rackscale_ethernet_vmops_unmaplat_benchmark.csv"
+        } else {
+            "rackscale_ethernet_vmops_benchmark.csv"
+        }
     };
     let _ignore = std::fs::remove_file(file_name);
 
+    let bench_name = if !is_unmaplat {
+        "vmops"
+    } else {
+        "vmops-unmaplat"
+    };
+
     let build = Arc::new({
-        let mut build = BuildArgs::default()
-            .module("init")
-            .user_feature("bench-vmops")
-            .kernel_feature("shmem")
-            .kernel_feature("ethernet")
-            .kernel_feature("rackscale")
-            .release();
+        let mut build = if !is_unmaplat {
+            BuildArgs::default()
+                .module("init")
+                .user_feature("bench-vmops")
+                .kernel_feature("shmem")
+                .kernel_feature("ethernet")
+                .kernel_feature("rackscale")
+                .release()
+        } else {
+            BuildArgs::default()
+                .module("init")
+                .user_feature("bench-vmops-unmaplat")
+                .user_feature("latency")
+                .kernel_feature("shmem")
+                .kernel_feature("ethernet")
+                .kernel_feature("rackscale")
+                .release()
+        };
         if cfg!(feature = "smoke") {
             build = build.user_feature("smoke");
         }
@@ -338,12 +369,22 @@ fn rackscale_vmops_benchmark(is_shmem: bool) {
     });
 
     let build_baseline = Arc::new({
-        let mut build = BuildArgs::default()
-            .module("init")
-            .user_feature("bench-vmops")
-            .kernel_feature("shmem")
-            .kernel_feature("ethernet")
-            .release();
+        let mut build = if !is_unmaplat {
+            BuildArgs::default()
+                .module("init")
+                .user_feature("bench-vmops")
+                .kernel_feature("shmem")
+                .kernel_feature("ethernet")
+                .release()
+        } else {
+            BuildArgs::default()
+                .module("init")
+                .user_feature("bench-vmops-unmaplat")
+                .user_feature("latency")
+                .kernel_feature("shmem")
+                .kernel_feature("ethernet")
+                .release()
+        };
         if cfg!(feature = "smoke") {
             build = build.user_feature("smoke");
         }
@@ -367,12 +408,16 @@ fn rackscale_vmops_benchmark(is_shmem: bool) {
             }
 
             eprintln!(
-                "\tRunning vmops test total_cores={:?}, nclients={:?}, cores_per_client={:?}",
-                total_cores, nclients, cores
+                "\tRunning {:?} test total_cores={:?}, nclients={:?}, cores_per_client={:?}",
+                bench_name, total_cores, nclients, cores
             );
 
             // TODO(rackscale): this is probably too high, but oh well.
-            let timeout = 120_000 + 20000 * total_cores as u64;
+            let timeout = if !is_unmaplat {
+                120_000 + 20000 * total_cores as u64
+            } else {
+                120_000 + 800000 * total_cores as u64
+            };
 
             // TODO(rackscale): probably scale with nclients?
             let shmem_size = SHMEM_SIZE * 2;
@@ -408,8 +453,8 @@ fn rackscale_vmops_benchmark(is_shmem: bool) {
                 let mut output = String::new();
                 let mut qemu_run = |baseline_cores| -> Result<WaitStatus> {
                     eprintln!(
-                        "\tRunning NrOS vmops baseline with {} core(s)",
-                        baseline_cores
+                        "\tRunning NrOS {:?} baseline with {} core(s)",
+                        bench_name, baseline_cores
                     );
                     let mut p = spawn_nrk(&cmdline_baseline)?;
 
@@ -423,9 +468,11 @@ fn rackscale_vmops_benchmark(is_shmem: bool) {
                     };
 
                     for _i in 0..expected_lines {
-                        let (prev, matched) = p.exp_regex(
-                            r#"init::vmops: (\d+),(.*),(\d+),(\d+),(\d+),(\d+),(\d+)"#,
-                        )?;
+                        let (prev, matched) = if !is_unmaplat {
+                            p.exp_regex(r#"init::vmops: (\d+),(.*),(\d+),(\d+),(\d+),(\d+),(\d+)"#)?
+                        } else {
+                            p.exp_regex( r#"init::vmops::unmaplat: Latency percentiles: (.*),(\d+),(\d+),(\d+),(\d+),(\d+),(\d+),(\d+),(\d+),(\d+)"#)?
+                        };
                         output += prev.as_str();
                         output += matched.as_str();
 
@@ -437,12 +484,22 @@ fn rackscale_vmops_benchmark(is_shmem: bool) {
                             .open(file_name)
                             .expect("Can't open file");
                         if write_headers {
-                            let row = "git_rev,nclients,thread_id,benchmark,ncores,memsize,duration_total,duration,operations\n";
+                            let row = if !is_unmaplat {
+                                "git_rev,nclients,thread_id,benchmark,ncores,memsize,duration_total,duration,operations\n"
+                            } else {
+                                "git_rev,benchmark,ncores,memsize,p1,p25,p50,p75,p99,p999,p100\n"
+                            };
                             let r = csv_file.write(row.as_bytes());
                             assert!(r.is_ok());
                         }
 
-                        let parts: Vec<&str> = matched.split("init::vmops: ").collect();
+                        let parts: Vec<&str> = if !is_unmaplat {
+                            matched.split("init::vmops: ").collect()
+                        } else {
+                            matched
+                                .split("init::vmops::unmaplat: Latency percentiles: ")
+                                .collect()
+                        };
                         let r = csv_file.write(format!("{},", env!("GIT_HASH")).as_bytes());
                         assert!(r.is_ok());
                         let r = csv_file.write(format!("{},", 0).as_bytes());
@@ -508,8 +565,8 @@ fn rackscale_vmops_benchmark(is_shmem: bool) {
                 let mut output = String::new();
                 let mut qemu_run = |controller_clients, application_cores| -> Result<WaitStatus> {
                     eprintln!(
-                        "\tRunning rackscale NrOS vmops controller with {} client(s) for a total of {} application core(s)",
-                        controller_clients, application_cores
+                        "\tRunning rackscale NrOS {:?} controller with {} client(s) for a total of {} application core(s)",
+                        bench_name, controller_clients, application_cores
                     );
                     let mut p = spawn_nrk(&cmdline_controller)?;
 
@@ -523,9 +580,11 @@ fn rackscale_vmops_benchmark(is_shmem: bool) {
                     };
 
                     for _i in 0..expected_lines {
-                        let (prev, matched) = p.exp_regex(
-                            r#"init::vmops: (\d+),(.*),(\d+),(\d+),(\d+),(\d+),(\d+)"#,
-                        )?;
+                        let (prev, matched) = if !is_unmaplat {
+                            p.exp_regex(r#"init::vmops: (\d+),(.*),(\d+),(\d+),(\d+),(\d+),(\d+)"#)?
+                        } else {
+                            p.exp_regex( r#"init::vmops::unmaplat: Latency percentiles: (.*),(\d+),(\d+),(\d+),(\d+),(\d+),(\d+),(\d+),(\d+),(\d+)"#)?
+                        };
                         output += prev.as_str();
                         output += matched.as_str();
 
@@ -537,15 +596,25 @@ fn rackscale_vmops_benchmark(is_shmem: bool) {
                             .open(file_name)
                             .expect("Can't open file");
                         if write_headers {
-                            let row = "git_rev,nclients,thread_id,benchmark,ncores,memsize,duration_total,duration,operations\n";
+                            let row = if !is_unmaplat {
+                                "git_rev,nclients,thread_id,benchmark,ncores,memsize,duration_total,duration,operations\n"
+                            } else {
+                                "git_rev,benchmark,ncores,memsize,p1,p25,p50,p75,p99,p999,p100\n"
+                            };
                             let r = csv_file.write(row.as_bytes());
                             assert!(r.is_ok());
                         }
 
-                        let parts: Vec<&str> = matched.split("init::vmops: ").collect();
+                        let parts: Vec<&str> = if !is_unmaplat {
+                            matched.split("init::vmops: ").collect()
+                        } else {
+                            matched
+                                .split("init::vmops::unmaplat: Latency percentiles: ")
+                                .collect()
+                        };
                         let r = csv_file.write(format!("{},", env!("GIT_HASH")).as_bytes());
                         assert!(r.is_ok());
-                        let r = csv_file.write(format!("{},", controller_clients).as_bytes());
+                        let r = csv_file.write(format!("{},", 0).as_bytes());
                         assert!(r.is_ok());
                         let r = csv_file.write(parts[1].as_bytes());
                         assert!(r.is_ok());
@@ -611,8 +680,8 @@ fn rackscale_vmops_benchmark(is_shmem: bool) {
                     let mut output = String::new();
                     let mut qemu_run = |with_cores: usize| -> Result<WaitStatus> {
                         eprintln!(
-                            "\tRunning rackscale NrOS vmops client with {} core(s)",
-                            with_cores
+                            "\tRunning rackscale NrOS {:?} client with {} core(s)",
+                            bench_name, with_cores
                         );
                         let mut p = spawn_nrk(&cmdline_client)?;
 
@@ -658,368 +727,6 @@ fn rackscale_vmops_benchmark(is_shmem: bool) {
                         log_qemu_out_with_name(None, "DCM".to_string(), dcm_log.unwrap());
                     } else {
                         eprintln!("FAILED TO PRINT DCM LOG");
-                    }
-                }
-            }
-
-            for client_ret in client_rets {
-                client_ret.unwrap();
-            }
-            controller_ret.unwrap();
-        }
-    }
-}
-
-#[test]
-#[cfg(not(feature = "baremetal"))]
-fn s11_rackscale_shmem_vmops_unmaplat_benchmark() {
-    rackscale_vmops_unmaplat_benchmark(true);
-}
-
-#[cfg(not(feature = "baremetal"))]
-fn rackscale_vmops_unmaplat_benchmark(is_shmem: bool) {
-    use std::collections::HashSet;
-    use std::sync::Arc;
-    use std::thread::sleep;
-    use std::time::Duration;
-
-    let file_name = if is_shmem {
-        "rackscale_shmem_vmops_unmaplat_benchmark.csv"
-    } else {
-        "rackscale_ethernet_vmops_unmaplat_benchmark.csv"
-    };
-    let _ignore = std::fs::remove_file(file_name);
-
-    let build = Arc::new({
-        let mut build = BuildArgs::default()
-            .module("init")
-            .user_feature("bench-vmops-unmaplat")
-            .user_feature("latency")
-            .kernel_feature("shmem")
-            .kernel_feature("ethernet")
-            .kernel_feature("rackscale")
-            .release();
-        if cfg!(feature = "smoke") {
-            build = build.user_feature("smoke");
-        }
-        build.build()
-    });
-
-    let build_baseline = Arc::new({
-        let mut build = BuildArgs::default()
-            .module("init")
-            .user_feature("bench-vmops-unmaplat")
-            .user_feature("latency")
-            .kernel_feature("shmem")
-            .kernel_feature("ethernet")
-            .release();
-        if cfg!(feature = "smoke") {
-            build = build.user_feature("smoke");
-        }
-        build.build()
-    });
-    let mut baseline_set = HashSet::new();
-
-    // TODO(rackscale): assert that there are enough threads/nodes on the machine for these settings?
-    let machine = Machine::determine();
-    let threads = [1, 2, 4, 8, 16];
-    let max_cores = core::cmp::min(machine.max_cores(), *threads.iter().max().unwrap());
-    let num_clients = if is_shmem { vec![1, 2, 4] } else { vec![1] };
-
-    for i in 0..num_clients.len() {
-        let nclients = num_clients[i];
-
-        for &cores in threads.iter() {
-            let total_cores = cores * nclients;
-            if total_cores > max_cores {
-                break;
-            }
-
-            eprintln!(
-				"\tRunning vmops unmaplat test total_cores={:?}, nclients={:?}, cores_per_client={:?}",
-				total_cores, nclients, cores
-			);
-
-            let timeout = 120_000 + 400000 * total_cores as u64;
-
-            let shmem_size = SHMEM_SIZE * 2;
-            let all_outputs = Arc::new(Mutex::new(Vec::new()));
-
-            if !baseline_set.contains(&total_cores) {
-                setup_network(1);
-                let mut shmem_server = spawn_shmem_server(SHMEM_PATH, shmem_size)
-                    .expect("Failed to start shmem server");
-
-                let baseline_cmdline = format!("initarge={}", total_cores);
-
-                let mut cmdline_baseline =
-                    RunnerArgs::new_with_build("userspace-smp", &build_baseline)
-                        .timeout(timeout)
-                        .shmem_size(shmem_size as usize)
-                        .shmem_path(SHMEM_PATH)
-                        .tap("tap0")
-                        .no_network_setup()
-                        .workers(1)
-                        .cores(total_cores)
-                        .setaffinity(Vec::new())
-                        .use_vmxnet3()
-                        .cmd(baseline_cmdline.as_str());
-
-                if cfg!(feature = "smoke") {
-                    cmdline_baseline = cmdline_baseline.memory(10 * 1024);
-                } else {
-                    cmdline_baseline = cmdline_baseline.memory(48 * 1024);
-                }
-
-                let mut output = String::new();
-                let mut qemu_run = |baseline_cores| -> Result<WaitStatus> {
-                    eprintln!(
-                        "\tRunning NrOS vmops unmaplat baseline with {} core(s)",
-                        baseline_cores
-                    );
-                    let mut p = spawn_nrk(&cmdline_baseline)?;
-
-                    let expected_lines = if cfg!(feature = "smoke") {
-                        1
-                    } else {
-                        baseline_cores * 11
-                    };
-
-                    for _i in 0..expected_lines {
-                        let (prev, matched) = p.exp_regex(
-							r#"init::vmops::unmaplat: Latency percentiles: (.*),(\d+),(\d+),(\d+),(\d+),(\d+),(\d+),(\d+),(\d+),(\d+)"#,
-						)?;
-                        output += prev.as_str();
-                        output += matched.as_str();
-
-                        let write_headers = !Path::new(file_name).exists();
-                        let mut csv_file = OpenOptions::new()
-                            .append(true)
-                            .create(true)
-                            .open(file_name)
-                            .expect("Can't open file");
-
-                        if write_headers {
-                            let row =
-                                "git_rev,benchmark,ncores,memsize,p1,p25,p50,p75,p99,p999,p100\n";
-                            let r = csv_file.write(row.as_bytes());
-                            assert!(r.is_ok());
-                        }
-
-                        let parts: Vec<&str> = matched
-                            .split("init::vmops::unmaplat: Latency percentiles: ")
-                            .collect();
-                        let r = csv_file.write(format!("{},", env!("GIT_HASH")).as_bytes());
-                        assert!(r.is_ok());
-                        let r = csv_file.write(format!("{},", 0).as_bytes());
-                        assert!(r.is_ok());
-                        let r = csv_file.write(parts[1].as_bytes());
-                        assert!(r.is_ok());
-                        let r = csv_file.write("\n".as_bytes());
-                        assert!(r.is_ok());
-                    }
-                    output += p.exp_eof()?.as_str();
-                    p.process.exit()
-                };
-                check_for_successful_exit(&cmdline_baseline, qemu_run(total_cores), output);
-                let _ignore = shmem_server.send_control('c');
-                baseline_set.insert(total_cores);
-            }
-
-            if cores * nclients + 1 > max_cores {
-                break;
-            }
-
-            // RackScale
-            setup_network(nclients + 1);
-
-            let mut vm_cores = vec![cores; nclients];
-            vm_cores.push(1);
-            let placement_cores = machine.rackscale_core_affinity(vm_cores);
-
-            let (tx, rx) = channel();
-            let rx_mut = Arc::new(Mutex::new(rx));
-
-            let mut shmem_server =
-                spawn_shmem_server(SHMEM_PATH, shmem_size).expect("Failed to start shmem server");
-            let mut dcm = spawn_dcm(1).expect("Failed to start DCM");
-
-            let controller_cmdline = format!(
-                "mode=controller transport={}",
-                if is_shmem { "shmem" } else { "ethernet" }
-            );
-
-            // Create Controller
-            let build1 = build.clone();
-            let controller_output_array = all_outputs.clone();
-            let controller_placement_cores = placement_cores.clone();
-            let controller = std::thread::spawn(move || {
-                let mut cmdline_controller = RunnerArgs::new_with_build("userspace-smp", &build1)
-                    .timeout(timeout)
-                    .cmd(&controller_cmdline)
-                    .shmem_size(shmem_size as usize)
-                    .shmem_path(SHMEM_PATH)
-                    .tap("tap0")
-                    .no_network_setup()
-                    .workers(nclients + 1)
-                    .setaffinity(controller_placement_cores[nclients].clone())
-                    .use_vmxnet3();
-
-                if cfg!(feature = "smoke") {
-                    cmdline_controller = cmdline_controller.memory(10 * 1024);
-                } else {
-                    cmdline_controller = cmdline_controller.memory(48 * 1024);
-                }
-
-                let mut output = String::new();
-                let mut qemu_run = |controller_clients, application_cores| -> Result<WaitStatus> {
-                    eprintln!(
-						"\tRunning rackscale NrOS vmops unmaplat controller with {} client(s) for a total of {} application core(s)",
-						controller_clients, application_cores
-					);
-
-                    let mut p = spawn_nrk(&cmdline_controller)?;
-
-                    let expected_lines = if cfg!(feature = "smoke") {
-                        1
-                    } else {
-                        application_cores * 11
-                    };
-
-                    for _i in 0..expected_lines {
-                        let (prev, matched) = p.exp_regex(
-							r#"init::vmops::unmaplat: Latency percentiles: (.*),(\d+),(\d+),(\d+),(\d+),(\d+),(\d+),(\d+),(\d+),(\d+)"#,
-						)?;
-                        output += prev.as_str();
-                        output += matched.as_str();
-
-                        let write_headers = !Path::new(file_name).exists();
-                        let mut csv_file = OpenOptions::new()
-                            .append(true)
-                            .create(true)
-                            .open(file_name)
-                            .expect("Can't open file");
-
-                        if write_headers {
-                            let row =
-                                "git_rev,benchmark,ncores,memsize,p1,p25,p50,p75,p99,p999,p100\n";
-                            let r = csv_file.write(row.as_bytes());
-                            assert!(r.is_ok());
-                        }
-
-                        let parts: Vec<&str> = matched
-                            .split("init::vmops::unmaplat: Latency percentiles: ")
-                            .collect();
-                        let r = csv_file.write(format!("{},", env!("GIT_HASH")).as_bytes());
-                        assert!(r.is_ok());
-                        let r = csv_file.write(format!("{},", 0).as_bytes());
-                        assert!(r.is_ok());
-                        let r = csv_file.write(parts[1].as_bytes());
-                        assert!(r.is_ok());
-                        let r = csv_file.write("\n".as_bytes());
-                        assert!(r.is_ok());
-                    }
-
-                    for _i in 0..nclients {
-                        notify_controller_of_termination(&tx);
-                    }
-                    p.process.kill(SIGTERM)
-                };
-                let ret = qemu_run(nclients, total_cores);
-                controller_output_array
-                    .lock()
-                    .expect("Failed to get output lock")
-                    .push((String::from("Controller"), output));
-
-                wait_for_sigterm_or_successful_exit_no_log(
-                    &cmdline_controller,
-                    ret,
-                    String::from("Controller"),
-                );
-            });
-
-            let mut clients = Vec::new();
-            for nclient in 1..(nclients + 1) {
-                let kernel_cmdline = format!(
-                    "mode=client transport={} initargs={}",
-                    if is_shmem { "shmem" } else { "ethernet" },
-                    total_cores,
-                );
-                let tap = format!("tap{}", 2 * nclient);
-                let my_rx_mut = rx_mut.clone();
-                let my_output_array = all_outputs.clone();
-                let my_placement_cores = placement_cores.clone();
-                let build2 = build.clone();
-                let client = std::thread::spawn(move || {
-                    sleep(Duration::from_millis(
-                        CLIENT_BUILD_DELAY * (nclient as u64 + 1),
-                    ));
-                    let mut cmdline_client = RunnerArgs::new_with_build("userspace-smp", &build2)
-                        .timeout(timeout)
-                        .shmem_size(shmem_size as usize)
-                        .shmem_path(SHMEM_PATH)
-                        .tap(&tap)
-                        .no_network_setup()
-                        .workers(nclients + 1)
-                        .cores(cores)
-                        .setaffinity(my_placement_cores[nclient - 1].clone())
-                        .use_vmxnet3()
-                        .nobuild()
-                        .cmd(kernel_cmdline.as_str());
-
-                    if cfg!(feature = "smoke") {
-                        cmdline_client = cmdline_client.memory(10 * 1024);
-                    } else {
-                        cmdline_client = cmdline_client.memory(48 * 1024);
-                    }
-
-                    let mut output = String::new();
-                    let mut qemu_run = |with_cores: usize| -> Result<WaitStatus> {
-                        eprintln!(
-                            "\tRunning rackscale NrOS vmops unmaplat client with {} core(s)",
-                            with_cores
-                        );
-                        let mut p = spawn_nrk(&cmdline_client)?;
-                        let rx = my_rx_mut.lock().expect("Failed to get rx lock");
-                        let _ = wait_for_client_termination::<()>(&rx);
-                        let ret = p.process.kill(SIGTERM);
-                        output += p.exp_eof()?.as_str();
-                        ret
-                    };
-                    let ret = qemu_run(cores);
-                    my_output_array
-                        .lock()
-                        .expect("Failed to get output lock")
-                        .push((format!("Client{}", nclient), output));
-                    wait_for_sigterm_or_successful_exit_no_log(
-                        &cmdline_client,
-                        ret,
-                        format!("Client{}", nclient),
-                    );
-                });
-                clients.push(client)
-            }
-
-            let controller_ret = controller.join();
-            let mut client_rets = Vec::new();
-            for client in clients {
-                client_rets.push(client.join());
-            }
-
-            let _ignore = shmem_server.send_control('c');
-            let _ignore = dcm.process.kill(SIGKILL);
-
-            if controller_ret.is_err() || (&client_rets).into_iter().any(|ret| ret.is_err()) {
-                let outputs = all_outputs.lock().expect("Failed to get output lock");
-                for (name, output) in outputs.iter() {
-                    log_qemu_out_with_name(None, name.to_string(), output.to_string());
-                }
-                if controller_ret.is_err() {
-                    let dcm_log = dcm.exp_eof();
-                    if dcm_log.is_ok() {
-                        log_qemu_out_with_name(None, "DCM".to_string(), dcm_log.unwrap());
-                    } else {
-                        eprintln!("FAILED TO PRING DCM LOG");
                     }
                 }
             }

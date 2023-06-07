@@ -423,11 +423,12 @@ def run_qemu(args):
             ]
 
     # Enable networking:
-    mac, tap = NETWORK_CONFIG[args.tap]['mac'], args.tap
-    qemu_default_args += ['-device',
-                          '{},netdev=n1,mac={}'.format(args.nic, mac)]
-    qemu_default_args += ['-netdev',
-                          'tap,id=n1,script=no,ifname={}'.format(tap)]
+    if not ('no_network_setup' in args and args.no_network_setup):
+        mac, tap = NETWORK_CONFIG[args.tap]['mac'], args.tap
+        qemu_default_args += ['-device',
+                            '{},netdev=n1,mac={}'.format(args.nic, mac)]
+        qemu_default_args += ['-netdev',
+                            'tap,id=n1,script=no,ifname={}'.format(tap)]
 
     def numa_nodes_to_list(file):
         nodes = []
@@ -783,7 +784,19 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     # Setup network
-    if not ('no_network_setup' in args and args.no_network_setup):
+    if not ('no_network_setup' in args and args.no_network_setup) and args.qemu_cores and args.qemu_affinity:
+        try:
+            from plumbum.cmd import sudo
+            r = sudo['-n']['true']()
+        except ProcessExecutionError as e:
+            if e.retcode == 1:
+                print("`sudo` is asking for a password, but for testing to work, `sudo` should not prompt for a password.")
+                print("Add the line `{} ALL=(ALL) NOPASSWD: ALL` with the `sudo visudo` command to fix this.".format(user))
+                sys.exit(errno.EINVAL)
+            else:
+                raise e
+
+    if not ('no_network_setup' in args and args.no_network_setup) :
         configure_network(args)
 
     if 'network_only' in args and args.network_only:
@@ -804,16 +817,6 @@ if __name__ == '__main__':
         print("Just use `--kgdb` to make sure `run.py` configures QEMU with the proper serial line.")
         sys.exit(errno.EINVAL)
 
-    try:
-        from plumbum.cmd import sudo
-        r = sudo['-n']['true']()
-    except ProcessExecutionError as e:
-        if e.retcode == 1:
-            print("`sudo` is asking for a password, but for testing to work, `sudo` should not prompt for a password.")
-            print("Add the line `{} ALL=(ALL) NOPASSWD: ALL` with the `sudo visudo` command to fix this.".format(user))
-            sys.exit(errno.EINVAL)
-        else:
-            raise e
 
     # Setup DCM scheduler jar
     configure_dcm_scheduler(args)

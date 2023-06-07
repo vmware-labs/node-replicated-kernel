@@ -832,6 +832,147 @@ fn s10_leveldb_benchmark() {
     }
 }
 
+
+#[test]
+fn s10_memcached_benchmark_internal() {
+    let machine = Machine::determine();
+    let build = BuildArgs::default()
+        .module("rkapps")
+        .user_feature("rkapps:memcached-bench")
+        .release()
+        .build();
+
+    let threads: Vec<usize> = machine
+        .thread_defaults_uniform()
+        .into_iter()
+        // Throw out everything above 28 since we have some non-deterministic
+        // bug on larger machines that leads to threads calling sched_yield and
+        // no readrandom is performed...
+        .filter(|&t| t <= 28)
+        .collect();
+
+    // memcached arguments // currently not there.
+    let memsize = if cfg!(feature = "smoke") {
+        10 //MB
+    } else {
+        32 * 1024 // MB
+    };
+
+    let file_name = "memcached_benchmark_internal.csv";
+    let _r = std::fs::remove_file(file_name);
+
+    for thread in threads.iter() {
+        let kernel_cmdline = format!(
+            r#"init=memcachedbench.bin initargs={} appcmd='--x-benchmark-mem={}'"#,
+            *thread, memsize
+        );
+        let mut cmdline = RunnerArgs::new_with_build("userspace-smp", &build)
+            .timeout(600_000)
+            .cores(machine.max_cores())
+            .nodes(2)
+            .setaffinity(Vec::new())
+            .cmd(kernel_cmdline.as_str())
+            .no_network_setup();
+
+        if cfg!(feature = "smoke") {
+            cmdline = cmdline.memory(88192);
+        } else {
+            cmdline = cmdline.memory(80_000);
+        }
+
+        let mut output = String::new();
+        let mut qemu_run = || -> Result<WaitStatus> {
+            let mut p = spawn_nrk(&cmdline)?;
+
+            // match the title
+            let (prev, matched) = p.exp_regex(r#"INTERNAL BENCHMARK CONFIGURE"#)?;
+
+            output += prev.as_str();
+            output += matched.as_str();
+
+            // x_benchmark_mem = 10 MB
+            let (prev, matched) = p.exp_regex(r#"x_benchmark_mem = (\d+) MB"#)?;
+            println!("> {}", matched);
+            let b_mem = matched.replace("x_benchmark_mem = ", "").replace(" MB", "");
+
+            output += prev.as_str();
+            output += matched.as_str();
+
+            // number of threads: 3
+            let (prev, matched) = p.exp_regex(r#"number of threads: (\d+)"#)?;
+            println!("> {}", matched);
+            let b_threads = matched.replace("number of threads: ", "");
+
+            output += prev.as_str();
+            output += matched.as_str();
+
+            // number of keys: 131072
+            let (prev, matched) = p.exp_regex(r#"number of keys: (\d+)"#)?;
+            println!("> {}", matched);
+
+            output += prev.as_str();
+            output += matched.as_str();
+
+            // benchmark took 129 seconds
+            let (prev, matched) = p.exp_regex(r#"benchmark took (\d+) ms"#)?;
+            println!("> {}", matched);
+            let b_time = matched.replace("benchmark took ", "").replace(" ms", "");
+
+            output += prev.as_str();
+            output += matched.as_str();
+
+            // benchmark took 7937984 queries / second
+            let (prev, matched) = p.exp_regex(r#"benchmark took (\d+) queries / second"#)?;
+            println!("> {}", matched);
+            let b_thpt = matched.replace("benchmark took ", "").replace(" queries / second", "");
+
+            output += prev.as_str();
+            output += matched.as_str();
+
+            let (prev, matched) = p.exp_regex(r#"benchmark executed (\d+)"#)?;
+            println!("> {}", matched);
+            let b_queries = matched.replace("benchmark executed ", "").split(" ").next().unwrap().to_string();
+
+            output += prev.as_str();
+            output += matched.as_str();
+
+            // Append parsed results to a CSV file
+            let write_headers = !Path::new(file_name).exists();
+            let mut csv_file = OpenOptions::new()
+                .append(true)
+                .create(true)
+                .open(file_name)
+                .expect("Can't open file");
+            if write_headers {
+                let row = "git_rev,benchmark,nthreads,mem,queries,time,thpt\n";
+                let r = csv_file.write(row.as_bytes());
+                assert!(r.is_ok());
+            }
+
+            let r = csv_file.write(format!("{},", env!("GIT_HASH")).as_bytes());
+            assert!(r.is_ok());
+            let out = format!(
+                "memcached,{},{},{},{},{}",
+                b_threads,
+                b_mem,
+                b_queries,
+                b_time,
+                b_thpt,
+            );
+            let r = csv_file.write(out.as_bytes());
+            assert!(r.is_ok());
+            let r = csv_file.write("\n".as_bytes());
+            assert!(r.is_ok());
+
+            // cleanup
+            p.process.kill(SIGTERM)?;
+            p.process.exit()
+        };
+
+        check_for_successful_exit(&cmdline, qemu_run(), output);
+    }
+}
+
 /// Tests that basic pmem allocation support is functional.
 /// TODO: Store persistent data durably and test it.
 #[test]

@@ -63,6 +63,15 @@ fn build_plan() -> Vec<(&'static str, &'static str, &'static str, bool)> {
         plan.push(("nginx", "../../../../nginx.bin", "bin/nginx", !unwind_hack));
     }
 
+    if cfg!(feature = "memcached-bench") {
+        plan.push((
+            "memcached-bench",
+            "../../../../memcachedbench.bin",
+            "build/memcached",
+            !unwind_hack,
+        ));
+    }
+
     if cfg!(feature = "leveldb-bench") {
         plan.push((
             "leveldb",
@@ -112,9 +121,9 @@ fn main() {
             .status()
             .unwrap();
 
-        println!("CHECKOUT 52d5bd4 {:?}", out_dir);
+        println!("CHECKOUT 2f75b2a {:?}", out_dir);
         Command::new("git")
-            .args(&["checkout", "52d5bd44df02db4645a469ade7a67bb4705ab8a9"])
+            .args(&["checkout", "f401cfcc4962f1255d91c17f8dce62bd504edcd1"])
             .current_dir(&Path::new(&out_dir))
             .status()
             .unwrap();

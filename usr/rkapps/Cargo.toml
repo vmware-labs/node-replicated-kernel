@@ -18,4 +18,5 @@ redis = []
 memcached = []
 nginx = []
 leveldb-bench = []
+memcached-bench = []
 

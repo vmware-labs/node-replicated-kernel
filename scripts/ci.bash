@@ -24,8 +24,8 @@ RUST_TEST_THREADS=1 cargo test --test s10* -- s10_redis_benchmark_ --nocapture
 RUST_TEST_THREADS=1 cargo test --test s10* -- s10_leveldb_benchmark --nocapture
 RUST_TEST_THREADS=1 cargo test --test s10* -- s10_fxmark_bench --nocapture
 
-RUST_TEST_THREADS=1 cargo test --test s11* -- s11_rackscale_shmem_vmops_benchmark --nocapture
-RUST_TEST_THREADS=1 cargo test --test s11* -- s11_rackscale_shmem_vmops_latency_benchmark --nocapture
+RUST_TEST_THREADS=1 cargo test --test s11* -- s11_rackscale_shmem_vmops_maptput_benchmark --nocapture
+RUST_TEST_THREADS=1 cargo test --test s11* -- s11_rackscale_shmem_vmops_maplat_benchmark --nocapture
 RUST_TEST_THREADS=1 cargo test --test s11* -- s11_rackscale_shmem_fxmark_bench --nocapture
 
 # Clone repo

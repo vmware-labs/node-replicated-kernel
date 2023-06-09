@@ -30,10 +30,6 @@ pub const SHMEM_SIZE: usize = 1024;
 /// Delay between invoking version of nrk in rackscale tests
 pub const CLIENT_BUILD_DELAY: u64 = 5_000;
 
-/// Benchmark configurations for rackscale
-pub const RACKSCALE_CLIENTS: &[usize] = &[1, 2, 4, 8];
-pub const RACKSCALE_CLIENTS_MAX: usize = 8;
-
 /// Sets up network interfaces and bridge for rackscale mode
 ///
 /// num_nodes includes the controller in the count. Internally this

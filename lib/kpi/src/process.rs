@@ -7,9 +7,9 @@ use serde::{Deserialize, Serialize};
 use x86::bits64::paging::PML4_SLOT_SIZE;
 
 /// Max number of machines supported by the process allocator.
-pub const MAX_MACHINES: usize = 8;
+pub const MAX_MACHINES: usize = 4;
 
-pub const MAX_CORES_PER_MACHINE: usize = 12;
+pub const MAX_CORES_PER_MACHINE: usize = 24;
 
 /// Max number of cores supported by the process allocator.
 pub const MAX_CORES: usize = 96; // MAX_MACHINES * MAX_CORES_PER_MACHINE;

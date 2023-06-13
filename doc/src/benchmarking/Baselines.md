@@ -69,3 +69,7 @@ Run:
 ```bash
 CXX=g++-4.8 CC=gcc-4.8 make qemu`
 ```
+
+# Rackscale
+
+One of the baselines for rackscale is NrOS. To run the rackscale benchmarks with corresponding NrOS baslines, run them with ```--feature baseline```.

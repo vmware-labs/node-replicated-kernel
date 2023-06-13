@@ -111,6 +111,8 @@ gdb = []
 integration-test = ["shmem", "ethernet"]
 # smoke: Shortens long running benchmarks to test just functionality.
 smoke = []
+# For rackscale tests, runs baseline NrOS. This causes the tests to take longer.
+baseline = []
 # baremetal: Compile benchmarks for running on bare-metal.
 baremetal = []
 # pre-alloc guest memory: For benchmark sensitive to VM exits.

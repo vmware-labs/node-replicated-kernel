@@ -783,8 +783,10 @@ if __name__ == '__main__':
     "Execution pipeline for building and launching nrk"
     args = parser.parse_args()
 
+    user = whoami().strip()
+
     # Setup network
-    if not ('no_network_setup' in args and args.no_network_setup) and args.qemu_cores and args.qemu_affinity:
+    if not ('no_network_setup' in args and args.no_network_setup) or args.qemu_cores or args.qemu_affinity:
         try:
             from plumbum.cmd import sudo
             r = sudo['-n']['true']()
@@ -802,7 +804,6 @@ if __name__ == '__main__':
     if 'network_only' in args and args.network_only:
         sys.exit(0)
 
-    user = whoami().strip()
     kvm_members = getent['group', 'kvm']().strip().split(":")[-1].split(',')
     if not user in kvm_members and not args.norun:
         print("Your user ({}) is not in the kvm group.".format(user))

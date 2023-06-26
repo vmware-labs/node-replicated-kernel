@@ -20,7 +20,7 @@ use crate::error::{KError, KResult};
 use crate::memory::backends::PhysicalPageProvider;
 use crate::memory::Frame;
 use crate::process::Pid;
-use crate::transport::shmem::{ShmemRegion, SHMEM_DEVICE};
+use crate::transport::shmem::ShmemRegion;
 
 use crate::memory::backends::AllocatorStatistics;
 

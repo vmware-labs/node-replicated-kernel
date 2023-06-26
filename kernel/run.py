@@ -38,7 +38,7 @@ CARGO_NOSTD_BUILD_ARGS = ["-Z", "build-std=core,alloc",
                           "-Z", "build-std-features=compiler-builtins-mem"]
 ARCH = "x86_64"
 
-IVSHMEM_DEVICE_ADDR = 6
+IVSHMEM_DEVICE_ADDR = 10
 
 def get_network_config(workers):
     """
@@ -137,10 +137,10 @@ parser.add_argument('--tap', default='tap0', choices=[f"tap{2*i}" for i in range
 parser.add_argument('--kgdb', action="store_true",
                     help="Use the GDB remote debugger to connect to the kernel")
 parser.add_argument('--qemu-ivshmem',
-                    type=int,
+                    type=str,
                     help="Enable the ivshmem device with the size in MiB.",
                     required=False,
-                    default=0)
+                    default="")
 parser.add_argument('--qemu-shmem-path',
                     type=str,
                     help="Provide shared memory file path.",
@@ -407,12 +407,17 @@ def run_qemu(args):
                           'isa-debug-exit,iobase=0xf4,iosize=0x04']
 
     if args.qemu_ivshmem:
-        # If you change the the device addr, you must change it in vibrio::rumprt::dev
-        qemu_default_args += ['-device', 'ivshmem-doorbell,vectors=3,chardev=id,addr={}'.format(IVSHMEM_DEVICE_ADDR)]
-        qemu_default_args += [
-            '-chardev',
-            'socket,path={},id=id'.format(args.qemu_shmem_path)
-        ]
+        sizes = [int(s.strip()) for s in args.qemu_ivshmem.split(",")]
+        names = [s.strip() for s in args.qemu_shmem_path.split(",")]
+        assert len(sizes) == len(names)
+
+        for i in range(len(sizes)):
+            # TODO: Only device IVSHMEM_DEVICE_ADDR will handle interrupts?
+            qemu_default_args += ['-device', 'ivshmem-doorbell,vectors=3,chardev=id{},addr={}'.format(i, IVSHMEM_DEVICE_ADDR + i)]
+            qemu_default_args += [
+                '-chardev',
+                'socket,path={},id=id{}'.format(names[i], i)
+            ]
 
     # Enable networking:
     mac, tap = NETWORK_CONFIG[args.tap]['mac'], args.tap

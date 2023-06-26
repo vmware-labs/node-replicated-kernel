@@ -88,7 +88,7 @@ lazy_static! {
             let pcm = per_core_mem();
             pcm.set_mem_affinity(SHARED_AFFINITY).expect("Can't change affinity");
         } else {
-            // Get location of the logs from the controller, who will created them in shared memory
+            // Get location of the logs from the controller, who will have created them in shared memory
             use crate::arch::rackscale::get_shmem_structure::{rpc_get_shmem_structure, ShmemStructure};
 
             let mut log_ptrs = [0u64; MAX_PROCESSES];

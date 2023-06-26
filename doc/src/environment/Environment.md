@@ -15,47 +15,25 @@ already uncommented. Then, run the following commands:
 
 ```bash
 sudo apt update
-sudo apt install build-essential libpmem-dev libdaxctl-dev ninja-build
+sudo apt install build-essential libpmem-dev libdaxctl-dev ninja-build flex bison
 apt source qemu
 sudo apt build-dep qemu
+
+For non-rackscale mode, execute the following:
+```
 wget https://download.qemu.org/qemu-6.0.0.tar.xz
 tar xvJf qemu-6.0.0.tar.xz
 cd qemu-6.0.0
 ```
 
-If you are planning on running the rackscale NrOS build, you'll need to modify
-the ivshmem server code. Open ```contrib/ivshmem-server/ivshmem-server.c```.
-Go to the function```ivshmem_server_ftruncate```. Replace it with:
-```c
-static int
-ivshmem_server_ftruncate(int fd, uint64_t shmsize)
-{
-    int ret;
-    struct stat mapstat;
-
-    /* align shmsize to next power of 2 */
-    shmsize = pow2ceil(shmsize);
-
-    if (fstat(fd, &mapstat) != -1 && mapstat.st_size == shmsize) {
-        return 0;
-    }
-
-    /*
-     * This is a do-while loop in case
-     * shmsize > IVSHMEM_SERVER_MAX_HUGEPAGE_SIZE
-     */
-    do {
-        ret = ftruncate64(fd, shmsize);
-        if (ret == 0) {
-            return ret;
-        }
-        shmsize *= 2;
-    } while (shmsize <= IVSHMEM_SERVER_MAX_HUGEPAGE_SIZE);
-
-    return -1;
-}
+For rackscale mode, instead run:
+```
+git clone https://github.com/hunhoffe/qemu.git qemu-6.0.0.tar.xz
+cd qemu-6.0.0
+git checkout --track origin/dev/ivshmem-numa
 ```
 
+For either option, build and install with:
 ```bash
 ./configure --enable-rdma --enable-libpmem
 make -j 28

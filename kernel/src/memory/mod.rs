@@ -83,33 +83,8 @@ impl KernelAllocator {
                     let mut zone_allocator = pcm.ezone_allocator()?;
                     zone_allocator.allocate(layout).map_err(|e| e.into())
                 } else {
-                    // TODO(rackscale performance): check below should be debug only
-                    #[cfg(feature = "rackscale")]
-                    {
-                        use crate::transport::shmem::is_shmem_addr;
-
-                        let affinity = { pcm.physical_memory.borrow().affinity };
-                        let mut zone_allocator = pcm.zone_allocator()?;
-                        let ret = zone_allocator.allocate(layout).map_err(|e| e.into());
-
-                        if let Ok(ptr) = ret {
-                            if affinity == SHARED_AFFINITY {
-                                assert!(is_shmem_addr(ptr.as_ptr() as u64, true, true));
-                            } else {
-                                assert!(
-                                    !is_shmem_addr(ptr.as_ptr() as u64, false, true)
-                                        && !is_shmem_addr(ptr.as_ptr() as u64, false, false)
-                                );
-                            }
-                        }
-                        ret
-                    }
-
-                    #[cfg(not(feature = "rackscale"))]
-                    {
-                        let mut zone_allocator = pcm.zone_allocator()?;
-                        zone_allocator.allocate(layout).map_err(|e| e.into())
-                    }
+                    let mut zone_allocator = pcm.zone_allocator()?;
+                    zone_allocator.allocate(layout).map_err(|e| e.into())
                 }
             }
             AllocatorType::MemManager if layout.size() <= LARGE_PAGE_SIZE => {
@@ -117,22 +92,6 @@ impl KernelAllocator {
                     let mut pmanager = pcm.try_mem_manager()?;
                     pmanager.allocate_large_page()?
                 };
-
-                // TODO(rackscale performance): should be debug only
-                #[cfg(feature = "rackscale")]
-                {
-                    use crate::transport::shmem::is_shmem_frame;
-
-                    let affinity = { pcm.physical_memory.borrow().affinity };
-                    if affinity == SHARED_AFFINITY {
-                        assert!(is_shmem_frame(f, true, false));
-                    } else {
-                        assert!(
-                            !is_shmem_frame(f, false, false) && !is_shmem_frame(f, false, true)
-                        );
-                    }
-                }
-
                 unsafe { Ok(ptr::NonNull::new_unchecked(f.kernel_vaddr().as_mut_ptr())) }
             }
             AllocatorType::MapBig => {
@@ -372,7 +331,6 @@ impl KernelAllocator {
         use crate::arch::rackscale::get_shmem_frames::rpc_get_shmem_frames;
         use crate::arch::rackscale::CLIENT_STATE;
         use crate::memory::backends::{AllocatorStatistics, GrowBackend};
-        use crate::transport::shmem::is_shmem_frame;
 
         if crate::CMDLINE
             .get()
@@ -387,10 +345,6 @@ impl KernelAllocator {
                 let base_page = shmem_manager
                     .allocate_base_page()
                     .expect("Controller is out of affinity shmem");
-
-                // TODO(rackscale performance): should be debug assert
-                assert!(is_shmem_frame(base_page, true, false));
-
                 mem_manager
                     .grow_base_pages(&[base_page])
                     .expect("We ensure to not overfill the FrameCacheSmall above.");
@@ -400,9 +354,6 @@ impl KernelAllocator {
                 let large_page = shmem_manager
                     .allocate_large_page()
                     .expect("Controller is out of affinity shmem");
-
-                // TODO(rackscale performance): should be debug assert
-                assert!(is_shmem_frame(large_page, true, false));
 
                 mem_manager
                     .grow_large_pages(&[large_page])
@@ -425,7 +376,6 @@ impl KernelAllocator {
                     let frame = bp_manager
                         .allocate_base_page()
                         .expect("We ensure there is capabity in the FrameCacheBase above");
-                    assert!(is_shmem_frame(frame, true, false));
                     mem_manager
                         .grow_base_pages(&[frame])
                         .expect("We ensure not the overflow the FrameCacheSmall above");
@@ -461,9 +411,6 @@ impl KernelAllocator {
 
             // Grow large pages
             for i in 0..needed_large_pages {
-                // TODO(rackscale performance): should be debug assert
-                assert!(is_shmem_frame(large_shmem_frames[i], true, false));
-
                 mem_manager
                     .grow_large_pages(&[large_shmem_frames[i]])
                     .expect("We ensure to not overfill the FrameCacheSmall above.");
@@ -473,13 +420,6 @@ impl KernelAllocator {
             if total_needed_base_pages > 0 {
                 // Add needed base pages + however many will fit, to reduce memory we lose here.
 
-                // TODO(rackscale performance): should be debug assert
-                assert!(is_shmem_frame(
-                    large_shmem_frames[total_needed_large_pages - 1],
-                    true,
-                    false
-                ));
-
                 let mut base_page_iter =
                     large_shmem_frames[total_needed_large_pages - 1].into_iter();
                 let base_pages_to_add =
@@ -488,9 +428,6 @@ impl KernelAllocator {
                     let frame = base_page_iter
                         .next()
                         .expect("needed base frames should all fit within one large frame");
-
-                    // TODO(rackscale performance): should be debug assert
-                    assert!(is_shmem_frame(frame, true, false));
 
                     mem_manager
                         .grow_base_pages(&[frame])
@@ -505,9 +442,6 @@ impl KernelAllocator {
                     let frame = base_page_iter
                         .next()
                         .expect("needed base frames should all fit within one large frame");
-
-                    // TODO(rackscale performance): should be debug assert
-                    assert!(is_shmem_frame(frame, true, false));
 
                     bp_manager
                         .grow_base_pages(&[frame])
@@ -676,18 +610,22 @@ unsafe impl GlobalAlloc for KernelAllocator {
             |pcm| {
                 #[cfg(feature = "rackscale")]
                 {
-                    use crate::transport::shmem::is_shmem_addr;
+                    use crate::transport::shmem::{is_shmem_addr, SHMEM_INITIALIZED};
+                    use core::sync::atomic::Ordering;
 
-                    // TODO(rackscale): this is a memory leak
-                    let affinity = { pcm.physical_memory.borrow().affinity };
-                    if is_shmem_addr(ptr as u64, false, false) {
-                        panic!("Should not be trying to dealloc non-kernel mapped shmem in kernel dealloc");
-                    } else if affinity == SHARED_AFFINITY && !is_shmem_addr(ptr as u64, false, true) {
-                        log::error!("Trying to deallocate non-shmem into shmem allocator - losing this memory. Oh well.");
-                        return;
-                    } else if affinity != SHARED_AFFINITY && (is_shmem_addr(ptr as u64, false, true)){
-                        log::error!("Trying to deallocate shmem into non-shmem allocator - losing this memory. Oh well.");
-                        return;
+                    // If shmem is not initialized, do not force it.
+                    if 0 != SHMEM_INITIALIZED.load(Ordering::SeqCst) {
+                        // TODO(rackscale): this is a memory leak
+                        let affinity = { pcm.physical_memory.borrow().affinity };
+                        if is_shmem_addr(ptr as u64, false, false) {
+                            panic!("Should not be trying to dealloc non-kernel mapped shmem in kernel dealloc");
+                        } else if affinity == SHARED_AFFINITY && !is_shmem_addr(ptr as u64, false, true) {
+                            log::error!("Trying to deallocate non-shmem into shmem allocator - losing this memory. Oh well.");
+                            return;
+                        } else if affinity != SHARED_AFFINITY && (is_shmem_addr(ptr as u64, false, true)){
+                            log::error!("Trying to deallocate shmem into non-shmem allocator - losing this memory. Oh well.");
+                            return;
+                        }
                     }
                 }
 
@@ -784,17 +722,21 @@ unsafe impl GlobalAlloc for KernelAllocator {
                 } else {
                     #[cfg(feature = "rackscale")]
                     {
-                        use crate::transport::shmem::is_shmem_addr;
+                        use crate::transport::shmem::{is_shmem_addr, SHMEM_INITIALIZED};
+                        use core::sync::atomic::Ordering;
 
-                        let affinity = { pcm.physical_memory.borrow().affinity };
-                        if is_shmem_addr(ptr as u64, false, false) {
-                            panic!("Should not be trying to realloc non-kernel mapped shmem in kernel dealloc");
-                        } else if affinity == SHARED_AFFINITY && !is_shmem_addr(ptr as u64, false, true) {
-                            // TODO(rackscale): should switch to non-shmem affinity for alloc below.
-                            panic!("Trying to realloc non-shmem using shmem allocator");
-                        } else if affinity != SHARED_AFFINITY && is_shmem_addr(ptr as u64, false, true) {
-                            // TODO(rackscale): should switch to use shmem affinity for alloc below.
-                            panic!("Trying to realloc shmem using non-shmem allocator");
+                        // If shmem is not initialized, do not force it.
+                        if 0 != SHMEM_INITIALIZED.load(Ordering::SeqCst) {
+                            let affinity = { pcm.physical_memory.borrow().affinity };
+                            if is_shmem_addr(ptr as u64, false, false) {
+                                panic!("Should not be trying to realloc non-kernel mapped shmem in kernel dealloc");
+                            } else if affinity == SHARED_AFFINITY && !is_shmem_addr(ptr as u64, false, true) {
+                                // TODO(rackscale): should switch to non-shmem affinity for alloc below.
+                                panic!("Trying to realloc non-shmem using shmem allocator");
+                            } else if affinity != SHARED_AFFINITY && is_shmem_addr(ptr as u64, false, true) {
+                                // TODO(rackscale): should switch to use shmem affinity for alloc below.
+                                panic!("Trying to realloc shmem using non-shmem allocator");
+                            }
                         }
                     }
 

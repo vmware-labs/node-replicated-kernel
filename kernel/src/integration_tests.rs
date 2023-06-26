@@ -765,22 +765,22 @@ fn vmxnet_smoltcp() {
     shutdown(ExitReason::Ok);
 }
 
-/// Write and test the content on a shared-mem device.
-pub(crate) const BUFFER_CONTENT: u8 = 0xb;
-
 /// Test cxl device in the kernel.
 #[cfg(all(feature = "integration-test", target_arch = "x86_64"))]
 pub(crate) fn cxl_write() {
     use crate::memory::KERNEL_BASE;
-    use crate::transport::shmem::SHMEM_DEVICE;
+    use crate::transport::shmem::SHMEM;
 
-    lazy_static::initialize(&SHMEM_DEVICE);
+    lazy_static::initialize(&SHMEM);
 
-    for i in 0..SHMEM_DEVICE.region.size {
-        let region = (SHMEM_DEVICE.region.base + KERNEL_BASE + i as u64) as *mut u8;
-        unsafe { core::ptr::write(region, BUFFER_CONTENT) };
+    let mut buffer_content: u8 = 0x0;
+    for device in SHMEM.devices.iter() {
+        buffer_content += 1;
+        for i in 0..(device.region.size / 1024) {
+            let region = (device.region.base + KERNEL_BASE + (i * 1024) as u64) as *mut u8;
+            unsafe { core::ptr::write(region, buffer_content) };
+        }
     }
-
     shutdown(ExitReason::Ok);
 }
 
@@ -788,14 +788,18 @@ pub(crate) fn cxl_write() {
 #[cfg(all(feature = "integration-test", target_arch = "x86_64"))]
 pub(crate) fn cxl_read() {
     use crate::memory::KERNEL_BASE;
-    use crate::transport::shmem::SHMEM_DEVICE;
+    use crate::transport::shmem::SHMEM;
 
-    lazy_static::initialize(&SHMEM_DEVICE);
+    lazy_static::initialize(&SHMEM);
 
-    for i in 0..SHMEM_DEVICE.region.size {
-        let region = (SHMEM_DEVICE.region.base + KERNEL_BASE + i as u64) as *mut u8;
-        let read = unsafe { core::ptr::read(region) };
-        assert_eq!(read, BUFFER_CONTENT);
+    let mut buffer_content: u8 = 0x0;
+    for device in SHMEM.devices.iter() {
+        buffer_content += 1;
+        for i in 0..(device.region.size / 1024) {
+            let region = (device.region.base + KERNEL_BASE + (i * 1024) as u64) as *mut u8;
+            let read = unsafe { core::ptr::read(region) };
+            assert_eq!(read, buffer_content);
+        }
     }
 
     shutdown(ExitReason::Ok);
@@ -805,18 +809,21 @@ pub(crate) fn cxl_read() {
 #[cfg(all(feature = "integration-test", target_arch = "x86_64"))]
 pub(crate) fn shmem_interruptor() {
     use crate::arch::irq::REMOTE_TLB_WORK_PENDING_SHMEM_VECTOR;
-    use crate::transport::shmem::SHMEM_DEVICE;
+    use crate::transport::shmem::SHMEM;
 
-    lazy_static::initialize(&SHMEM_DEVICE);
+    lazy_static::initialize(&SHMEM);
     {
         // The ivshmem server allocates IDs consecutively, so we'll assume interruptee is
         // current_id - 1
         log::info!(
             "Sending shmem interrupt to: {:?} on vector {:?}",
-            SHMEM_DEVICE.id - 1,
+            SHMEM.devices[0].id - 1,
             1
         );
-        SHMEM_DEVICE.set_doorbell(REMOTE_TLB_WORK_PENDING_SHMEM_VECTOR, SHMEM_DEVICE.id - 1);
+        SHMEM.devices[0].set_doorbell(
+            REMOTE_TLB_WORK_PENDING_SHMEM_VECTOR,
+            SHMEM.devices[0].id - 1,
+        );
     }
     shutdown(ExitReason::Ok);
 }
@@ -828,11 +835,11 @@ pub(crate) fn shmem_interruptee() {
     use core::time::Duration;
 
     use crate::arch::irq::{REMOTE_TLB_WORK_PENDING_SHMEM_VECTOR, REMOTE_TLB_WORK_PENDING_VECTOR};
-    use crate::transport::shmem::SHMEM_DEVICE;
+    use crate::transport::shmem::SHMEM;
 
-    lazy_static::initialize(&SHMEM_DEVICE);
+    lazy_static::initialize(&SHMEM);
 
-    SHMEM_DEVICE.enable_msix_vector(
+    SHMEM.get_interrupt_device().unwrap().enable_msix_vector(
         REMOTE_TLB_WORK_PENDING_SHMEM_VECTOR as usize,
         0,
         REMOTE_TLB_WORK_PENDING_VECTOR,

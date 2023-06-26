@@ -307,6 +307,9 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     // form by klogger::init above, but now we do it for more ports)
     debug::init();
 
+    use crate::transport::shmem::SHMEM_INITIALIZED;
+    lazy_static::initialize(&SHMEM_INITIALIZED);
+
     // Parse memory map provided by UEFI, create an initial emergency memory
     // manager with a little bit of memory so we can do some early allocations.
     let (emanager, memory_regions) = memory::process_uefi_memory_regions();
@@ -396,8 +399,8 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     #[cfg(feature = "rackscale")]
     {
         {
-            use crate::transport::shmem::SHMEM_DEVICE;
-            lazy_static::initialize(&SHMEM_DEVICE);
+            use crate::transport::shmem::SHMEM;
+            lazy_static::initialize(&SHMEM);
 
             if crate::CMDLINE
                 .get()
@@ -412,7 +415,7 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
                 };
 
                 // Setup to receive interrupts
-                SHMEM_DEVICE.enable_msix_vector(
+                SHMEM.devices[0].enable_msix_vector(
                     REMOTE_TLB_WORK_PENDING_SHMEM_VECTOR as usize,
                     0,
                     REMOTE_TLB_WORK_PENDING_VECTOR,

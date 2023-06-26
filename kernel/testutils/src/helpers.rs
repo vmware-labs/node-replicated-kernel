@@ -23,9 +23,10 @@ use crate::runner_args::RunnerArgs;
 pub const DHCP_ACK_MATCH: &'static str = "DHCPACK on 172.31.0.10 to 56:b4:44:e9:62:d0 via tap0";
 pub const DHCP_ACK_MATCH_NRK2: &'static str = "DHCPACK on 172.31.0.11 to 56:b4:44:e9:62:d1 via br0";
 
-/// Shmem related default values
-pub const SHMEM_PATH: &str = "ivshmem-file";
+/// Default shmem region size (in MB)
 pub const SHMEM_SIZE: usize = 1024;
+/// Created by `hugeadm --create-global-mounts`
+const SHMEM_PATH: &'static str = "/var/lib/hugetlbfs/global/pagesize-2MB";
 
 /// Delay between invoking version of nrk in rackscale tests
 pub const CLIENT_BUILD_DELAY: u64 = 5_000;
@@ -50,19 +51,48 @@ pub fn setup_network(num_nodes: usize) {
     network_setup().unwrap();
 }
 
+pub fn get_shmem_names(id: Option<usize>) -> (String, String) {
+    if let Some(shmemid) = id {
+        (
+            format!("ivshmem-socket{}", shmemid),
+            format!("{}/ivshmem-file{}", SHMEM_PATH, shmemid),
+        )
+    } else {
+        (
+            format!("ivshmem-socket{}", ""),
+            format!("{}/ivshmem-file{}", SHMEM_PATH, ""),
+        )
+    }
+}
+
 /// Spawns a qemu shmem server.
 ///
 /// The server must run before any nrk instance runs.
-pub fn spawn_shmem_server(filename: &str, filelen: usize) -> Result<rexpect::session::PtySession> {
+/// File len is in MB - if using huge pages, should be multiple of huge page size (normally 2 MB)
+pub fn spawn_shmem_server(
+    socketname: &str,
+    filename: &str,
+    filelen: usize,
+    affinity: Option<usize>,
+) -> Result<rexpect::session::PtySession> {
     // Delete any straggler files
+    let _ignore = remove_file(socketname);
     let _ignore = remove_file(filename);
+
+    let affinity_str = if let Some(node_affinity) = affinity {
+        format!("-a {}", node_affinity)
+    } else {
+        "".to_string()
+    };
 
     // Run the ivshmem server; not sure how long we'll need it for so we let it run forever.
     let cmd = format!(
-        "ivshmem-server -F -S {} -l {} -n {} ",
+        "ivshmem-server -F -S {} -m {} -l {}M -n {} {}",
+        socketname,
         filename,
-        filelen * 1024 * 1024,
+        filelen,
         2, // number of vectors
+        affinity_str,
     );
     eprintln!("Invoke shmem server: {}", cmd);
     spawn(&cmd, None)

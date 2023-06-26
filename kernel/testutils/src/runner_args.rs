@@ -45,10 +45,10 @@ pub struct RunnerArgs<'a> {
     large_pages: bool,
     /// Enable gdb for the kernel
     kgdb: bool,
-    /// shared memory size.
-    shmem_size: usize,
-    /// Shared memory file path.
-    shmem_path: String,
+    /// shared memory size(s)
+    shmem_sizes: Vec<usize>,
+    /// Domain socket path for the shmem server(s)
+    shmem_sockets: Vec<String>,
     /// Tap interface
     tap: Option<String>,
     /// Number of workers
@@ -80,8 +80,8 @@ impl<'a> RunnerArgs<'a> {
             prealloc: false,
             large_pages: false,
             kgdb: false,
-            shmem_size: 0,
-            shmem_path: String::new(),
+            shmem_sizes: Vec::new(),
+            shmem_sockets: Vec::new(),
             tap: None,
             workers: None,
             network_only: false,
@@ -114,8 +114,8 @@ impl<'a> RunnerArgs<'a> {
             prealloc: false,
             large_pages: false,
             kgdb: false,
-            shmem_size: 0,
-            shmem_path: String::new(),
+            shmem_sizes: Vec::new(),
+            shmem_sockets: Vec::new(),
             tap: None,
             workers: None,
             network_only: false,
@@ -241,13 +241,13 @@ impl<'a> RunnerArgs<'a> {
         self
     }
 
-    pub fn shmem_size(mut self, mibs: usize) -> RunnerArgs<'a> {
-        self.shmem_size = mibs;
+    pub fn shmem_size(mut self, sizes: Vec<usize>) -> RunnerArgs<'a> {
+        self.shmem_sizes = sizes;
         self
     }
 
-    pub fn shmem_path(mut self, path: &str) -> RunnerArgs<'a> {
-        self.shmem_path = String::from(path);
+    pub fn shmem_path(mut self, shmem_sockets: Vec<String>) -> RunnerArgs<'a> {
+        self.shmem_sockets = shmem_sockets;
         self
     }
 
@@ -316,14 +316,21 @@ impl<'a> RunnerArgs<'a> {
                     cmd.push(format!("{}", self.pmem));
                 }
 
-                if self.shmem_size > 0 {
+                if self.shmem_sizes.len() > 0 {
                     cmd.push(String::from("--qemu-ivshmem"));
-                    cmd.push(format!("{}", self.shmem_size));
+                    cmd.push(format!(
+                        "{}",
+                        self.shmem_sizes
+                            .iter()
+                            .map(|size| size.to_string())
+                            .collect::<Vec<_>>()
+                            .join(",")
+                    ));
                 }
 
-                if !self.shmem_path.is_empty() {
+                if !self.shmem_sockets.is_empty() {
                     cmd.push(String::from("--qemu-shmem-path"));
-                    cmd.push(format!("{}", self.shmem_path));
+                    cmd.push(format!("{}", self.shmem_sockets.join(",")));
                 }
 
                 if self.tap.is_some() {

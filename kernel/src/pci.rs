@@ -3,8 +3,10 @@
 
 #![allow(unused)]
 
+use alloc::vec::Vec;
 use arrayvec::ArrayVec;
 use driverkit::pci::{scan_bus, PciDevice};
+use fallible_collections::FallibleVecGlobal;
 use lazy_static::lazy_static;
 use log::info;
 use spin::Mutex;
@@ -15,7 +17,7 @@ use crate::environment;
 ///
 /// This is a constant, and is used to allocate a static array.
 /// Maybe this can be dynamic in the future.
-const MAX_PCI_DEVICES: usize = 24;
+pub(crate) const MAX_PCI_DEVICES: usize = 24;
 
 lazy_static! {
     /// All PCI devices found on the machine.
@@ -42,6 +44,22 @@ pub(crate) fn claim_device(vendor_id: u16, device_id: u16) -> Option<PciDevice> 
         }
     }
     None
+}
+
+/// Takes multiple devices (for use in a driver).
+pub(crate) fn claim_devices(vendor_id: u16, device_id: u16) -> Vec<PciDevice> {
+    let mut devices = Vec::try_with_capacity(MAX_PCI_DEVICES).expect("Failed to alloc memory");
+    for device in PCI_DEVICES.iter() {
+        let device = &mut *device.lock();
+        if let Some(locked_device) = device {
+            if locked_device.vendor_id() == vendor_id && locked_device.device_id() == device_id {
+                if let Some(mydevice) = device.take() {
+                    devices.push(mydevice);
+                }
+            }
+        }
+    }
+    return devices;
 }
 
 pub(crate) fn init() {

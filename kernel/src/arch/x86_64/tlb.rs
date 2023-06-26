@@ -419,7 +419,7 @@ pub(crate) fn remote_shootdown(handles: Vec<TlbFlushHandle>) {
     use crate::arch::irq::REMOTE_TLB_WORK_PENDING_SHMEM_VECTOR;
     use crate::arch::kcb::per_core_mem;
     use crate::memory::SHARED_AFFINITY;
-    use crate::transport::shmem::SHMEM_DEVICE;
+    use crate::transport::shmem::SHMEM;
 
     let my_mtid = kpi::system::mtid_from_gtid(*crate::environment::CORE_ID);
     let my_mid = kpi::system::mid_from_gtid(*crate::environment::CORE_ID);
@@ -468,7 +468,8 @@ pub(crate) fn remote_shootdown(handles: Vec<TlbFlushHandle>) {
                 i,
                 handles[i].core_map.is_empty()
             );
-            SHMEM_DEVICE.set_doorbell(REMOTE_TLB_WORK_PENDING_SHMEM_VECTOR, i.try_into().unwrap());
+            SHMEM.devices[0]
+                .set_doorbell(REMOTE_TLB_WORK_PENDING_SHMEM_VECTOR, i.try_into().unwrap());
         }
     }
 

@@ -16,8 +16,8 @@ use rexpect::process::wait::WaitStatus;
 
 use testutils::builder::{BuildArgs, Machine};
 use testutils::helpers::{
-    notify_controller_of_termination, setup_network, spawn_dcm, spawn_nrk, spawn_shmem_server,
-    wait_for_client_termination, CLIENT_BUILD_DELAY, SHMEM_PATH, SHMEM_SIZE,
+    get_shmem_names, notify_controller_of_termination, setup_network, spawn_dcm, spawn_nrk,
+    spawn_shmem_server, wait_for_client_termination, CLIENT_BUILD_DELAY, SHMEM_SIZE,
 };
 use testutils::runner_args::{
     check_for_successful_exit_no_log, log_qemu_out_with_name,
@@ -49,8 +49,13 @@ fn rackscale_userspace_smoke_test(is_shmem: bool) {
 
     setup_network(2);
 
-    let mut shmem_server =
-        spawn_shmem_server(SHMEM_PATH, SHMEM_SIZE).expect("Failed to start shmem server");
+    let (shmem_socket0, shmem_file0) = get_shmem_names(Some(0));
+    let (shmem_socket1, shmem_file1) = get_shmem_names(Some(1));
+    let mut shmem_server0 = spawn_shmem_server(&shmem_socket0, &shmem_file0, SHMEM_SIZE, None)
+        .expect("Failed to start shmem server 0");
+    let mut shmem_server1 = spawn_shmem_server(&shmem_socket1, &shmem_file1, SHMEM_SIZE, None)
+        .expect("Failed to start shmem server 1");
+
     let mut dcm = spawn_dcm(1).expect("Failed to start DCM");
 
     // Create build for both controller and client
@@ -75,6 +80,7 @@ fn rackscale_userspace_smoke_test(is_shmem: bool) {
     // Run DCM and controller in separate thread
     let controller_output_array = all_outputs.clone();
     let build1 = build.clone();
+    let shmem_sockets = vec![shmem_socket0.clone(), shmem_socket1.clone()];
     let controller = std::thread::Builder::new()
         .name("Controller".to_string())
         .spawn(move || {
@@ -86,8 +92,8 @@ fn rackscale_userspace_smoke_test(is_shmem: bool) {
             let cmdline_controller = RunnerArgs::new_with_build("userspace-smp", &build1)
                 .timeout(timeout)
                 .cmd(controller_cmd)
-                .shmem_size(SHMEM_SIZE as usize)
-                .shmem_path(SHMEM_PATH)
+                .shmem_size(vec![SHMEM_SIZE as usize; 2])
+                .shmem_path(shmem_sockets)
                 .tap("tap0")
                 .no_network_setup()
                 .workers(2)
@@ -121,6 +127,7 @@ fn rackscale_userspace_smoke_test(is_shmem: bool) {
     // Run client in separate thead. Wait a bit to make sure controller started
     let client_output_array = all_outputs.clone();
     let build2 = build.clone();
+    let shmem_sockets = vec![shmem_socket0.clone(), shmem_socket1.clone()];
     let client = std::thread::Builder::new()
         .name("Client".to_string())
         .spawn(move || {
@@ -133,8 +140,8 @@ fn rackscale_userspace_smoke_test(is_shmem: bool) {
             let cmdline_client = RunnerArgs::new_with_build("userspace-smp", &build2)
                 .timeout(timeout)
                 .cmd(client_cmd)
-                .shmem_size(SHMEM_SIZE as usize)
-                .shmem_path(SHMEM_PATH)
+                .shmem_size(vec![SHMEM_SIZE as usize; 2])
+                .shmem_path(shmem_sockets)
                 .tap("tap2")
                 .no_network_setup()
                 .workers(2)
@@ -169,7 +176,8 @@ fn rackscale_userspace_smoke_test(is_shmem: bool) {
     let client_ret = client.join();
     let controller_ret = controller.join();
 
-    let _ignore = shmem_server.send_control('c');
+    let _ignore = shmem_server0.send_control('c');
+    let _ignore = shmem_server1.send_control('c');
     let _ignore = dcm.process.kill(SIGKILL);
 
     // If there's been an error, print everything
@@ -197,8 +205,13 @@ fn s06_rackscale_phys_alloc_test() {
 
     setup_network(2);
 
-    let mut shmem_server =
-        spawn_shmem_server(SHMEM_PATH, SHMEM_SIZE).expect("Failed to start shmem server");
+    let (shmem_socket0, shmem_file0) = get_shmem_names(Some(0));
+    let (shmem_socket1, shmem_file1) = get_shmem_names(Some(1));
+    let mut shmem_server0 = spawn_shmem_server(&shmem_socket0, &shmem_file0, SHMEM_SIZE, None)
+        .expect("Failed to start shmem server 0");
+    let mut shmem_server1 = spawn_shmem_server(&shmem_socket1, &shmem_file1, SHMEM_SIZE, None)
+        .expect("Failed to start shmem server 1");
+
     let mut dcm = spawn_dcm(1).expect("Failed to start DCM");
 
     let (tx, rx) = channel();
@@ -214,6 +227,7 @@ fn s06_rackscale_phys_alloc_test() {
     );
 
     let controller_output_array = all_outputs.clone();
+    let shmem_sockets = vec![shmem_socket0.clone(), shmem_socket1.clone()];
     let build1 = build.clone();
     let controller = std::thread::Builder::new()
         .name("Controller".to_string())
@@ -221,8 +235,8 @@ fn s06_rackscale_phys_alloc_test() {
             let cmdline_controller = RunnerArgs::new_with_build("userspace-smp", &build1)
                 .timeout(timeout)
                 .cmd("mode=controller")
-                .shmem_size(SHMEM_SIZE as usize)
-                .shmem_path(SHMEM_PATH)
+                .shmem_size(vec![SHMEM_SIZE as usize; 2])
+                .shmem_path(shmem_sockets)
                 .workers(2)
                 .tap("tap0")
                 .no_network_setup()
@@ -253,6 +267,7 @@ fn s06_rackscale_phys_alloc_test() {
         .expect("Controller thread failed to spawn");
 
     let client_output_array = all_outputs.clone();
+    let shmem_sockets = vec![shmem_socket0.clone(), shmem_socket1.clone()];
     let build2 = build.clone();
     let client = std::thread::Builder::new()
         .name("Client".to_string())
@@ -261,8 +276,8 @@ fn s06_rackscale_phys_alloc_test() {
             let cmdline_client = RunnerArgs::new_with_build("userspace-smp", &build2)
                 .timeout(180_000)
                 .cmd("mode=client")
-                .shmem_size(SHMEM_SIZE as usize)
-                .shmem_path(SHMEM_PATH)
+                .shmem_size(vec![SHMEM_SIZE as usize; 2])
+                .shmem_path(shmem_sockets)
                 .tap("tap2")
                 .no_network_setup()
                 .workers(2)
@@ -290,7 +305,8 @@ fn s06_rackscale_phys_alloc_test() {
     let controller_ret = controller.join();
 
     let _ignore = dcm.process.kill(SIGKILL);
-    let _ignore = shmem_server.send_control('c');
+    let _ignore = shmem_server0.send_control('c');
+    let _ignore = shmem_server1.send_control('c');
 
     // If there's been an error, print everything
     let outputs = all_outputs
@@ -332,8 +348,13 @@ fn rackscale_fs_test(is_shmem: bool) {
 
     setup_network(2);
 
-    let mut shmem_server =
-        spawn_shmem_server(SHMEM_PATH, SHMEM_SIZE).expect("Failed to start shmem server");
+    let (shmem_socket0, shmem_file0) = get_shmem_names(Some(0));
+    let (shmem_socket1, shmem_file1) = get_shmem_names(Some(1));
+    let mut shmem_server0 = spawn_shmem_server(&shmem_socket0, &shmem_file0, SHMEM_SIZE, None)
+        .expect("Failed to start shmem server 0");
+    let mut shmem_server1 = spawn_shmem_server(&shmem_socket1, &shmem_file1, SHMEM_SIZE, None)
+        .expect("Failed to start shmem server 1");
+
     let mut dcm = spawn_dcm(1).expect("Failed to start DCM");
 
     // Create build for both controller and client
@@ -350,6 +371,7 @@ fn rackscale_fs_test(is_shmem: bool) {
 
     // Run DCM and controller in separate thread
     let controller_output_array = all_outputs.clone();
+    let shmem_sockets = vec![shmem_socket0.clone(), shmem_socket1.clone()];
     let build1 = build.clone();
     let controller = std::thread::Builder::new()
         .name("Controller".to_string())
@@ -362,8 +384,8 @@ fn rackscale_fs_test(is_shmem: bool) {
             let cmdline_controller = RunnerArgs::new_with_build("userspace-smp", &build1)
                 .timeout(timeout)
                 .cmd(controller_cmd)
-                .shmem_size(SHMEM_SIZE as usize)
-                .shmem_path(SHMEM_PATH)
+                .shmem_size(vec![SHMEM_SIZE as usize; 2])
+                .shmem_path(shmem_sockets)
                 .tap("tap0")
                 .no_network_setup()
                 .workers(2)
@@ -396,6 +418,7 @@ fn rackscale_fs_test(is_shmem: bool) {
     // Run client in separate thead. Wait a bit to make sure controller started
     let client_output_array = all_outputs.clone();
     let build2 = build.clone();
+    let shmem_sockets = vec![shmem_socket0.clone(), shmem_socket1.clone()];
     let client = std::thread::Builder::new()
         .name("Client".to_string())
         .spawn(move || {
@@ -408,8 +431,8 @@ fn rackscale_fs_test(is_shmem: bool) {
             let cmdline_client = RunnerArgs::new_with_build("userspace-smp", &build2)
                 .timeout(timeout)
                 .cmd(client_cmd)
-                .shmem_size(SHMEM_SIZE as usize)
-                .shmem_path(SHMEM_PATH)
+                .shmem_size(vec![SHMEM_SIZE as usize; 2])
+                .shmem_path(shmem_sockets)
                 .tap("tap2")
                 .no_network_setup()
                 .workers(2)
@@ -436,7 +459,8 @@ fn rackscale_fs_test(is_shmem: bool) {
     let client_ret = client.join();
     let controller_ret = controller.join();
 
-    let _ignore = shmem_server.send_control('c');
+    let _ignore = shmem_server0.send_control('c');
+    let _ignore = shmem_server1.send_control('c');
     let _ignore = dcm.process.kill(SIGKILL);
 
     // If there's been an error, print everything
@@ -466,8 +490,13 @@ fn s06_rackscale_shmem_fs_prop_test() {
 
     setup_network(2);
 
-    let mut shmem_server =
-        spawn_shmem_server(SHMEM_PATH, shmem_size).expect("Failed to start shmem server");
+    let (shmem_socket0, shmem_file0) = get_shmem_names(Some(0));
+    let (shmem_socket1, shmem_file1) = get_shmem_names(Some(1));
+    let mut shmem_server0 = spawn_shmem_server(&shmem_socket0, &shmem_file0, shmem_size, None)
+        .expect("Failed to start shmem server 0");
+    let mut shmem_server1 = spawn_shmem_server(&shmem_socket1, &shmem_file1, shmem_size, None)
+        .expect("Failed to start shmem server 1");
+
     let mut dcm = spawn_dcm(1).expect("Failed to start DCM");
 
     let (tx, rx) = channel();
@@ -483,6 +512,7 @@ fn s06_rackscale_shmem_fs_prop_test() {
     );
 
     let controller_output_array = all_outputs.clone();
+    let shmem_sockets = vec![shmem_socket0.clone(), shmem_socket1.clone()];
     let build1 = build.clone();
     let controller = std::thread::Builder::new()
         .name("Controller".to_string())
@@ -490,8 +520,8 @@ fn s06_rackscale_shmem_fs_prop_test() {
             let cmdline_controller = RunnerArgs::new_with_build("userspace-smp", &build1)
                 .timeout(timeout)
                 .cmd("mode=controller")
-                .shmem_size(shmem_size as usize)
-                .shmem_path(SHMEM_PATH)
+                .shmem_size(vec![shmem_size as usize; 2])
+                .shmem_path(shmem_sockets)
                 .tap("tap0")
                 .no_network_setup()
                 .workers(2)
@@ -522,6 +552,7 @@ fn s06_rackscale_shmem_fs_prop_test() {
         .expect("Controller thread failed to spawn");
 
     let client_output_array = all_outputs.clone();
+    let shmem_sockets = vec![shmem_socket0.clone(), shmem_socket1.clone()];
     let build2 = build.clone();
     let client = std::thread::Builder::new()
         .name("Client".to_string())
@@ -530,8 +561,8 @@ fn s06_rackscale_shmem_fs_prop_test() {
             let cmdline_client = RunnerArgs::new_with_build("userspace-smp", &build2)
                 .timeout(timeout)
                 .cmd("mode=client")
-                .shmem_size(shmem_size as usize)
-                .shmem_path(SHMEM_PATH)
+                .shmem_size(vec![shmem_size as usize; 2])
+                .shmem_path(shmem_sockets)
                 .tap("tap2")
                 .no_network_setup()
                 .workers(2)
@@ -558,7 +589,8 @@ fn s06_rackscale_shmem_fs_prop_test() {
     let client_ret = client.join();
     let controller_ret = controller.join();
 
-    let _ignore = shmem_server.send_control('c');
+    let _ignore = shmem_server0.send_control('c');
+    let _ignore = shmem_server1.send_control('c');
     let _ignore = dcm.process.kill(SIGKILL);
 
     // If there's been an error, print everything
@@ -590,8 +622,16 @@ fn s06_rackscale_shmem_shootdown_test() {
 
     setup_network(clients + 1);
 
-    let mut shmem_server =
-        spawn_shmem_server(SHMEM_PATH, SHMEM_SIZE).expect("Failed to start shmem server");
+    let mut shmem_servers = Vec::new();
+    let mut shmem_sockets = Vec::new();
+    for i in 0..(clients + 1) {
+        let (shmem_socket, shmem_file) = get_shmem_names(Some(i));
+        let shmem_server = spawn_shmem_server(&shmem_socket, &shmem_file, SHMEM_SIZE, None)
+            .expect("Failed to start shmem server");
+        shmem_servers.push(shmem_server);
+        shmem_sockets.push(shmem_socket);
+    }
+
     let mut dcm = spawn_dcm(1).expect("Failed to start DCM");
 
     let (tx, rx) = channel();
@@ -613,14 +653,15 @@ fn s06_rackscale_shmem_shootdown_test() {
 
     let controller_output_array = all_outputs.clone();
     let controller_build = build.clone();
+    let my_shmem_sockets = shmem_sockets.clone();
     let controller = std::thread::Builder::new()
         .name("Controller".to_string())
         .spawn(move || {
             let cmdline_controller = RunnerArgs::new_with_build("userspace-smp", &controller_build)
                 .timeout(timeout)
                 .cmd("mode=controller transport=shmem")
-                .shmem_size(SHMEM_SIZE)
-                .shmem_path(SHMEM_PATH)
+                .shmem_size(vec![SHMEM_SIZE as usize; clients + 1])
+                .shmem_path(my_shmem_sockets)
                 .tap("tap0")
                 .no_network_setup()
                 .workers(clients + 1)
@@ -657,6 +698,7 @@ fn s06_rackscale_shmem_shootdown_test() {
     for i in 0..clients {
         let tap = format!("tap{}", 2 * (i + 1));
         let client_build = build.clone();
+        let my_shmem_sockets = shmem_sockets.clone();
         let my_rx_mut = rx_mut.clone();
         let my_output_array = all_outputs.clone();
         let client = std::thread::Builder::new()
@@ -666,8 +708,8 @@ fn s06_rackscale_shmem_shootdown_test() {
                 let cmdline_client = RunnerArgs::new_with_build("userspace-smp", &client_build)
                     .timeout(timeout)
                     .cmd("mode=client transport=shmem")
-                    .shmem_size(SHMEM_SIZE)
-                    .shmem_path(SHMEM_PATH)
+                    .shmem_size(vec![SHMEM_SIZE as usize; clients + 1])
+                    .shmem_path(my_shmem_sockets)
                     .tap(&tap)
                     .no_network_setup()
                     .workers(clients + 1)
@@ -709,7 +751,9 @@ fn s06_rackscale_shmem_shootdown_test() {
     }
     let controller_ret = controller.join();
 
-    let _ignore = shmem_server.send_control('c');
+    for shmem_server in shmem_servers.iter_mut() {
+        let _ignore = shmem_server.send_control('c');
+    }
     let _ignore = dcm.process.kill(SIGKILL);
 
     // If there's been an error, print everything
@@ -756,9 +800,13 @@ fn rackscale_userspace_multicore_test(is_shmem: bool) {
 
     setup_network(2);
 
-    // Setup ivshmem file
-    let mut shmem_server =
-        spawn_shmem_server(SHMEM_PATH, SHMEM_SIZE).expect("Failed to start shmem server");
+    // Setup ivshmem
+    let (shmem_socket0, shmem_file0) = get_shmem_names(Some(0));
+    let (shmem_socket1, shmem_file1) = get_shmem_names(Some(1));
+    let mut shmem_server0 = spawn_shmem_server(&shmem_socket0, &shmem_file0, SHMEM_SIZE, None)
+        .expect("Failed to start shmem server 0");
+    let mut shmem_server1 = spawn_shmem_server(&shmem_socket1, &shmem_file1, SHMEM_SIZE, None)
+        .expect("Failed to start shmem server 1");
 
     let mut dcm = spawn_dcm(1).expect("Failed to start DCM");
 
@@ -777,6 +825,7 @@ fn rackscale_userspace_multicore_test(is_shmem: bool) {
     // Run controller in separate thread
     let controller_output_array = all_outputs.clone();
     let build1 = build.clone();
+    let shmem_sockets = vec![shmem_socket0.clone(), shmem_socket1.clone()];
     let controller = std::thread::Builder::new()
         .name("Controller".to_string())
         .spawn(move || {
@@ -788,8 +837,8 @@ fn rackscale_userspace_multicore_test(is_shmem: bool) {
             let cmdline_controller = RunnerArgs::new_with_build("userspace-smp", &build1)
                 .timeout(timeout)
                 .cmd(controller_cmd)
-                .shmem_size(SHMEM_SIZE as usize)
-                .shmem_path(SHMEM_PATH)
+                .shmem_size(vec![SHMEM_SIZE as usize; 2])
+                .shmem_path(shmem_sockets)
                 .tap("tap0")
                 .no_network_setup()
                 .workers(2)
@@ -821,6 +870,7 @@ fn rackscale_userspace_multicore_test(is_shmem: bool) {
 
     // Run client in separate thead. Wait a bit to make sure controller started
     let client_output_array = all_outputs.clone();
+    let shmem_sockets = vec![shmem_socket0.clone(), shmem_socket1.clone()];
     let build2 = build.clone();
     let client = std::thread::Builder::new()
         .name("Client".to_string())
@@ -834,8 +884,8 @@ fn rackscale_userspace_multicore_test(is_shmem: bool) {
             let cmdline_client = RunnerArgs::new_with_build("userspace-smp", &build2)
                 .timeout(timeout)
                 .cmd(client_cmd)
-                .shmem_size(SHMEM_SIZE as usize)
-                .shmem_path(SHMEM_PATH)
+                .shmem_size(vec![SHMEM_SIZE as usize; 2])
+                .shmem_path(shmem_sockets)
                 .tap("tap2")
                 .no_network_setup()
                 .workers(2)
@@ -875,7 +925,8 @@ fn rackscale_userspace_multicore_test(is_shmem: bool) {
     let client_ret = client.join();
     let controller_ret = controller.join();
 
-    let _ignore = shmem_server.send_control('c');
+    let _ignore = shmem_server0.send_control('c');
+    let _ignore = shmem_server1.send_control('c');
     let _ignore = dcm.process.kill(SIGKILL);
 
     // If there's been an error, print everything
@@ -908,8 +959,15 @@ fn s06_rackscale_shmem_userspace_multicore_multiclient() {
     let (tx2, rx2) = channel();
     let all_outputs = Arc::new(Mutex::new(Vec::new()));
 
-    let mut shmem_server =
-        spawn_shmem_server(SHMEM_PATH, SHMEM_SIZE).expect("Failed to start shmem server");
+    let (shmem_socket0, shmem_file0) = get_shmem_names(Some(0));
+    let (shmem_socket1, shmem_file1) = get_shmem_names(Some(1));
+    let (shmem_socket2, shmem_file2) = get_shmem_names(Some(2));
+    let mut shmem_server0 = spawn_shmem_server(&shmem_socket0, &shmem_file0, SHMEM_SIZE, None)
+        .expect("Failed to start shmem server 0");
+    let mut shmem_server1 = spawn_shmem_server(&shmem_socket1, &shmem_file1, SHMEM_SIZE, None)
+        .expect("Failed to start shmem server 1");
+    let mut shmem_server2 = spawn_shmem_server(&shmem_socket2, &shmem_file2, SHMEM_SIZE, None)
+        .expect("Failed to start shmem server 1");
 
     let mut dcm = spawn_dcm(1).expect("Failed to start DCM");
 
@@ -928,14 +986,19 @@ fn s06_rackscale_shmem_userspace_multicore_multiclient() {
     // Run controller in separate thread
     let controller_output_array = all_outputs.clone();
     let controller_build = build.clone();
+    let shmem_sockets = vec![
+        shmem_socket0.clone(),
+        shmem_socket1.clone(),
+        shmem_socket2.clone(),
+    ];
     let controller = std::thread::Builder::new()
         .name("Controller".to_string())
         .spawn(move || {
             let cmdline_controller = RunnerArgs::new_with_build("userspace-smp", &controller_build)
                 .timeout(timeout)
                 .cmd("mode=controller transport=shmem")
-                .shmem_size(SHMEM_SIZE)
-                .shmem_path(SHMEM_PATH)
+                .shmem_size(vec![SHMEM_SIZE as usize; 3])
+                .shmem_path(shmem_sockets)
                 .tap("tap0")
                 .no_network_setup()
                 .workers(3)
@@ -977,6 +1040,11 @@ fn s06_rackscale_shmem_userspace_multicore_multiclient() {
     // Run client in separate thead. Wait a bit to make sure controller started
     let client1_output_array = all_outputs.clone();
     let client1_build = build.clone();
+    let shmem_sockets = vec![
+        shmem_socket0.clone(),
+        shmem_socket1.clone(),
+        shmem_socket2.clone(),
+    ];
     let client = std::thread::Builder::new()
         .name("Client1".to_string())
         .spawn(move || {
@@ -984,8 +1052,8 @@ fn s06_rackscale_shmem_userspace_multicore_multiclient() {
             let cmdline_client = RunnerArgs::new_with_build("userspace-smp", &client1_build)
                 .timeout(timeout)
                 .cmd("mode=client transport=shmem")
-                .shmem_size(SHMEM_SIZE)
-                .shmem_path(SHMEM_PATH)
+                .shmem_size(vec![SHMEM_SIZE as usize; 3])
+                .shmem_path(shmem_sockets)
                 .tap("tap2")
                 .no_network_setup()
                 .workers(3)
@@ -1028,6 +1096,11 @@ fn s06_rackscale_shmem_userspace_multicore_multiclient() {
     // Run client in separate thead. Wait a bit to make sure controller started
     let client2_output_array = all_outputs.clone();
     let client2_build = build.clone();
+    let shmem_sockets = vec![
+        shmem_socket0.clone(),
+        shmem_socket1.clone(),
+        shmem_socket2.clone(),
+    ];
     let client2 = std::thread::Builder::new()
         .name("Client2".to_string())
         .spawn(move || {
@@ -1035,8 +1108,8 @@ fn s06_rackscale_shmem_userspace_multicore_multiclient() {
             let cmdline_client = RunnerArgs::new_with_build("userspace-smp", &client2_build)
                 .timeout(timeout)
                 .cmd("mode=client transport=shmem")
-                .shmem_size(SHMEM_SIZE)
-                .shmem_path(SHMEM_PATH)
+                .shmem_size(vec![SHMEM_SIZE as usize; 3])
+                .shmem_path(shmem_sockets)
                 .tap("tap4")
                 .no_network_setup()
                 .workers(3)
@@ -1080,7 +1153,9 @@ fn s06_rackscale_shmem_userspace_multicore_multiclient() {
     let client_ret = client.join();
     let controller_ret = controller.join();
 
-    let _ignore = shmem_server.send_control('c');
+    let _ignore = shmem_server0.send_control('c');
+    let _ignore = shmem_server1.send_control('c');
+    let _ignore = shmem_server2.send_control('c');
     let _ignore = dcm.process.kill(SIGKILL);
 
     let outputs = all_outputs
@@ -1121,8 +1196,13 @@ fn rackscale_userspace_rumprt_fs(is_shmem: bool) {
     setup_network(2);
 
     // Setup ivshmem file
-    let mut shmem_server =
-        spawn_shmem_server(SHMEM_PATH, SHMEM_SIZE).expect("Failed to start shmem server");
+    let (shmem_socket0, shmem_file0) = get_shmem_names(Some(0));
+    let (shmem_socket1, shmem_file1) = get_shmem_names(Some(1));
+    let mut shmem_server0 = spawn_shmem_server(&shmem_socket0, &shmem_file0, SHMEM_SIZE, None)
+        .expect("Failed to start shmem server 0");
+    let mut shmem_server1 = spawn_shmem_server(&shmem_socket1, &shmem_file1, SHMEM_SIZE, None)
+        .expect("Failed to start shmem server 1");
+
     let mut dcm = spawn_dcm(1).expect("Failed to start DCM");
 
     // Create build for both controller and client
@@ -1141,6 +1221,7 @@ fn rackscale_userspace_rumprt_fs(is_shmem: bool) {
     // Run controller in separate thread
     let controller_output_array = all_outputs.clone();
     let build1 = build.clone();
+    let shmem_sockets = vec![shmem_socket0.clone(), shmem_socket1.clone()];
     let controller = std::thread::Builder::new()
         .name("Controller".to_string())
         .spawn(move || {
@@ -1152,8 +1233,8 @@ fn rackscale_userspace_rumprt_fs(is_shmem: bool) {
             let cmdline_controller = RunnerArgs::new_with_build("userspace", &build1)
                 .timeout(timeout)
                 .cmd(controller_cmd)
-                .shmem_size(SHMEM_SIZE as usize)
-                .shmem_path(SHMEM_PATH)
+                .shmem_size(vec![SHMEM_SIZE as usize; 2])
+                .shmem_path(shmem_sockets)
                 .tap("tap0")
                 .no_network_setup()
                 .workers(2)
@@ -1185,6 +1266,7 @@ fn rackscale_userspace_rumprt_fs(is_shmem: bool) {
 
     // Run client in separate thead. Wait a bit to make sure controller started
     let client_output_array = all_outputs.clone();
+    let shmem_sockets = vec![shmem_socket0.clone(), shmem_socket1.clone()];
     let build2 = build.clone();
     let client = std::thread::Builder::new()
         .name("Client".to_string())
@@ -1198,8 +1280,8 @@ fn rackscale_userspace_rumprt_fs(is_shmem: bool) {
             let cmdline_client = RunnerArgs::new_with_build("userspace-smp", &build2)
                 .timeout(timeout)
                 .cmd(client_cmd)
-                .shmem_size(SHMEM_SIZE as usize)
-                .shmem_path(SHMEM_PATH)
+                .shmem_size(vec![SHMEM_SIZE as usize; 2])
+                .shmem_path(shmem_sockets)
                 .tap("tap2")
                 .no_network_setup()
                 .workers(2)
@@ -1227,7 +1309,8 @@ fn rackscale_userspace_rumprt_fs(is_shmem: bool) {
     let client_ret = client.join();
     let controller_ret = controller.join();
 
-    let _ignore = shmem_server.send_control('c');
+    let _ignore = shmem_server0.send_control('c');
+    let _ignore = shmem_server1.send_control('c');
     let _ignore = dcm.process.kill(SIGKILL);
 
     let outputs = all_outputs

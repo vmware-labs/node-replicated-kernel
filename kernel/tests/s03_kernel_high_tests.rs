@@ -14,7 +14,7 @@ use rexpect::process::wait::WaitStatus;
 use rexpect::spawn;
 
 use testutils::builder::BuildArgs;
-use testutils::helpers::{spawn_nrk, spawn_shmem_server, SHMEM_PATH, SHMEM_SIZE};
+use testutils::helpers::{get_shmem_names, spawn_nrk, spawn_shmem_server};
 use testutils::runner_args::{check_for_successful_exit, RunnerArgs};
 
 /// Test that we boot up all cores in the system.
@@ -175,17 +175,17 @@ fn s03_phys_alloc() {
 #[test]
 fn s03_ivshmem_write_and_read() {
     let build = BuildArgs::default().build();
-
-    // A smaller amount of shmem is sufficient for this test.
-    let shmem_size = SHMEM_SIZE / 16;
+    let (shmem_socket, shmem_file) = get_shmem_names(None);
+    let shmem_sockets = vec![shmem_socket.clone()];
+    let shmem_size = 2; // in MB
 
     let cmdline = RunnerArgs::new_with_build("cxl-write", &build)
         .timeout(30_000)
-        .shmem_size(shmem_size as usize)
-        .shmem_path(SHMEM_PATH);
+        .shmem_size(vec![shmem_size as usize])
+        .shmem_path(shmem_sockets);
 
-    let mut shmem_server =
-        spawn_shmem_server(SHMEM_PATH, shmem_size).expect("Failed to start shmem server");
+    let mut shmem_server = spawn_shmem_server(&shmem_socket, &shmem_file, shmem_size, None)
+        .expect("Failed to start shmem server");
 
     let mut output = String::new();
     let mut qemu_run = || -> Result<WaitStatus> {
@@ -196,10 +196,11 @@ fn s03_ivshmem_write_and_read() {
 
     check_for_successful_exit(&cmdline, qemu_run(), output);
 
+    let shmem_sockets = vec![shmem_socket.clone()];
     let cmdline = RunnerArgs::new_with_build("cxl-read", &build)
         .timeout(30_000)
-        .shmem_size(shmem_size as usize)
-        .shmem_path(SHMEM_PATH);
+        .shmem_size(vec![shmem_size as usize])
+        .shmem_path(shmem_sockets);
 
     let mut output = String::new();
     let mut qemu_run = || -> Result<WaitStatus> {
@@ -221,18 +222,25 @@ fn s03_ivshmem_interrupt() {
     use std::time::Duration;
 
     let build = Arc::new(BuildArgs::default().kernel_feature("test-shmem").build());
+    let (shmem_socket0, shmem_file0) = get_shmem_names(Some(0));
+    let (shmem_socket1, shmem_file1) = get_shmem_names(Some(1));
+    let shmem_size = 2; // in MB
 
-    let mut shmem_server =
-        spawn_shmem_server(SHMEM_PATH, SHMEM_SIZE).expect("Failed to start shmem server");
+    let mut shmem_server0 = spawn_shmem_server(&shmem_socket0, &shmem_file0, shmem_size, None)
+        .expect("Failed to start shmem server");
+    let mut shmem_server1 = spawn_shmem_server(&shmem_socket1, &shmem_file1, shmem_size, None)
+        .expect("Failed to start shmem server");
 
     // Start interruptee process
     let build1 = build.clone();
+    let shmem_sizes = vec![shmem_size; 2];
+    let shmem_sockets = vec![shmem_socket0.clone(), shmem_socket1.clone()];
     let interruptee = std::thread::spawn(move || {
         let interruptee_cmdline = RunnerArgs::new_with_build("shmem-interruptee", &build1)
             .cores(2)
             .timeout(90_000)
-            .shmem_size(SHMEM_SIZE as usize)
-            .shmem_path(SHMEM_PATH);
+            .shmem_size(shmem_sizes)
+            .shmem_path(shmem_sockets);
 
         let mut interruptee_output = String::new();
         let mut interruptee_qemu_run = || -> Result<WaitStatus> {
@@ -250,12 +258,14 @@ fn s03_ivshmem_interrupt() {
 
     // Start interruptor processs
     let build2 = build.clone();
+    let shmem_sizes = vec![shmem_size; 2];
+    let shmem_sockets = vec![shmem_socket0.clone(), shmem_socket1.clone()];
     let interruptor = std::thread::spawn(move || {
         let interruptor_cmdline = RunnerArgs::new_with_build("shmem-interruptor", &build2)
             .cores(2)
             .timeout(90_000)
-            .shmem_size(SHMEM_SIZE as usize)
-            .shmem_path(SHMEM_PATH);
+            .shmem_size(shmem_sizes)
+            .shmem_path(shmem_sockets);
 
         let mut interruptor_output = String::new();
         let mut interruptor_qemu_run = || -> Result<WaitStatus> {
@@ -275,5 +285,58 @@ fn s03_ivshmem_interrupt() {
     interruptee.join().unwrap();
     interruptor.join().unwrap();
 
-    let _ignore = shmem_server.send_control('c');
+    let _ignore = shmem_server0.send_control('c');
+    let _ignore = shmem_server1.send_control('c');
+}
+
+/// Test that the shared memory device is functional by running NRK twice: once
+/// to produce data, and one to consume it.
+/// Check we can successfully replicate this process for two different shmem regions.
+#[cfg(not(feature = "baremetal"))]
+#[test]
+fn s03_ivshmem_read_and_write_multi() {
+    let build = BuildArgs::default().build();
+    let (shmem_socket0, shmem_file0) = get_shmem_names(Some(0));
+    let (shmem_socket1, shmem_file1) = get_shmem_names(Some(1));
+    let shmem_size = 2; // in MB
+
+    let shmem_sizes = vec![shmem_size; 2];
+    let shmem_sockets = vec![shmem_socket0.clone(), shmem_socket1.clone()];
+
+    let cmdline = RunnerArgs::new_with_build("cxl-write", &build)
+        .timeout(30_000)
+        .shmem_size(shmem_sizes)
+        .shmem_path(shmem_sockets);
+
+    let mut shmem_server0 = spawn_shmem_server(&shmem_socket0, &shmem_file0, shmem_size, None)
+        .expect("Failed to start shmem server");
+    let mut shmem_server1 = spawn_shmem_server(&shmem_socket1, &shmem_file1, shmem_size, None)
+        .expect("Failed to start shmem server");
+
+    let mut output = String::new();
+    let mut qemu_run = || -> Result<WaitStatus> {
+        let mut p = spawn_nrk(&cmdline)?;
+        output += p.exp_eof()?.as_str();
+        p.process.exit()
+    };
+
+    check_for_successful_exit(&cmdline, qemu_run(), output);
+
+    let shmem_sizes = vec![shmem_size; 2];
+    let shmem_sockets = vec![shmem_socket0.clone(), shmem_socket1.clone()];
+    let cmdline = RunnerArgs::new_with_build("cxl-read", &build)
+        .timeout(30_000)
+        .shmem_size(shmem_sizes)
+        .shmem_path(shmem_sockets);
+
+    let mut output = String::new();
+    let mut qemu_run = || -> Result<WaitStatus> {
+        let mut p = spawn_nrk(&cmdline)?;
+        output += p.exp_eof()?.as_str();
+        p.process.exit()
+    };
+
+    check_for_successful_exit(&cmdline, qemu_run(), output);
+    let _ignore = shmem_server0.send_control('c');
+    let _ignore = shmem_server1.send_control('c');
 }

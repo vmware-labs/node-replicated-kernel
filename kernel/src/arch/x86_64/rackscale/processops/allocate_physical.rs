@@ -20,7 +20,7 @@ use crate::memory::backends::PhysicalPageProvider;
 use crate::memory::{Frame, PAddr, BASE_PAGE_SIZE};
 use crate::nrproc::NrProcess;
 use crate::process::Pid;
-use crate::transport::shmem::{is_shmem_frame, ShmemRegion};
+use crate::transport::shmem::ShmemRegion;
 
 #[derive(Debug)]
 pub(crate) struct AllocatePhysicalReq {
@@ -65,10 +65,6 @@ pub(crate) fn rpc_allocate_physical(pid: Pid, size: u64, affinity: u64) -> KResu
                 size,
             };
             let frame = shmem_region.get_frame(0);
-
-            // TODO(rackscale performance): should be debug assert
-            assert!(is_shmem_frame(frame, false, false));
-
             let fid = NrProcess::<Ring3Process>::allocate_frame_to_process(pid, frame)?;
 
             // Add frame mapping to client map
@@ -127,9 +123,6 @@ pub(crate) fn handle_allocate_physical(
             .allocate_large_page()
             .expect("DCM should ensure we have a frame to allocate here.")
     };
-
-    // TODO(rackscale performance): should be debug assert
-    assert!(is_shmem_frame(frame, false, false));
 
     construct_ret(hdr, payload, Ok((dcm_node_id, frame.base.as_u64())));
     Ok(state)

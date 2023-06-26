@@ -16,7 +16,6 @@ use crate::process::{KernArcBuffer, UserSlice};
 use crate::syscalls::{
     FsDispatch, ProcessDispatch, SystemCallDispatch, SystemDispatch, VSpaceDispatch,
 };
-use crate::transport::shmem::is_shmem_frame;
 
 use super::super::syscall::{Arch86SystemCall, Arch86SystemDispatch, Arch86VSpaceDispatch};
 use super::fileops::close::rpc_close;
@@ -81,9 +80,6 @@ impl VSpaceDispatch<u64> for Arch86LwkSystemCall {
                     .allocate_base_page()
                     .expect("We ensure there is capabity in the FrameCacheBase above");
 
-                // TODO(rackscale performance): should be debug assert
-                assert!(is_shmem_frame(frame, false, false));
-
                 initial_base_frames
                     .try_push(frame)
                     .expect("Can't fail see `try_with_capacity`");
@@ -102,8 +98,6 @@ impl VSpaceDispatch<u64> for Arch86LwkSystemCall {
             let mut allocated_frames = rpc_get_shmem_frames(Some(pid), total_needed_large_pages)?;
 
             for i in 0..lp {
-                // TODO(rackscale performance): should be debug assert
-                assert!(is_shmem_frame(allocated_frames[i], false, false));
                 total_len += allocated_frames[i].size;
                 unsafe { allocated_frames[i].zero() };
                 frames
@@ -116,17 +110,11 @@ impl VSpaceDispatch<u64> for Arch86LwkSystemCall {
 
             // Grow base pages
             if total_needed_base_pages > 0 {
-                // TODO(rackscale performance): should be debug assert
-                assert!(is_shmem_frame(allocated_frames[lp], false, false));
-
                 let mut base_page_iter = allocated_frames[lp].into_iter();
                 for _i in 0..total_needed_base_pages {
                     let mut frame = base_page_iter
                         .next()
                         .expect("needed base frames should all fit within one large frame");
-
-                    // TODO(rackscale performance): should be debug assert
-                    assert!(is_shmem_frame(frame, false, false));
 
                     total_len += frame.size;
                     unsafe { frame.zero() };
@@ -150,9 +138,6 @@ impl VSpaceDispatch<u64> for Arch86LwkSystemCall {
                     let frame = base_page_iter
                         .next()
                         .expect("needed base frames should all fit within one large frame");
-
-                    // TODO(rackscale performance): should be debug assert
-                    assert!(is_shmem_frame(frame, false, false));
 
                     per_process_bp_cache
                         .grow_base_pages(&[frame])

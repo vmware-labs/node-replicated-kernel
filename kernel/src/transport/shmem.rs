@@ -1,11 +1,15 @@
 // Copyright © 2022 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
+
 use alloc::sync::Arc;
+use alloc::vec::Vec;
+use core::sync::atomic::{AtomicUsize, Ordering};
 
 use abomonation::{unsafe_abomonate, Abomonation};
 use core2::io::Result as IOResult;
 use core2::io::Write;
 use driverkit::pci::{CapabilityId, CapabilityType, PciDevice};
+use fallible_collections::FallibleVecGlobal;
 use lazy_static::lazy_static;
 use spin::Mutex;
 
@@ -13,11 +17,11 @@ use kpi::KERNEL_BASE;
 
 use crate::memory::vspace::MapAction;
 use crate::memory::{paddr_to_kernel_vaddr, PAddr, BASE_PAGE_SIZE};
-use crate::pci::claim_device;
+use crate::pci::claim_devices;
 
 #[cfg(feature = "rpc")]
 use {
-    crate::cmdline::Transport,
+    crate::cmdline::{Mode, Transport},
     crate::error::{KError, KResult},
     crate::memory::{mcache::MCache, Frame, SHARED_AFFINITY},
     alloc::boxed::Box,
@@ -67,8 +71,51 @@ impl ShmemRegion {
 }
 
 lazy_static! {
-    pub(crate) static ref SHMEM_DEVICE: ShmemDevice =
-        ShmemDevice::new().expect("Failed to get SHMEM device");
+    pub(crate) static ref SHMEM: Shmem = {
+        let shmem = Shmem::new().expect("Failed to get SHMEM device(s)");
+        SHMEM_INITIALIZED.fetch_add(1, Ordering::SeqCst);
+        shmem
+    };
+}
+
+lazy_static! {
+    pub(crate) static ref SHMEM_INITIALIZED: AtomicUsize = AtomicUsize::new(0);
+}
+
+pub(crate) struct Shmem {
+    /// A list of shmem devices found on the pci
+    pub(crate) devices: Vec<ShmemDevice>,
+}
+
+impl Shmem {
+    pub(crate) fn new() -> Option<Shmem> {
+        log::warn!("Starting SHMEM init");
+        const RED_HAT_INC: u16 = 0x1af4;
+        const INTER_VM_SHARED_MEM_DEV: u16 = 0x1110;
+
+        let mut pci_devices = claim_devices(RED_HAT_INC, INTER_VM_SHARED_MEM_DEV);
+        if pci_devices.len() == 0 {
+            None
+        } else {
+            pci_devices.sort_by(|a, b| a.pci_address().dev.cmp(&b.pci_address().dev));
+            let mut devices =
+                Vec::try_with_capacity(pci_devices.len()).expect("Failed to alloc memory");
+            for pci_device in pci_devices {
+                if let Some(shmem_device) = ShmemDevice::new(pci_device) {
+                    devices.push(shmem_device);
+                }
+            }
+            Some(Shmem { devices })
+        }
+    }
+
+    pub(crate) fn get_interrupt_device(&self) -> Option<&ShmemDevice> {
+        if self.devices.len() > 0 {
+            Some(&self.devices[0])
+        } else {
+            None
+        }
+    }
 }
 
 pub(crate) struct ShmemDevice {
@@ -87,20 +134,16 @@ pub(crate) struct ShmemDevice {
 
 impl ShmemDevice {
     /// Assume this method is only called once per device
-    pub(crate) fn new() -> Option<ShmemDevice> {
-        const RED_HAT_INC: u16 = 0x1af4;
-        const INTER_VM_SHARED_MEM_DEV: u16 = 0x1110;
+    pub(crate) fn new(mut ivshmem_device: PciDevice) -> Option<ShmemDevice> {
+        let register_region = ivshmem_device.bar(0).expect("Unable to find shmem BAR0");
+        log::info!(
+            "Found IVSHMEM device register region with base paddr {:X} and size {}",
+            register_region.address,
+            register_region.size
+        );
 
-        if let Some(mut ivshmem_device) = claim_device(RED_HAT_INC, INTER_VM_SHARED_MEM_DEV) {
-            let register_region = ivshmem_device.bar(0).expect("Unable to find shmem BAR0");
-            log::info!(
-                "Found IVSHMEM device register region with base paddr {:X} and size {}",
-                register_region.address,
-                register_region.size
-            );
-
-            let mem_region = ivshmem_device.bar(2).expect("Unable to find shmem BAR2");
-            log::info!(
+        let mem_region = ivshmem_device.bar(2).expect("Unable to find shmem BAR2");
+        log::info!(
                 "Found IVSHMEM device memory region with base paddr {:X} and size {}, range=[{:X}-{:X}]",
                 mem_region.address,
                 mem_region.size,
@@ -108,88 +151,83 @@ impl ShmemDevice {
                 mem_region.address + mem_region.size
             );
 
-            let msi_region = if let Some(cap) = ivshmem_device
-                .capabilities()
-                .find(|cap| cap.id == CapabilityId::MsiX)
-            {
-                if let CapabilityType::MsiX(msi) = ivshmem_device.get_cap_region_mut(cap) {
-                    log::info!(
-                        "Device MSI-X table is at bar {} offset {} table size is {}",
-                        msi.bir(),
-                        msi.table_offset(),
-                        msi.table_size()
-                    );
+        let msi_region = if let Some(cap) = ivshmem_device
+            .capabilities()
+            .find(|cap| cap.id == CapabilityId::MsiX)
+        {
+            if let CapabilityType::MsiX(msi) = ivshmem_device.get_cap_region_mut(cap) {
+                log::info!(
+                    "Device MSI-X table is at bar {} offset {} table size is {}",
+                    msi.bir(),
+                    msi.table_offset(),
+                    msi.table_size()
+                );
 
-                    let bar = msi.bir();
-                    ivshmem_device.bar(bar)
-                } else {
-                    None
-                }
+                let bar = msi.bir();
+                ivshmem_device.bar(bar)
             } else {
                 None
             }
-            .expect("Failed to get msi region");
-
-            // If the PCI dev is not the bus master; make it.
-            if !ivshmem_device.is_bus_master() {
-                ivshmem_device.enable_bus_mastering();
-            }
-
-            // Map register region into kernel space
-            let mut kvspace = crate::arch::vspace::INITIAL_VSPACE.lock();
-            kvspace
-                .map_identity_with_offset(
-                    PAddr::from(KERNEL_BASE),
-                    PAddr::from(register_region.address),
-                    // TODO(rackscale, correctness): this is a hack because the region is < BASE_PAGE_REGION but map assumes at least BASE_PAGE_SIZE
-                    core::cmp::max(BASE_PAGE_SIZE, register_region.size as usize),
-                    MapAction::kernel() | MapAction::write(),
-                )
-                .expect("Failed to write potential shmem register region addresses");
-
-            // Get ID assigned by shmem server
-            let id_ptr =
-                (register_region.address + KERNEL_BASE + SHMEM_IVPOSITION_OFFSET) as *mut u32;
-            // Safety: We assume that the register_addr is valid and already mapped into kernel space.
-            let id = u16::try_from(unsafe { core::ptr::read(id_ptr) })
-                .expect("device ID should be between 0 and 65535, 0 if not set");
-            log::info!("shmem ID is: {:?}", id);
-
-            // Map shmem into kernel space
-            kvspace
-                .map_identity_with_offset(
-                    PAddr::from(KERNEL_BASE),
-                    PAddr::from(mem_region.address),
-                    mem_region.size as usize,
-                    MapAction::kernel() | MapAction::write(),
-                )
-                .expect("Failed to write potential shmem memory region addresses");
-
-            // Map the MSI-X table into kernel space
-            kvspace
-                .map_identity_with_offset(
-                    PAddr::from(KERNEL_BASE),
-                    PAddr::from(msi_region.address),
-                    msi_region.size as usize,
-                    MapAction::kernel() | MapAction::write(),
-                )
-                .expect("Failed to map MSI-X table");
-
-            Some(ShmemDevice {
-                region: ShmemRegion {
-                    base: mem_region.address,
-                    size: mem_region.size,
-                },
-                id,
-                doorbell: Arc::new(Mutex::new(
-                    register_region.address + KERNEL_BASE + SHMEM_DOORBELL_OFFSET,
-                )),
-                device: Arc::new(Mutex::new(ivshmem_device)),
-            })
         } else {
-            log::error!("Unable to find IVSHMEM device");
             None
         }
+        .expect("Failed to get msi region");
+
+        // If the PCI dev is not the bus master; make it.
+        if !ivshmem_device.is_bus_master() {
+            ivshmem_device.enable_bus_mastering();
+        }
+
+        // Map register region into kernel space
+        let mut kvspace = crate::arch::vspace::INITIAL_VSPACE.lock();
+        kvspace
+            .map_identity_with_offset(
+                PAddr::from(KERNEL_BASE),
+                PAddr::from(register_region.address),
+                // TODO(rackscale, correctness): this is a hack because the region is < BASE_PAGE_REGION but map assumes at least BASE_PAGE_SIZE
+                core::cmp::max(BASE_PAGE_SIZE, register_region.size as usize),
+                MapAction::kernel() | MapAction::write(),
+            )
+            .expect("Failed to write potential shmem register region addresses");
+
+        // Get ID assigned by shmem server
+        let id_ptr = (register_region.address + KERNEL_BASE + SHMEM_IVPOSITION_OFFSET) as *mut u32;
+        // Safety: We assume that the register_addr is valid and already mapped into kernel space.
+        let id = u16::try_from(unsafe { core::ptr::read(id_ptr) })
+            .expect("device ID should be between 0 and 65535, 0 if not set");
+        log::info!("shmem ID is: {:?}", id);
+
+        // Map shmem into kernel space
+        kvspace
+            .map_identity_with_offset(
+                PAddr::from(KERNEL_BASE),
+                PAddr::from(mem_region.address),
+                mem_region.size as usize,
+                MapAction::kernel() | MapAction::write(),
+            )
+            .expect("Failed to write potential shmem memory region addresses");
+
+        // Map the MSI-X table into kernel space
+        kvspace
+            .map_identity_with_offset(
+                PAddr::from(KERNEL_BASE),
+                PAddr::from(msi_region.address),
+                msi_region.size as usize,
+                MapAction::kernel() | MapAction::write(),
+            )
+            .expect("Failed to map MSI-X table");
+
+        Some(ShmemDevice {
+            region: ShmemRegion {
+                base: mem_region.address,
+                size: mem_region.size,
+            },
+            id,
+            doorbell: Arc::new(Mutex::new(
+                register_region.address + KERNEL_BASE + SHMEM_DOORBELL_OFFSET,
+            )),
+            device: Arc::new(Mutex::new(ivshmem_device)),
+        })
     }
 
     pub(crate) fn set_doorbell(&self, vector: u16, id: u16) {
@@ -306,14 +344,16 @@ pub(crate) const SHMEM_TRANSPORT_SIZE: u64 = 2 * 1024 * 1024;
 
 #[cfg(feature = "rpc")]
 pub(crate) fn create_shmem_transport(machine_id: MachineId) -> KResult<ShmemTransport<'static>> {
-    use crate::cmdline::Mode;
     use rpc::transport::shmem::allocator::ShmemAllocator;
     use rpc::transport::shmem::Queue;
     use rpc::transport::shmem::{Receiver, Sender};
-    let machine_id = machine_id as u64;
-    assert!(SHMEM_DEVICE.region.size >= (machine_id + 1) * SHMEM_TRANSPORT_SIZE);
 
-    let base_addr = SHMEM_DEVICE.region.base + KERNEL_BASE + machine_id * SHMEM_TRANSPORT_SIZE;
+    let machine_id = machine_id as u64;
+    let (region_size, region_base) =
+        { (SHMEM.devices[0].region.size, SHMEM.devices[0].region.base) };
+    assert!(region_size >= (machine_id + 1) * SHMEM_TRANSPORT_SIZE);
+
+    let base_addr = region_base + KERNEL_BASE + machine_id * SHMEM_TRANSPORT_SIZE;
     let allocator = ShmemAllocator::new(base_addr, SHMEM_TRANSPORT_SIZE);
     match crate::CMDLINE.get().map_or(Mode::Native, |c| c.mode) {
         Mode::Controller => {
@@ -374,42 +414,37 @@ pub(crate) fn get_affinity_shmem() -> ShmemRegion {
 
 #[cfg(feature = "rackscale")]
 pub(crate) fn get_affinity_shmem_by_mid(mid: MachineId) -> ShmemRegion {
-    let mut base = SHMEM_DEVICE.region.base;
-    let mut size = SHMEM_DEVICE.region.size;
+    let region = if crate::CMDLINE.get().map_or(false, |c| {
+        c.transport == Transport::Shmem && c.mode == Mode::Controller
+    }) {
+        let mut base = SHMEM.devices[mid].region.base;
+        let mut size = SHMEM.devices[mid].region.size;
 
-    if crate::CMDLINE
-        .get()
-        .map_or(false, |c| c.transport == Transport::Shmem)
-    {
+        // Offset base and size to exclude shmem used for client transports
         let num_workers = (*crate::environment::NUM_MACHINES - 1) as u64;
-        // Offset base to ignore shmem used for client transports
         base += SHMEM_TRANSPORT_SIZE * num_workers;
+        size = size - SHMEM_TRANSPORT_SIZE * num_workers;
 
-        // Remove amount used for transport from the size
-        size = core::cmp::max(0, size - SHMEM_TRANSPORT_SIZE * num_workers);
+        ShmemRegion { base, size }
+    } else {
+        ShmemRegion {
+            base: SHMEM.devices[mid].region.base,
+            size: SHMEM.devices[mid].region.size,
+        }
     };
 
-    // Align on base page boundaries
-    let pages_per_worker =
-        (size / BASE_PAGE_SIZE as u64) / (*crate::environment::NUM_MACHINES as u64);
-    let size_per_worker = pages_per_worker * BASE_PAGE_SIZE as u64;
-
-    base += size_per_worker * (mid as u64) as u64;
     log::trace!(
         "Shmem affinity region: base={:x}, size={:x}, range: [{:X}-{:X}]",
-        base,
-        size_per_worker,
-        base,
-        base + size_per_worker - 1,
+        region.base,
+        region.size,
+        region.base,
+        region.base + region.size,
     );
-
-    ShmemRegion {
-        base,
-        size: size_per_worker,
-    }
+    region
 }
 
 #[cfg(feature = "rackscale")]
+#[allow(unused)]
 #[inline(always)]
 pub(crate) fn is_shmem_frame(frame: Frame, is_affinity: bool, is_kaddr: bool) -> bool {
     is_shmem_addr(frame.base.as_u64(), is_affinity, is_kaddr)
@@ -425,22 +460,20 @@ pub(crate) fn is_shmem_frame(frame: Frame, is_affinity: bool, is_kaddr: bool) ->
 pub(crate) fn is_shmem_addr(addr: u64, is_affinity: bool, is_kaddr: bool) -> bool {
     let offset = if is_kaddr { KERNEL_BASE } else { 0 };
 
-    let (shmem_start, shmem_size) = if is_affinity {
+    if is_affinity {
+        // Check just local machine
         let frame = get_affinity_shmem().get_frame(offset);
-        (frame.base.as_u64(), frame.size as u64)
+        let (shmem_start, shmem_size) = (frame.base.as_u64(), frame.size as u64);
+        addr >= shmem_start && addr <= shmem_start + shmem_size
     } else {
-        let mut shmem_offset = 0;
-        if crate::CMDLINE
-            .get()
-            .map_or(false, |c| c.transport == Transport::Shmem)
-        {
-            let num_workers = (*crate::environment::NUM_MACHINES - 1) as u64;
-            shmem_offset = SHMEM_TRANSPORT_SIZE * num_workers;
+        // Check all machines
+        for mid in 0..*crate::environment::NUM_MACHINES {
+            let frame = get_affinity_shmem_by_mid(mid).get_frame(offset);
+            let (shmem_start, shmem_size) = (frame.base.as_u64(), frame.size as u64);
+            if addr >= shmem_start && addr <= shmem_start + shmem_size {
+                return true;
+            }
         }
-        (
-            SHMEM_DEVICE.region.base + offset + shmem_offset,
-            SHMEM_DEVICE.region.size - shmem_offset,
-        )
-    };
-    addr >= shmem_start && addr <= shmem_start + shmem_size
+        false
+    }
 }

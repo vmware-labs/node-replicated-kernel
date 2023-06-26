@@ -105,6 +105,16 @@ Benchmarks are named as such:
 * ```s10_*```: User-space applications benchmarks
 * ```s11_*```: Rackscale (distributed) benchmarks
 
+The ```s11_*``` benchmarks may be configured with two features:
+* ```baseline```: Runs NrOS configured similarly to rackscale, for comparison
+* ```affinity-shmem```: Runs the ```ivshmem-server``` using shmem with NUMA affinity.
+  This option requires preconfiguring hugetlbfs with
+  ```sudo hugeadm --create-global-mounts```,
+  having a kernel with 2MB huge pages enabled, and then also adding 1024 2MB pages per
+  node, with a command like:
+  ```echo <page-num> | sudo numactl -m <node-num> tee -a /proc/sys/vm/nr_hugepages_mempolicy```
+  The number of huge pages per node may be verified with ```numastat -m```.
+ 
 ## Network
 
 nrk has support for three network interfaces at the moment: virtio, e1000 and

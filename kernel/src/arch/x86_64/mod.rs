@@ -307,8 +307,11 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     // form by klogger::init above, but now we do it for more ports)
     debug::init();
 
-    use crate::transport::shmem::SHMEM_INITIALIZED;
-    lazy_static::initialize(&SHMEM_INITIALIZED);
+    #[cfg(feature = "rackscale")]
+    {
+        use crate::transport::shmem::SHMEM_INITIALIZED;
+        lazy_static::initialize(&SHMEM_INITIALIZED);
+    }
 
     // Parse memory map provided by UEFI, create an initial emergency memory
     // manager with a little bit of memory so we can do some early allocations.

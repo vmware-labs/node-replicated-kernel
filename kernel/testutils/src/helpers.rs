@@ -26,7 +26,7 @@ pub const DHCP_ACK_MATCH_NRK2: &'static str = "DHCPACK on 172.31.0.11 to 56:b4:4
 /// Default shmem region size (in MB)
 pub const SHMEM_SIZE: usize = 1024;
 /// Created by `hugeadm --create-global-mounts`
-const SHMEM_PATH: &'static str = "/var/lib/hugetlbfs/global/pagesize-2MB";
+const SHMEM_AFFINITY_PATH: &'static str = "/var/lib/hugetlbfs/global/pagesize-2MB";
 
 /// Delay between invoking version of nrk in rackscale tests
 pub const CLIENT_BUILD_DELAY: u64 = 5_000;
@@ -52,15 +52,20 @@ pub fn setup_network(num_nodes: usize) {
 }
 
 pub fn get_shmem_names(id: Option<usize>) -> (String, String) {
+    let shmem_path = if cfg!(feature = "affinity-shmem") {
+        SHMEM_AFFINITY_PATH
+    } else {
+        "."
+    };
     if let Some(shmemid) = id {
         (
             format!("ivshmem-socket{}", shmemid),
-            format!("{}/ivshmem-file{}", SHMEM_PATH, shmemid),
+            format!("{}/ivshmem-file{}", shmem_path, shmemid),
         )
     } else {
         (
             format!("ivshmem-socket{}", ""),
-            format!("{}/ivshmem-file{}", SHMEM_PATH, ""),
+            format!("{}/ivshmem-file{}", shmem_path, ""),
         )
     }
 }

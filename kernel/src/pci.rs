@@ -59,7 +59,7 @@ pub(crate) fn claim_devices(vendor_id: u16, device_id: u16) -> Vec<PciDevice> {
             }
         }
     }
-    return devices;
+    devices
 }
 
 pub(crate) fn init() {

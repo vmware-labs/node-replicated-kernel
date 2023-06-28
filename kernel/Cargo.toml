@@ -113,6 +113,8 @@ integration-test = ["shmem", "ethernet"]
 smoke = []
 # For rackscale tests, runs baseline NrOS. This causes the tests to take longer.
 baseline = []
+# For rackscale tests, use shmem allocated with numa affinity. This requires pre-configuring the host.
+affinity-shmem = []
 # baremetal: Compile benchmarks for running on bare-metal.
 baremetal = []
 # pre-alloc guest memory: For benchmark sensitive to VM exits.

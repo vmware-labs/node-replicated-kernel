@@ -133,7 +133,7 @@ fn s10_vmops_benchmark() {
             .cmd(kernel_cmdline.as_str());
 
         if cfg!(feature = "smoke") {
-            cmdline = cmdline.memory(10 * 1024);
+            cmdline = cmdline.memory(16 * 1024);
         } else {
             cmdline = cmdline.memory(48 * 1024);
         }

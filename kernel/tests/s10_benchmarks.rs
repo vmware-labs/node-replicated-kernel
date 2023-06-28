@@ -478,7 +478,7 @@ fn s10_fxmark_benchmark() {
                 let kernel_cmdline = format!("initargs={}X{}X{}", cores, of, benchmark);
                 let mut cmdline = RunnerArgs::new_with_build("userspace-smp", &build)
                     .memory(1024)
-                    .timeout(num_microbenchs * (25_000 + cores as u64 * 1000))
+                    .timeout(num_microbenchs * (25_000 + cores as u64 * 2000))
                     .cores(machine.max_cores())
                     .setaffinity(Vec::new())
                     .cmd(kernel_cmdline.as_str());

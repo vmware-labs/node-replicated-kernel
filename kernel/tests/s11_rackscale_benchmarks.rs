@@ -51,7 +51,8 @@ fn rackscale_fxmark_benchmark(is_shmem: bool) {
     let benchmarks = if cfg!(feature = "smoke") {
         vec!["mixX10"]
     } else {
-        vec!["mixX0", "mixX10", "mixX100"]
+        // For rackscale, for now, just do 100% reads.
+        vec!["mixX0"] //vec!["mixX0", "mixX10", "mixX100"]
     };
 
     let file_name = if is_shmem {

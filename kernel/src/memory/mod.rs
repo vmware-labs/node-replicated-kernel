@@ -22,9 +22,6 @@ use backends::PhysicalPageProvider;
 pub(crate) use frame::Frame;
 pub(crate) use kpi::MemType;
 
-#[cfg(feature = "rackscale")]
-pub(crate) use per_core::SHARED_AFFINITY;
-
 use vspace::MapAction;
 
 /// Re-export arch specific memory definitions
@@ -40,7 +37,7 @@ pub mod frame;
 pub mod global;
 pub mod mcache;
 pub mod per_core;
-
+pub mod shmem_affinity;
 #[cfg(feature = "rackscale")]
 pub mod shmemalloc;
 
@@ -54,6 +51,12 @@ pub mod vspace_model;
 #[global_allocator]
 static MEM_PROVIDER: KernelAllocator = KernelAllocator {
     big_objects_sbrk: AtomicU64::new(KERNEL_BASE + (2048u64 * 1024u64 * 1024u64 * 1024u64)),
+};
+
+#[cfg(feature = "rackscale")]
+use {
+    atopology::NodeId,
+    shmem_affinity::{get_shmem_affinity_index, is_shmem_affinity},
 };
 
 /// Different types of allocator that the KernelAllocator can use.
@@ -98,7 +101,7 @@ impl KernelAllocator {
                 #[cfg(feature = "rackscale")]
                 {
                     let affinity = { pcm.physical_memory.borrow().affinity };
-                    if affinity == SHARED_AFFINITY {
+                    if is_shmem_affinity(affinity) {
                         panic!("MapBig not yet supported for shmem allocation");
                     }
                 }
@@ -297,9 +300,13 @@ impl KernelAllocator {
             core::cmp::min(mem_manager.spare_large_page_capacity(), needed_large_pages);
 
         #[cfg(feature = "rackscale")]
-        if affinity == SHARED_AFFINITY {
+        if is_shmem_affinity(affinity) {
             drop(mem_manager);
-            return KernelAllocator::try_refill_shmem(needed_base_pages, needed_large_pages);
+            return KernelAllocator::try_refill_shmem(
+                affinity,
+                needed_base_pages,
+                needed_large_pages,
+            );
         }
 
         let mut ncache = gmanager.node_caches[affinity].lock();
@@ -324,136 +331,139 @@ impl KernelAllocator {
     /// Try to refill the shmem allocator
     #[cfg(feature = "rackscale")]
     pub(crate) fn try_refill_shmem(
+        affinity: NodeId,
         needed_base_pages: usize,
         needed_large_pages: usize,
     ) -> Result<(), KError> {
-        use crate::arch::rackscale::controller_state::CONTROLLER_AFFINITY_SHMEM;
+        use crate::arch::rackscale::controller_state::CONTROLLER_SHMEM_CACHES;
         use crate::arch::rackscale::get_shmem_frames::rpc_get_shmem_frames;
         use crate::arch::rackscale::CLIENT_STATE;
-        use crate::memory::backends::{AllocatorStatistics, GrowBackend};
 
-        if crate::CMDLINE
+        // We only request at large page granularity
+        let mut total_needed_large_pages = needed_large_pages;
+        let mut total_needed_base_pages = needed_base_pages;
+        let affinity_index = get_shmem_affinity_index(affinity);
+        let is_controller = crate::CMDLINE
             .get()
-            .map_or(false, |c| c.mode == crate::cmdline::Mode::Controller)
-        {
-            // Refill from controller affinity shmem as needed.
+            .map_or(false, |c| c.mode == crate::cmdline::Mode::Controller);
+        let is_local_controller =
+            is_controller && affinity_index == *crate::environment::MACHINE_ID;
+
+        // Take base pages from caches is possible
+        if total_needed_base_pages > 0 || is_local_controller {
+            let mut manager_list = if is_controller {
+                CONTROLLER_SHMEM_CACHES.lock()
+            } else {
+                CLIENT_STATE.affinity_base_pages.lock()
+            };
+            let cache_manager = &mut manager_list[affinity_index];
             let pcm = try_per_core_mem().ok_or(KError::KcbUnavailable)?;
             let mut mem_manager = pcm.try_mem_manager()?;
-            let mut shmem_manager = CONTROLLER_AFFINITY_SHMEM.lock();
 
-            for _i in 0..needed_base_pages {
-                let base_page = shmem_manager
+            let base_pages_to_alloc =
+                core::cmp::min(cache_manager.free_base_pages(), total_needed_base_pages);
+            for _i in 0..base_pages_to_alloc {
+                let frame = cache_manager
                     .allocate_base_page()
-                    .expect("Controller is out of affinity shmem");
+                    .expect("We ensure there is capabity in the FrameCacheBase above");
                 mem_manager
-                    .grow_base_pages(&[base_page])
-                    .expect("We ensure to not overfill the FrameCacheSmall above.");
+                    .grow_base_pages(&[frame])
+                    .expect("We ensure not the overflow the FrameCacheSmall above");
             }
-
-            for _i in 0..needed_large_pages {
-                let large_page = shmem_manager
-                    .allocate_large_page()
-                    .expect("Controller is out of affinity shmem");
-
-                mem_manager
-                    .grow_large_pages(&[large_page])
-                    .expect("We ensure to not overfill the FrameCacheSmall above.");
-            }
-        } else {
-            // We only request at large page granularity
-            let mut total_needed_large_pages = needed_large_pages;
-            let mut total_needed_base_pages = needed_base_pages;
-
-            // Take base pages from the per-client base page cache is possible
+            total_needed_base_pages -= base_pages_to_alloc;
             if total_needed_base_pages > 0 {
-                let mut bp_manager = CLIENT_STATE.base_pages.lock();
-                let pcm = try_per_core_mem().ok_or(KError::KcbUnavailable)?;
-                let mut mem_manager = pcm.try_mem_manager()?;
-
-                let base_pages_to_alloc =
-                    core::cmp::min(bp_manager.free_base_pages(), total_needed_base_pages);
-                for _i in 0..base_pages_to_alloc {
-                    let frame = bp_manager
-                        .allocate_base_page()
-                        .expect("We ensure there is capabity in the FrameCacheBase above");
-                    mem_manager
-                        .grow_base_pages(&[frame])
-                        .expect("We ensure not the overflow the FrameCacheSmall above");
-                }
-                total_needed_base_pages -= base_pages_to_alloc;
-                if total_needed_base_pages > 0 {
-                    total_needed_large_pages += 1;
-                }
-
-                // We're done!
-                if total_needed_base_pages == 0 && total_needed_large_pages == 0 {
-                    return Ok(());
-                }
+                total_needed_large_pages += 1;
             }
 
-            // Refill by asking DCM for memory.
-            {
-                let pcm = try_per_core_mem().ok_or(KError::KcbUnavailable)?;
-                // We shouldn't call an RPC while using shmem as memory allocator.
-                // So use current node
-                pcm.set_mem_affinity(*crate::environment::NODE_ID)
-                    .expect("Can't change affinity");
-            }
-
-            // Query controller (DCM) to get frames of shmem
-            let large_shmem_frames = rpc_get_shmem_frames(None, total_needed_large_pages)?;
-
-            // Reset to shmem manager
-            let pcm = try_per_core_mem().ok_or(KError::KcbUnavailable)?;
-            pcm.set_mem_affinity(SHARED_AFFINITY)
-                .expect("Can't change affinity");
-            let mut mem_manager = pcm.try_mem_manager()?;
-
-            // Grow large pages
-            for i in 0..needed_large_pages {
-                mem_manager
-                    .grow_large_pages(&[large_shmem_frames[i]])
-                    .expect("We ensure to not overfill the FrameCacheSmall above.");
-            }
-
-            // Grow base pages
-            if total_needed_base_pages > 0 {
-                // Add needed base pages + however many will fit, to reduce memory we lose here.
-
-                let mut base_page_iter =
-                    large_shmem_frames[total_needed_large_pages - 1].into_iter();
-                let base_pages_to_add =
-                    core::cmp::min(base_page_iter.len(), mem_manager.spare_base_page_capacity());
-                for _i in 0..base_pages_to_add {
-                    let frame = base_page_iter
-                        .next()
-                        .expect("needed base frames should all fit within one large frame");
+            // If local controller memory, we can just grab large pages and be done.
+            if is_local_controller {
+                for _i in 0..total_needed_large_pages {
+                    let large_page = cache_manager
+                        .allocate_large_page()
+                        .expect("Controller is out of affinity shmem");
 
                     mem_manager
-                        .grow_base_pages(&[frame])
+                        .grow_large_pages(&[large_page])
                         .expect("We ensure to not overfill the FrameCacheSmall above.");
                 }
+                total_needed_large_pages = 0;
+            }
 
-                // Add any remaining base pages to the cache, if there's space.
-                let mut bp_manager = CLIENT_STATE.base_pages.lock();
-                let base_pages_to_save =
-                    core::cmp::min(base_page_iter.len(), bp_manager.spare_base_page_capacity());
-                for _i in 0..base_pages_to_save {
-                    let frame = base_page_iter
-                        .next()
-                        .expect("needed base frames should all fit within one large frame");
+            // We're done!
+            if total_needed_base_pages == 0 && total_needed_large_pages == 0 {
+                return Ok(());
+            }
+        }
 
-                    bp_manager
-                        .grow_base_pages(&[frame])
-                        .expect("We ensure not to overfill the FrameCacheBase above.");
-                }
+        // Refill by asking DCM for memory.
+        {
+            let pcm = try_per_core_mem().ok_or(KError::KcbUnavailable)?;
+            // We shouldn't call an RPC while using shmem as memory allocator.
+            // So use current node
+            pcm.set_mem_affinity(*crate::environment::NODE_ID)
+                .expect("Can't change affinity");
+        }
 
-                if base_page_iter.len() > 0 {
-                    log::error!(
-                        "Losing {:?} base pages of shared memory. Oh well.",
-                        base_page_iter.len()
-                    );
-                }
+        // TODO: call different function for controller.
+        // Query controller (DCM) to get frames of shmem
+        let large_shmem_frames = rpc_get_shmem_frames(None, total_needed_large_pages)?;
+
+        // Reset to shmem manager
+        let pcm = try_per_core_mem().ok_or(KError::KcbUnavailable)?;
+        pcm.set_mem_affinity(affinity)
+            .expect("Can't change affinity");
+        let mut mem_manager = pcm.try_mem_manager()?;
+
+        // Grow large pages
+        for i in 0..needed_large_pages {
+            mem_manager
+                .grow_large_pages(&[large_shmem_frames[i]])
+                .expect("We ensure to not overfill the FrameCacheSmall above.");
+        }
+
+        // Grow base pages
+        if total_needed_base_pages > 0 {
+            // Add needed base pages + however many will fit, to reduce memory we lose here.
+
+            let mut base_page_iter = large_shmem_frames[total_needed_large_pages - 1].into_iter();
+            let base_pages_to_add =
+                core::cmp::min(base_page_iter.len(), mem_manager.spare_base_page_capacity());
+            for _i in 0..base_pages_to_add {
+                let frame = base_page_iter
+                    .next()
+                    .expect("needed base frames should all fit within one large frame");
+
+                mem_manager
+                    .grow_base_pages(&[frame])
+                    .expect("We ensure to not overfill the FrameCacheSmall above.");
+            }
+
+            // Add any remaining base pages to the cache, if there's space.
+            let mut manager_list = if is_controller {
+                CONTROLLER_SHMEM_CACHES.lock()
+            } else {
+                CLIENT_STATE.affinity_base_pages.lock()
+            };
+            let cache_manager = &mut manager_list[affinity_index];
+            let base_pages_to_save = core::cmp::min(
+                base_page_iter.len(),
+                cache_manager.spare_base_page_capacity(),
+            );
+            for _i in 0..base_pages_to_save {
+                let frame = base_page_iter
+                    .next()
+                    .expect("needed base frames should all fit within one large frame");
+
+                cache_manager
+                    .grow_base_pages(&[frame])
+                    .expect("We ensure not to overfill the FrameCacheBase above.");
+            }
+
+            if base_page_iter.len() > 0 {
+                log::error!(
+                    "Losing {:?} base pages of shared memory. Oh well.",
+                    base_page_iter.len()
+                );
             }
         }
 
@@ -619,10 +629,10 @@ unsafe impl GlobalAlloc for KernelAllocator {
                         let affinity = { pcm.physical_memory.borrow().affinity };
                         if is_shmem_addr(ptr as u64, false, false) {
                             panic!("Should not be trying to dealloc non-kernel mapped shmem in kernel dealloc");
-                        } else if affinity == SHARED_AFFINITY && !is_shmem_addr(ptr as u64, false, true) {
+                        } else if is_shmem_affinity(affinity) && !is_shmem_addr(ptr as u64, false, true) {
                             log::error!("Trying to deallocate non-shmem into shmem allocator - losing this memory. Oh well.");
                             return;
-                        } else if affinity != SHARED_AFFINITY && (is_shmem_addr(ptr as u64, false, true)){
+                        } else if !is_shmem_affinity(affinity) && (is_shmem_addr(ptr as u64, false, true)){
                             log::error!("Trying to deallocate shmem into non-shmem allocator - losing this memory. Oh well.");
                             return;
                         }
@@ -730,11 +740,13 @@ unsafe impl GlobalAlloc for KernelAllocator {
                             let affinity = { pcm.physical_memory.borrow().affinity };
                             if is_shmem_addr(ptr as u64, false, false) {
                                 panic!("Should not be trying to realloc non-kernel mapped shmem in kernel dealloc");
-                            } else if affinity == SHARED_AFFINITY && !is_shmem_addr(ptr as u64, false, true) {
+                            } else if is_shmem_affinity(affinity) && !is_shmem_addr(ptr as u64, false, true) {
                                 // TODO(rackscale): should switch to non-shmem affinity for alloc below.
+                                // TODO(rackscale): check if shmem is a match for id?
                                 panic!("Trying to realloc non-shmem using shmem allocator");
-                            } else if affinity != SHARED_AFFINITY && is_shmem_addr(ptr as u64, false, true) {
+                            } else if !is_shmem_affinity(affinity) && is_shmem_addr(ptr as u64, false, true) {
                                 // TODO(rackscale): should switch to use shmem affinity for alloc below.
+                                // TODO(rackscale): check if shmem is a match for id?
                                 panic!("Trying to realloc shmem using non-shmem allocator");
                             }
                         }

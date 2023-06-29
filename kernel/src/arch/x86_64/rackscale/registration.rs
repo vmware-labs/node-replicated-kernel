@@ -17,18 +17,22 @@ use super::dcm::{node_registration::dcm_register_node, DCMNodeId};
 use crate::arch::rackscale::controller_state::{ControllerState, PerClientState};
 use crate::error::KResult;
 use crate::memory::backends::AllocatorStatistics;
-use crate::memory::LARGE_PAGE_SIZE;
-use crate::transport::shmem::{get_affinity_shmem, ShmemRegion};
+use crate::memory::mcache::MCache;
+use crate::memory::shmem_affinity::get_shmem_affinity;
+use crate::memory::{Frame, PAddr, LARGE_PAGE_SIZE};
+use crate::transport::shmem::get_affinity_shmem;
 
 #[derive(Debug, Default)]
 pub(crate) struct ClientRegistrationRequest {
     pub(crate) machine_id: MachineId,
-    pub(crate) shmem_region: ShmemRegion,
+    pub(crate) shmem_region_base: u64,
+    pub(crate) shmem_region_size: usize,
     pub(crate) num_cores: u64,
 }
 unsafe_abomonate!(
     ClientRegistrationRequest: machine_id,
-    shmem_region,
+    shmem_region_base,
+    shmem_region_size,
     num_cores
 );
 
@@ -60,7 +64,8 @@ pub(crate) fn initialize_client(
         // Construct client registration request
         let req = ClientRegistrationRequest {
             machine_id: *crate::environment::MACHINE_ID,
-            shmem_region,
+            shmem_region_base: shmem_region.base.as_u64(),
+            shmem_region_size: shmem_region.size,
             num_cores: num_threads as u64,
         };
 
@@ -96,8 +101,8 @@ pub(crate) fn register_client(
             "Received registration request from client {:?} with {:?} cores and shmem {:x?}-{:x?}",
             req.machine_id,
             req.num_cores,
-            req.shmem_region.base,
-            req.shmem_region.base + req.shmem_region.size
+            req.shmem_region_base,
+            req.shmem_region_base + req.shmem_region_size as u64
         );
 
         // Parse out hw_threads
@@ -121,12 +126,16 @@ pub(crate) fn register_client(
         log::debug!("client_threads: {:?}", client_threads);
 
         // Create shmem memory manager
-        let shmem_manager = req.shmem_region.get_shmem_manager(0);
-        let memslices = if let Some(ref manager) = shmem_manager {
-            manager.free_large_pages() as u64
-        } else {
-            0
-        };
+        let shmem_manager = Box::new(MCache::<0, 2048>::new_with_frame(
+            get_shmem_affinity(req.machine_id),
+            Frame::new(
+                PAddr::from(req.shmem_region_base),
+                req.shmem_region_size,
+                get_shmem_affinity(req.machine_id),
+            ),
+        ));
+
+        let memslices = shmem_manager.free_large_pages() as u64;
         log::info!(
             "Created shmem manager on behalf of client {:?}: {:?} ({:?} memslices)",
             req.machine_id,

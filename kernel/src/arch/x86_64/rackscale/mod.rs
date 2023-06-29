@@ -3,7 +3,11 @@
 
 #![allow(warnings)]
 
+use static_assertions as sa;
+
 use rpc::api::{RPCHandler, RegistrationHandler};
+
+use crate::memory::{mcache::MCache, LARGE_PAGE_SIZE};
 
 pub(crate) mod client_state;
 pub(crate) mod controller;
@@ -56,3 +60,11 @@ pub(crate) const GET_SHMEM_STRUCTURE_HANDLER: RPCHandler<ControllerState> =
     get_shmem_structure::handle_get_shmem_structure;
 pub(crate) const GET_SHMEM_FRAMES_HANDLER: RPCHandler<ControllerState> =
     get_shmem_frames::handle_get_shmem_frames;
+
+/// A cache of base pages
+/// TODO(rackscale): think about how we should constrain this?
+///
+/// Used locally on the client, since only large pages are allocated by the controller.
+pub(crate) type FrameCacheBase = MCache<2048, 0>;
+sa::const_assert!(core::mem::size_of::<FrameCacheBase>() <= LARGE_PAGE_SIZE);
+sa::const_assert!(core::mem::align_of::<FrameCacheBase>() <= LARGE_PAGE_SIZE);

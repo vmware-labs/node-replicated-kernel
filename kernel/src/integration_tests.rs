@@ -777,7 +777,7 @@ pub(crate) fn cxl_write() {
     for device in SHMEM.devices.iter() {
         buffer_content += 1;
         for i in 0..(device.region.size / 1024) {
-            let region = (device.region.base + KERNEL_BASE + (i * 1024) as u64) as *mut u8;
+            let region = (device.region.base.as_u64() + KERNEL_BASE + (i * 1024) as u64) as *mut u8;
             unsafe { core::ptr::write(region, buffer_content) };
         }
     }
@@ -796,7 +796,7 @@ pub(crate) fn cxl_read() {
     for device in SHMEM.devices.iter() {
         buffer_content += 1;
         for i in 0..(device.region.size / 1024) {
-            let region = (device.region.base + KERNEL_BASE + (i * 1024) as u64) as *mut u8;
+            let region = (device.region.base.as_u64() + KERNEL_BASE + (i * 1024) as u64) as *mut u8;
             let read = unsafe { core::ptr::read(region) };
             assert_eq!(read, buffer_content);
         }

@@ -10,7 +10,7 @@ use crate::arch::process::{current_pid, Ring3Process};
 use crate::error::{KError, KResult};
 use crate::fs::fd::FileDescriptor;
 use crate::memory::backends::{AllocatorStatistics, GrowBackend, PhysicalPageProvider};
-use crate::memory::{vspace::MapAction, Frame, VAddr, SHARED_AFFINITY};
+use crate::memory::{vspace::MapAction, Frame, VAddr};
 use crate::nrproc;
 use crate::process::{KernArcBuffer, UserSlice};
 use crate::syscalls::{

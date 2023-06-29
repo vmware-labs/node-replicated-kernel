@@ -45,6 +45,9 @@ pub(crate) struct DeterministicAlloc {
 
 impl DeterministicAlloc {
     pub(crate) fn new() -> Result<Self, KError> {
+        #[cfg(feature = "rackscale")]
+        unreachable!("The deterministic allocator should not be used for rackscale builds");
+
         DeterministicAlloc::new_with_nodes(atopology::MACHINE_TOPOLOGY.num_nodes())
     }
 

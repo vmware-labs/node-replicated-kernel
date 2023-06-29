@@ -1,13 +1,15 @@
 // Copyright © 2023 University of Colorado and VMware Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
-use abomonation::{decode, encode, unsafe_abomonate, Abomonation};
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 use core::fmt::Debug;
+
+use abomonation::{decode, encode, unsafe_abomonate, Abomonation};
 use core2::io::Result as IOResult;
 use core2::io::Write;
 use fallible_collections::FallibleVecGlobal;
 
+use atopology::NodeId;
 use kpi::system::MachineId;
 use rpc::rpc::*;
 use rpc::RPCClient;
@@ -18,9 +20,9 @@ use super::dcm::{affinity_alloc::dcm_affinity_alloc, resource_alloc::dcm_resourc
 use super::kernelrpc::*;
 use crate::error::{KError, KResult};
 use crate::memory::backends::PhysicalPageProvider;
-use crate::memory::Frame;
+use crate::memory::shmem_affinity::get_shmem_affinity;
+use crate::memory::{Frame, PAddr, LARGE_PAGE_SIZE};
 use crate::process::Pid;
-use crate::transport::shmem::ShmemRegion;
 
 use crate::memory::backends::AllocatorStatistics;
 
@@ -30,6 +32,12 @@ struct ShmemFrameReq {
     num_frames: usize,
 }
 unsafe_abomonate!(ShmemFrameReq: machine_id, pid, num_frames);
+
+struct ShmemRegion {
+    base: u64,
+    affinity: NodeId,
+}
+unsafe_abomonate!(ShmemRegion: base, affinity);
 
 // This isn't truly a syscall
 pub(crate) fn rpc_get_shmem_frames(
@@ -87,8 +95,11 @@ pub(crate) fn rpc_get_shmem_frames(
                         return Err(RPCError::MalformedResponse.into());
                     }
                     for i in 0..num_frames {
-                        let frame = regions[i].get_frame(0);
-                        frames.push(frame);
+                        frames.push(Frame::new(
+                            PAddr::from(regions[i].base),
+                            LARGE_PAGE_SIZE,
+                            regions[i].affinity,
+                        ));
                     }
                 } else {
                     log::error!("Failed to parse shmem region response from controller");
@@ -137,18 +148,17 @@ pub(crate) fn handle_get_shmem_frames(
         // Take the frames from the local allocator
         {
             let mut client_state = state.get_client_state_by_dcm_id(node_id).lock();
-            let mut manager = client_state
-                .shmem_manager
-                .as_mut()
-                .expect("No shmem manager found for client");
+            let mid = client_state.mid;
+            let mut manager = client_state.shmem_manager.as_mut();
 
             for _i in 0..num_frames {
                 let frame = manager
                     .allocate_large_page()
                     .expect("DCM OK'd allocation, this should succeed");
+                assert!(frame.affinity == get_shmem_affinity(mid));
                 regions.push(ShmemRegion {
                     base: frame.base.as_u64(),
-                    size: frame.size as u64,
+                    affinity: frame.affinity,
                 });
             }
         }
@@ -161,16 +171,14 @@ pub(crate) fn handle_get_shmem_frames(
 
             // TODO(error_handling): should handle errors gracefully here, maybe percolate to client?
             let mut client_state = state.get_client_state_by_dcm_id(dcm_id).lock();
-            let mut manager = client_state
-                .shmem_manager
-                .as_mut()
-                .expect("No shmem manager found for client");
+            let mut manager = client_state.shmem_manager.as_mut();
             let frame = manager
                 .allocate_large_page()
                 .expect("DCM OK'd allocation, this should succeed");
+            assert!(frame.affinity == get_shmem_affinity(client_state.mid));
             regions.push(ShmemRegion {
                 base: frame.base.as_u64(),
-                size: frame.size as u64,
+                affinity: frame.affinity,
             });
         }
     } else {

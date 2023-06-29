@@ -9,11 +9,25 @@ use core::alloc::Layout;
 use core::alloc::{AllocError, Allocator};
 use core::ptr::NonNull;
 
+use atopology::NodeId;
+
+use super::shmem_affinity::{get_shmem_affinity_index, is_shmem_affinity};
 use crate::arch::kcb::per_core_mem;
-use crate::memory::SHARED_AFFINITY;
 
 #[derive(Clone)]
-pub(crate) struct ShmemAlloc();
+pub(crate) struct ShmemAlloc {
+    pub(crate) affinity: NodeId,
+}
+
+impl ShmemAlloc {
+    pub(crate) fn new(affinity: NodeId) -> ShmemAlloc {
+        assert!(
+            is_shmem_affinity(affinity)
+                && get_shmem_affinity_index(affinity) < *crate::environment::NUM_MACHINES
+        );
+        ShmemAlloc { affinity }
+    }
+}
 
 unsafe impl Allocator for ShmemAlloc {
     fn allocate(&self, layout: Layout) -> Result<NonNull<[u8]>, AllocError> {
@@ -22,7 +36,7 @@ unsafe impl Allocator for ShmemAlloc {
             // We want to allocate the logs in shared memory
             let pcm = per_core_mem();
             let affinity = pcm.physical_memory.borrow().affinity;
-            pcm.set_mem_affinity(SHARED_AFFINITY)
+            pcm.set_mem_affinity(self.affinity)
                 .expect("Can't change affinity");
             affinity
         };
@@ -52,7 +66,7 @@ unsafe impl Allocator for ShmemAlloc {
             // We want to allocate the logs in shared memory
             let pcm = per_core_mem();
             let affinity = pcm.physical_memory.borrow().affinity;
-            pcm.set_mem_affinity(SHARED_AFFINITY)
+            pcm.set_mem_affinity(self.affinity)
                 .expect("Can't change affinity");
             affinity
         };

@@ -7,6 +7,7 @@ use alloc::vec::Vec;
 use core2::io::Result as IOResult;
 use core2::io::Write;
 
+use atopology::NodeId;
 use crossbeam_queue::ArrayQueue;
 use node_replication::{Dispatch, Log};
 use rpc::rpc::*;
@@ -19,8 +20,9 @@ use crate::arch::kcb::per_core_mem;
 use crate::arch::process::{Ring3Process, PROCESS_LOGS};
 use crate::arch::tlb::{Shootdown, RACKSCALE_CLIENT_WORKQUEUES};
 use crate::error::{KError, KResult};
+use crate::memory::shmem_affinity::get_local_shmem_affinity;
 use crate::memory::vspace::TlbFlushHandle;
-use crate::memory::{kernel_vaddr_to_paddr, paddr_to_kernel_vaddr, PAddr, VAddr, SHARED_AFFINITY};
+use crate::memory::{kernel_vaddr_to_paddr, paddr_to_kernel_vaddr, PAddr, VAddr};
 use crate::nr::{Op, NR_LOG};
 use crate::nrproc::NrProcess;
 use crate::process::MAX_PROCESSES;
@@ -35,6 +37,12 @@ pub enum ShmemStructure {
 }
 unsafe_abomonate!(ShmemStructure);
 
+struct ShmemStructureRequest {
+    shmem_affinity: NodeId,
+    structure: ShmemStructure,
+}
+unsafe_abomonate!(ShmemStructureRequest: shmem_affinity, structure);
+
 pub(crate) fn rpc_get_shmem_structure(
     shmem_structure: ShmemStructure,
     ptrs: &mut [u64],
@@ -47,8 +55,12 @@ pub(crate) fn rpc_get_shmem_structure(
     };
 
     // Encode the request
-    let mut req_data = [0u8; core::mem::size_of::<ShmemStructure>()];
-    unsafe { encode(&shmem_structure, &mut (&mut req_data).as_mut()) }
+    let req = ShmemStructureRequest {
+        shmem_affinity: get_local_shmem_affinity(),
+        structure: shmem_structure,
+    };
+    let mut req_data = [0u8; core::mem::size_of::<ShmemStructureRequest>()];
+    unsafe { encode(&req, &mut (&mut req_data).as_mut()) }
         .expect("Failed to encode shmem structure request");
 
     // Make buffer max size of MAX_PROCESS (for NrProcLogs), 1 (for NrLog)
@@ -94,19 +106,20 @@ pub(crate) fn handle_get_shmem_structure(
     log::debug!("Handling get_shmem_structure()");
 
     // Decode request
-    let shmem_structure = if let Some((req, _)) = unsafe { decode::<ShmemStructure>(payload) } {
-        req
-    } else {
-        log::error!("Invalid payload for request: {:?}", hdr);
-        construct_error_ret(hdr, payload, KError::from(RPCError::MalformedRequest));
-        return Ok(state);
-    };
+    let (shmem_affinity, shmem_structure) =
+        if let Some((req, _)) = unsafe { decode::<ShmemStructureRequest>(payload) } {
+            (req.shmem_affinity, req.structure)
+        } else {
+            log::error!("Invalid payload for request: {:?}", hdr);
+            construct_error_ret(hdr, payload, KError::from(RPCError::MalformedRequest));
+            return Ok(state);
+        };
 
     // We want to allocate clones of the log arcs in shared memory
     let original_affinity = {
         let pcm = per_core_mem();
         let affinity = pcm.physical_memory.borrow().affinity;
-        pcm.set_mem_affinity(SHARED_AFFINITY)
+        pcm.set_mem_affinity(shmem_affinity)
             .expect("Can't change affinity");
         affinity
     };

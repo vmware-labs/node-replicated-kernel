@@ -409,8 +409,8 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
                 .get()
                 .map_or(false, |c| c.mode == crate::cmdline::Mode::Controller)
             {
-                use crate::arch::rackscale::controller_state::CONTROLLER_AFFINITY_SHMEM;
-                lazy_static::initialize(&CONTROLLER_AFFINITY_SHMEM);
+                use crate::arch::rackscale::controller_state::CONTROLLER_SHMEM_CACHES;
+                lazy_static::initialize(&CONTROLLER_SHMEM_CACHES);
                 lazy_static::initialize(&crate::arch::rackscale::dcm::DCM_INTERFACE);
             } else {
                 use crate::arch::irq::{

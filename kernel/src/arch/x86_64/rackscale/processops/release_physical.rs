@@ -4,17 +4,12 @@
 use abomonation::{decode, encode, unsafe_abomonate, Abomonation};
 use core2::io::Result as IOResult;
 use core2::io::Write;
+
+use atopology::NodeId;
 use kpi::process::FrameId;
 use kpi::FileOperation;
 use rpc::rpc::*;
 use rpc::RPCClient;
-
-use crate::error::{KError, KResult};
-use crate::fs::fd::FileDescriptor;
-use crate::memory::backends::PhysicalPageProvider;
-use crate::memory::{Frame, PAddr, LARGE_PAGE_SIZE, SHARED_AFFINITY};
-use crate::nrproc::NrProcess;
-use crate::process::Pid;
 
 use super::super::dcm::resource_release::dcm_resource_release;
 use super::super::dcm::DCMNodeId;
@@ -22,34 +17,38 @@ use super::super::kernelrpc::*;
 use super::super::ControllerState;
 use super::super::CLIENT_STATE;
 use crate::arch::process::Ring3Process;
+use crate::error::{KError, KResult};
+use crate::fs::fd::FileDescriptor;
+use crate::memory::backends::PhysicalPageProvider;
+use crate::memory::shmem_affinity::get_shmem_affinity_index;
+use crate::memory::{Frame, PAddr, LARGE_PAGE_SIZE};
+use crate::nrproc::NrProcess;
+use crate::process::Pid;
+use crate::transport::shmem::get_shmem_index_by_addr;
 
 #[derive(Debug)]
 pub(crate) struct ReleasePhysicalReq {
     pub pid: Pid,
+    // TODO(rackscale): just send the frame.
     pub frame_base: u64,
     pub frame_size: u64,
-    pub node_id: DCMNodeId,
+    pub affinity: NodeId,
 }
-unsafe_abomonate!(ReleasePhysicalReq: frame_base, frame_size, node_id);
+unsafe_abomonate!(ReleasePhysicalReq: frame_base, frame_size, affinity);
 
 /// RPC to forward physical memory release to controller.
 pub(crate) fn rpc_release_physical(pid: Pid, frame_id: u64) -> KResult<(u64, u64)> {
     log::debug!("ReleasePhysical({:?})", frame_id);
 
-    // Construct request data
-    let node_id = CLIENT_STATE.get_frame_as(frame_id as FrameId)?;
-
-    // TODO(error_handling): will probably want to do this NrProcess operation on controller, so we can't have a state where this
-    // succeeds but the next part fails without the controller knowing.
-    // this will check if it's removeable (e.g., mapped or no) so we should do this operation before doing anything else
+    // TODO(rackscale, error_handling): will probably want to do this NrProcess operation on controller,
+    // so we can't have a state where this succeeds but the next part fails without the controller knowing.
     let frame = NrProcess::<Ring3Process>::release_frame_from_process(pid, frame_id as FrameId)?;
-    CLIENT_STATE.remove_frame(frame_id as FrameId)?;
 
     let req = ReleasePhysicalReq {
         pid,
         frame_base: frame.base.as_u64(),
         frame_size: frame.size as u64,
-        node_id,
+        affinity: frame.affinity,
     };
     let mut req_data = [0u8; core::mem::size_of::<ReleasePhysicalReq>()];
     unsafe { encode(&req, &mut (&mut req_data).as_mut()) }
@@ -92,27 +91,28 @@ pub(crate) fn handle_release_physical(
             return Ok(state);
         }
     };
+    let mid = get_shmem_affinity_index(req.affinity);
+    let node_id = state.mid_to_dcm_id(mid);
     log::debug!(
-        "ReleasePhysical(frame_base={:x?}, frame_size={:?}), dcm_node_id={:?}",
+        "ReleasePhysical(frame_base={:x?}, frame_size={:?}), affinity={:?} mid={:?} dcm_node_id={:?}",
         req.frame_base,
         req.frame_size,
-        req.node_id
+        req.affinity,
+        mid,
+        node_id,
     );
 
     // we only allocate in large frames, so let's also deallocate in large frames.
     let frame = Frame::new(
         PAddr::from(req.frame_base),
         LARGE_PAGE_SIZE, //req.frame_size as usize,
-        SHARED_AFFINITY,
+        req.affinity,
     );
 
     // TODO(error_handling): should handle errors gracefully here, maybe percolate to client?
     let ret = {
-        let mut client_state = state.get_client_state_by_dcm_id(req.node_id).lock();
-        let mut manager = client_state
-            .shmem_manager
-            .as_mut()
-            .expect("No shmem manager found for client");
+        let mut client_state = state.get_client_state_by_mid(mid).lock();
+        let mut manager = client_state.shmem_manager.as_mut();
         manager.release_large_page(frame)
     };
 
@@ -120,7 +120,7 @@ pub(crate) fn handle_release_physical(
     let res = match ret {
         Ok(()) => {
             // Tell DCM the resource is no longer being used
-            if dcm_resource_release(req.node_id, req.pid, false) == 0 {
+            if dcm_resource_release(node_id, req.pid, false) == 0 {
                 log::debug!("DCM release resource was successful");
                 Ok((0, 0))
             } else {

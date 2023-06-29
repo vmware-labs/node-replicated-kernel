@@ -37,7 +37,8 @@ use crate::fs::cnrfs;
 
 #[cfg(all(feature = "rackscale", target_arch = "x86_64"))]
 use {
-    crate::arch::rackscale::get_shmem_frames::rpc_get_shmem_frames, crate::memory::SHARED_AFFINITY,
+    crate::arch::rackscale::get_shmem_frames::rpc_get_shmem_frames,
+    crate::memory::shmem_affinity::{get_local_shmem_affinity, is_shmem_affinity},
 };
 
 /// Process ID.
@@ -284,13 +285,12 @@ impl elfloader::ElfLoader for DataSecAllocator {
                     let reset_affinity = {
                         let pcm = per_core_mem();
                         let affinity = { pcm.physical_memory.borrow().affinity };
-                        if affinity == SHARED_AFFINITY {
-                            // TODO(rackscale): change affinity to current core rather than use shmem
+                        if is_shmem_affinity(affinity) {
                             pcm.set_mem_affinity(*crate::environment::NODE_ID)
                                 .expect("Can't change affinity");
-                            true
+                            Some(affinity)
                         } else {
-                            false
+                            None
                         }
                     };
 
@@ -298,9 +298,9 @@ impl elfloader::ElfLoader for DataSecAllocator {
                         .expect("Failed to get shmem frames for elf loading");
 
                     // Restore affinity
-                    if reset_affinity {
+                    if let Some(old_affinity) = reset_affinity {
                         let pcm = per_core_mem();
-                        pcm.set_mem_affinity(SHARED_AFFINITY)
+                        pcm.set_mem_affinity(old_affinity)
                             .expect("Can't change affinity");
                     }
 
@@ -486,7 +486,10 @@ pub(crate) fn make_process<P: Process>(binary: &'static str) -> Result<Pid, KErr
     {
         let pcm = per_core_mem();
         let affinity = { pcm.physical_memory.borrow().affinity };
-        pcm.set_mem_affinity(SHARED_AFFINITY)
+
+        // TODO(rackscale): should you do this locally?
+        // Really this should be registered for the process...
+        pcm.set_mem_affinity(get_local_shmem_affinity())
             .expect("Can't change affinity - TODO: how to rewind on error here?");
         affinity
     } else {
@@ -551,7 +554,7 @@ pub(crate) fn make_process<P: Process>(binary: &'static str) -> Result<Pid, KErr
 
     #[cfg(feature = "rackscale")]
     {
-        if affinity != SHARED_AFFINITY {
+        if affinity != get_local_shmem_affinity() {
             let pcm = per_core_mem();
             pcm.set_mem_affinity(affinity)
                 .expect("Can't change affinity");

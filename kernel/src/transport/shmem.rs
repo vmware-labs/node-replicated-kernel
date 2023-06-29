@@ -5,9 +5,7 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicUsize, Ordering};
 
-use abomonation::{unsafe_abomonate, Abomonation};
-use core2::io::Result as IOResult;
-use core2::io::Write;
+use atopology::NodeId;
 use driverkit::pci::{CapabilityId, CapabilityType, PciDevice};
 use fallible_collections::FallibleVecGlobal;
 use lazy_static::lazy_static;
@@ -15,15 +13,15 @@ use spin::Mutex;
 
 use kpi::KERNEL_BASE;
 
+use crate::memory::shmem_affinity::get_shmem_affinity;
 use crate::memory::vspace::MapAction;
-use crate::memory::{paddr_to_kernel_vaddr, PAddr, BASE_PAGE_SIZE};
+use crate::memory::{paddr_to_kernel_vaddr, Frame, PAddr, BASE_PAGE_SIZE};
 use crate::pci::claim_devices;
 
 #[cfg(feature = "rpc")]
 use {
     crate::cmdline::{Mode, Transport},
     crate::error::{KError, KResult},
-    crate::memory::{mcache::MCache, Frame, SHARED_AFFINITY},
     alloc::boxed::Box,
     kpi::system::MachineId,
     rpc::rpc::MAX_BUFF_LEN,
@@ -36,39 +34,6 @@ use {
 // other fields are reserved for revision 1
 const SHMEM_IVPOSITION_OFFSET: u64 = 8;
 const SHMEM_DOORBELL_OFFSET: u64 = 12;
-
-#[derive(Debug, Default)]
-pub(crate) struct ShmemRegion {
-    pub(crate) base: u64,
-    pub(crate) size: u64,
-}
-unsafe_abomonate!(ShmemRegion: base, size);
-
-#[cfg(feature = "rackscale")]
-impl ShmemRegion {
-    pub(crate) fn get_frame(&self, frame_offset: u64) -> Frame {
-        Frame::new(
-            PAddr(self.base + frame_offset),
-            self.size as usize,
-            SHARED_AFFINITY,
-        )
-    }
-
-    pub(crate) fn get_shmem_manager<const BP: usize, const LP: usize>(
-        &self,
-        frame_offset: u64,
-    ) -> Option<Box<MCache<BP, LP>>> {
-        if self.size > 0 {
-            let frame = self.get_frame(frame_offset);
-            Some(Box::new(MCache::<BP, LP>::new_with_frame(
-                SHARED_AFFINITY,
-                frame,
-            )))
-        } else {
-            None
-        }
-    }
-}
 
 lazy_static! {
     pub(crate) static ref SHMEM: Shmem = {
@@ -89,7 +54,6 @@ pub(crate) struct Shmem {
 
 impl Shmem {
     pub(crate) fn new() -> Option<Shmem> {
-        log::warn!("Starting SHMEM init");
         const RED_HAT_INC: u16 = 0x1af4;
         const INTER_VM_SHARED_MEM_DEV: u16 = 0x1110;
 
@@ -100,10 +64,14 @@ impl Shmem {
             pci_devices.sort_by(|a, b| a.pci_address().dev.cmp(&b.pci_address().dev));
             let mut devices =
                 Vec::try_with_capacity(pci_devices.len()).expect("Failed to alloc memory");
+            let mut i = 0;
             for pci_device in pci_devices {
-                if let Some(shmem_device) = ShmemDevice::new(pci_device) {
+                if let Some(shmem_device) = ShmemDevice::new(pci_device, get_shmem_affinity(i)) {
                     devices.push(shmem_device);
+                } else {
+                    panic!("Failed to initialize shmem device");
                 }
+                i += 1;
             }
             Some(Shmem { devices })
         }
@@ -120,7 +88,7 @@ impl Shmem {
 
 pub(crate) struct ShmemDevice {
     // Shmem memory region.
-    pub(crate) region: ShmemRegion,
+    pub(crate) region: Frame,
 
     // Easier to remember here so we can reference without gaining interrupt regiister mutex
     pub(crate) id: u16,
@@ -134,7 +102,7 @@ pub(crate) struct ShmemDevice {
 
 impl ShmemDevice {
     /// Assume this method is only called once per device
-    pub(crate) fn new(mut ivshmem_device: PciDevice) -> Option<ShmemDevice> {
+    pub(crate) fn new(mut ivshmem_device: PciDevice, affinity: NodeId) -> Option<ShmemDevice> {
         let register_region = ivshmem_device.bar(0).expect("Unable to find shmem BAR0");
         log::info!(
             "Found IVSHMEM device register region with base paddr {:X} and size {}",
@@ -218,10 +186,11 @@ impl ShmemDevice {
             .expect("Failed to map MSI-X table");
 
         Some(ShmemDevice {
-            region: ShmemRegion {
-                base: mem_region.address,
-                size: mem_region.size,
-            },
+            region: Frame::new(
+                PAddr::from(mem_region.address),
+                mem_region.size as usize,
+                affinity,
+            ),
             id,
             doorbell: Arc::new(Mutex::new(
                 register_region.address + KERNEL_BASE + SHMEM_DOORBELL_OFFSET,
@@ -351,10 +320,10 @@ pub(crate) fn create_shmem_transport(machine_id: MachineId) -> KResult<ShmemTran
     let machine_id = machine_id as u64;
     let (region_size, region_base) =
         { (SHMEM.devices[0].region.size, SHMEM.devices[0].region.base) };
-    assert!(region_size >= (machine_id + 1) * SHMEM_TRANSPORT_SIZE);
+    assert!(region_size as u64 >= (machine_id + 1) * SHMEM_TRANSPORT_SIZE);
 
     let base_addr = region_base + KERNEL_BASE + machine_id * SHMEM_TRANSPORT_SIZE;
-    let allocator = ShmemAllocator::new(base_addr, SHMEM_TRANSPORT_SIZE);
+    let allocator = ShmemAllocator::new(base_addr.as_u64(), SHMEM_TRANSPORT_SIZE);
     match crate::CMDLINE.get().map_or(Mode::Native, |c| c.mode) {
         Mode::Controller => {
             let server_to_client_queue =
@@ -408,35 +377,27 @@ pub(crate) fn init_shmem_rpc(
 }
 
 #[cfg(feature = "rackscale")]
-pub(crate) fn get_affinity_shmem() -> ShmemRegion {
+pub(crate) fn get_affinity_shmem() -> Frame {
     get_affinity_shmem_by_mid(*crate::environment::MACHINE_ID)
 }
 
 #[cfg(feature = "rackscale")]
-pub(crate) fn get_affinity_shmem_by_mid(mid: MachineId) -> ShmemRegion {
-    let region = if crate::CMDLINE.get().map_or(false, |c| {
+pub(crate) fn get_affinity_shmem_by_mid(mid: MachineId) -> Frame {
+    let mut region = SHMEM.devices[mid].region;
+    if crate::CMDLINE.get().map_or(false, |c| {
         c.transport == Transport::Shmem && c.mode == Mode::Controller
     }) {
-        let mut base = SHMEM.devices[mid].region.base;
-        let mut size = SHMEM.devices[mid].region.size;
-
         // Offset base and size to exclude shmem used for client transports
         let num_workers = (*crate::environment::NUM_MACHINES - 1) as u64;
-        base += SHMEM_TRANSPORT_SIZE * num_workers;
-        size = size - SHMEM_TRANSPORT_SIZE * num_workers;
-
-        ShmemRegion { base, size }
-    } else {
-        ShmemRegion {
-            base: SHMEM.devices[mid].region.base,
-            size: SHMEM.devices[mid].region.size,
-        }
+        region.base = region.base + SHMEM_TRANSPORT_SIZE * num_workers;
+        region.size = region.size - (SHMEM_TRANSPORT_SIZE * num_workers) as usize;
     };
 
     log::trace!(
-        "Shmem affinity region: base={:x}, size={:x}, range: [{:X}-{:X}]",
+        "Shmem affinity region: base={:x}, size={:x}, affinity={:x}, range: [{:X}-{:X}]",
         region.base,
         region.size,
+        region.affinity,
         region.base,
         region.base + region.size,
     );
@@ -462,18 +423,31 @@ pub(crate) fn is_shmem_addr(addr: u64, is_affinity: bool, is_kaddr: bool) -> boo
 
     if is_affinity {
         // Check just local machine
-        let frame = get_affinity_shmem().get_frame(offset);
-        let (shmem_start, shmem_size) = (frame.base.as_u64(), frame.size as u64);
+        let frame = get_affinity_shmem();
+        let (shmem_start, shmem_size) = (frame.base.as_u64() + offset, frame.size as u64);
         addr >= shmem_start && addr <= shmem_start + shmem_size
     } else {
         // Check all machines
         for mid in 0..*crate::environment::NUM_MACHINES {
-            let frame = get_affinity_shmem_by_mid(mid).get_frame(offset);
-            let (shmem_start, shmem_size) = (frame.base.as_u64(), frame.size as u64);
+            let frame = get_affinity_shmem_by_mid(mid);
+            let (shmem_start, shmem_size) = (frame.base.as_u64() + offset, frame.size as u64);
             if addr >= shmem_start && addr <= shmem_start + shmem_size {
                 return true;
             }
         }
         false
     }
+}
+
+#[cfg(feature = "rackscale")]
+pub(crate) fn get_shmem_index_by_addr(addr: u64, is_kaddr: bool) -> Option<usize> {
+    let offset = if is_kaddr { KERNEL_BASE } else { 0 };
+    for mid in 0..*crate::environment::NUM_MACHINES {
+        let frame = get_affinity_shmem_by_mid(mid);
+        let (shmem_start, shmem_size) = (frame.base.as_u64() + offset, frame.size as u64);
+        if addr >= shmem_start && addr <= shmem_start + shmem_size {
+            return Some(mid);
+        }
+    }
+    None
 }

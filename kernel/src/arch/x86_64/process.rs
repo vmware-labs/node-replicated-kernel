@@ -83,10 +83,10 @@ lazy_static! {
             .get()
             .map_or(false, |c| c.mode == crate::cmdline::Mode::Controller)
         {
-            // We want to allocate the logs in shared memory
-            use crate::memory::SHARED_AFFINITY;
+            // We want to allocate the logs in controller shared memory
+            use crate::memory::shmem_affinity::get_local_shmem_affinity;
             let pcm = per_core_mem();
-            pcm.set_mem_affinity(SHARED_AFFINITY).expect("Can't change affinity");
+            pcm.set_mem_affinity(get_local_shmem_affinity()).expect("Can't change affinity");
         } else {
             // Get location of the logs from the controller, who will have created them in shared memory
             use crate::arch::rackscale::get_shmem_structure::{rpc_get_shmem_structure, ShmemStructure};
@@ -193,8 +193,8 @@ fn create_process_table(
 fn create_process_table(
 ) -> ArrayVec<ArrayVec<Arc<Replica<'static, NrProcess<Ring3Process>>>, MAX_PROCESSES>, MAX_NUMA_NODES>
 {
+    use crate::memory::shmem_affinity::get_local_shmem_affinity;
     use crate::memory::shmemalloc::ShmemAlloc;
-    use crate::memory::SHARED_AFFINITY;
 
     if crate::CMDLINE
         .get()
@@ -216,7 +216,7 @@ fn create_process_table(
     // We want to allocate all parts of the log in shared memory
     {
         let pcm = per_core_mem();
-        pcm.set_mem_affinity(SHARED_AFFINITY)
+        pcm.set_mem_affinity(get_local_shmem_affinity())
             .expect("Can't change affinity");
     }
 
@@ -224,7 +224,7 @@ fn create_process_table(
         KernelAllocator::try_refill_tcache(0, MAX_PROCESSES * 5 * numa_nodes, MemType::Mem)
             .expect("Trying to refill the tcache with shmem caused an error");
 
-        let allocator = ShmemAlloc();
+        let allocator = ShmemAlloc::new(get_local_shmem_affinity());
         for pid in 0..MAX_PROCESSES {
             for node in 0..numa_nodes {
                 debug_assert!(!numa_cache[node].is_full());

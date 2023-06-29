@@ -4,6 +4,8 @@
 use alloc::boxed::Box;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
+
+use arrayvec::ArrayVec;
 use hashbrown::HashMap;
 use lazy_static::lazy_static;
 use spin::Mutex;
@@ -12,43 +14,37 @@ use static_assertions as sa;
 use kpi::system::{CpuThread, MachineId};
 
 use crate::arch::rackscale::dcm::DCMNodeId;
-use crate::memory::mcache::MCache;
-use crate::memory::LARGE_PAGE_SIZE;
+use crate::arch::rackscale::FrameCacheBase;
+use crate::arch::MAX_MACHINES;
+use crate::memory::backends::MemManager;
+use crate::memory::shmem_affinity::get_local_shmem_affinity;
+use crate::memory::{mcache::MCache, LARGE_PAGE_SIZE};
 use crate::transport::shmem::get_affinity_shmem;
 
 /// Global state about the local rackscale client
 lazy_static! {
-    pub(crate) static ref CONTROLLER_AFFINITY_SHMEM: Arc<Mutex<Box<FrameCacheShmem>>> =
-        Arc::new(Mutex::new(
-            get_affinity_shmem()
-                .get_shmem_manager(0)
-                .expect("Failed to fetch shmem manager for controller shmem.")
-        ));
+    pub(crate) static ref CONTROLLER_SHMEM_CACHES: Arc<Mutex<ArrayVec<Box<dyn MemManager + Send>, MAX_MACHINES>>> = {
+        let mut shmem_caches = ArrayVec::new();
+        shmem_caches.push(Box::new(MCache::<2048, 2048>::new_with_frame::<2048, 2048>(
+            get_local_shmem_affinity(),
+            get_affinity_shmem(),
+        )) as Box<dyn MemManager + Send>);
+        for i in 1..MAX_MACHINES {
+            shmem_caches.push(Box::new(FrameCacheBase::new(i)) as Box<dyn MemManager + Send>);
+        }
+
+        Arc::new(Mutex::new(shmem_caches))
+    };
 }
-
-/// A cache of pages
-/// TODO(rackscale): think about how we should constrain this?
-///
-/// Used to allocate remote memory (in large chunks)
-pub(crate) type FrameCacheMemslice = MCache<0, 2048>;
-sa::const_assert!(core::mem::size_of::<FrameCacheMemslice>() <= LARGE_PAGE_SIZE);
-sa::const_assert!(core::mem::align_of::<FrameCacheMemslice>() <= LARGE_PAGE_SIZE);
-
-/// A cache of pages
-/// TODO(rackscale): think about how we should constrain this?
-///
-/// Used locally on the controller for, for instance, base logs.
-pub(crate) type FrameCacheShmem = MCache<2048, 2048>;
-sa::const_assert!(core::mem::size_of::<FrameCacheShmem>() <= LARGE_PAGE_SIZE);
-sa::const_assert!(core::mem::align_of::<FrameCacheShmem>() <= LARGE_PAGE_SIZE);
 
 /// This is the state the controller records about each client
 pub(crate) struct PerClientState {
     /// The client believes it has this ID
     pub(crate) mid: MachineId,
 
+    /// TODO(rackscale): think about how we should constrain this?
     /// Memory manager for the affinity shmem for the client
-    pub(crate) shmem_manager: Option<Box<FrameCacheMemslice>>,
+    pub(crate) shmem_manager: Box<MCache<0, 2048>>,
 
     /// A list of the hardware threads belonging to this client and whether the thread is scheduler or not
     /// TODO(rackscale, performance): make this a core map??
@@ -58,7 +54,7 @@ pub(crate) struct PerClientState {
 impl PerClientState {
     pub(crate) fn new(
         mid: MachineId,
-        shmem_manager: Option<Box<FrameCacheMemslice>>,
+        shmem_manager: Box<MCache<0, 2048>>,
         hw_threads: Vec<(CpuThread, bool)>,
     ) -> PerClientState {
         PerClientState {

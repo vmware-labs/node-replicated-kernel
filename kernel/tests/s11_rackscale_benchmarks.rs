@@ -94,13 +94,6 @@ fn rackscale_fxmark_benchmark(is_shmem: bool) {
     }
 
     let machine = Machine::determine();
-    /*
-    let shmem_size = if cfg!(feature = "smoke") || machine.max_cores() <= 32 {
-        SHMEM_SIZE * 2
-    } else {
-        SHMEM_SIZE * 4
-    };
-    */
     let shmem_size = SHMEM_SIZE;
 
     let max_cores = if cfg!(feature = "smoke") {

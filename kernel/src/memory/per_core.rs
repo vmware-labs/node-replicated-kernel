@@ -6,7 +6,6 @@ use core::cell::{RefCell, RefMut};
 use core::fmt;
 use core::sync::atomic::{AtomicBool, Ordering};
 
-use atopology::NodeId;
 use slabmalloc::ZoneAllocator;
 
 use crate::arch::MAX_NUMA_NODES;
@@ -18,8 +17,17 @@ use super::global::GlobalMemory;
 use super::mcache::FrameCacheEarly;
 use super::mcache::FrameCacheSmall;
 
-// TODO(correctness,style): Need to change how affinity is defined, but this will do for now.
-pub(crate) const SHARED_AFFINITY: NodeId = MAX_NUMA_NODES;
+#[cfg(feature = "rackscale")]
+use {
+    super::shmem_affinity::{get_shmem_affinity_index, is_shmem_affinity},
+    crate::arch::MAX_MACHINES,
+};
+
+#[cfg(feature = "rackscale")]
+pub(crate) const MAX_PCM_ALLOCATORS: usize = MAX_NUMA_NODES + MAX_MACHINES;
+
+#[cfg(not(feature = "rackscale"))]
+pub(crate) const MAX_PCM_ALLOCATORS: usize = MAX_NUMA_NODES;
 
 /// State with all "the right" memory managers to handle allocations on a given
 /// core, during normal operations, for a particular `affinity` (NUMA node).
@@ -79,9 +87,8 @@ pub(crate) struct PerCoreMemory {
     /// core needs to allocate memory from another NUMA node. Can have one for
     /// every NUMA node but we intialize it lazily upon calling
     /// `set_mem_affinity`.
-    /// For a shared arena, assume only one at index/affinity SHARED_AFFINITY (which
-    /// is assumed here to be MAX_NUMA_NODES) and initialized with `add_shared_arena`
-    pub memory_arenas: RefCell<[Option<PerCoreAllocatorState>; crate::arch::MAX_NUMA_NODES + 1]>,
+    /// For a shared memory, allocations may be added with `add_shared_arena`
+    pub memory_arenas: RefCell<[Option<PerCoreAllocatorState>; MAX_PCM_ALLOCATORS]>,
 
     /// Contains a bunch of pmem arenas, in case a core needs to allocate mmeory
     /// from another NUMA node. Can have one for every NUMA node but we
@@ -98,7 +105,7 @@ impl PerCoreMemory {
             gmanager: None,
             pgmanager: None,
             ezone_allocator: RefCell::new(EmergencyAllocator::empty()),
-            memory_arenas: RefCell::new([DEFAULT_PHYSICAL_MEMORY_ARENA; MAX_NUMA_NODES + 1]),
+            memory_arenas: RefCell::new([DEFAULT_PHYSICAL_MEMORY_ARENA; MAX_PCM_ALLOCATORS]),
             pmem_arenas: RefCell::new([DEFAULT_PHYSICAL_MEMORY_ARENA; MAX_NUMA_NODES]),
             physical_memory: RefCell::new(PerCoreAllocatorState::new(node)),
             persistent_memory: RefCell::new(PerCoreAllocatorState::new(node)),
@@ -133,20 +140,19 @@ impl PerCoreMemory {
         arenas: &mut [Option<PerCoreAllocatorState>],
         node: atopology::NodeId,
     ) -> Result<(), KError> {
-        if node < arenas.len()
-            && (node < core::cmp::max(1, atopology::MACHINE_TOPOLOGY.num_nodes())
-                || node == SHARED_AFFINITY)
-        {
-            if arenas[node].is_none() {
-                if node == SHARED_AFFINITY {
-                    #[cfg(feature = "rackscale")]
-                    {
-                        arenas[node] = Some(PerCoreAllocatorState::new(node));
-                    }
+        #[cfg(feature = "rackscale")]
+        let is_valid_node = node < arenas.len()
+            && (!is_shmem_affinity(node)
+                && node < core::cmp::max(1, atopology::MACHINE_TOPOLOGY.num_nodes())
+                || (is_shmem_affinity(node)
+                    && get_shmem_affinity_index(node) < *crate::environment::NUM_MACHINES));
 
-                    #[cfg(not(feature = "rackscale"))]
-                    panic!("Shared memory allocators are only supported for rackscale client/controllers");
-                }
+        #[cfg(not(feature = "rackscale"))]
+        let is_valid_node = node < arenas.len()
+            && (node < core::cmp::max(1, atopology::MACHINE_TOPOLOGY.num_nodes()));
+
+        if is_valid_node {
+            if arenas[node].is_none() {
                 arenas[node] = Some(PerCoreAllocatorState::new(node));
             }
             debug_assert!(arenas[node].is_some());

@@ -5,6 +5,8 @@ use abomonation::{decode, encode, unsafe_abomonate, Abomonation};
 use core2::io::Result as IOResult;
 use core2::io::Write;
 
+use atopology::NodeId;
+use kpi::system::MachineId;
 use kpi::FileOperation;
 use rpc::rpc::*;
 use rpc::RPCClient;
@@ -20,7 +22,6 @@ use crate::memory::backends::PhysicalPageProvider;
 use crate::memory::{Frame, PAddr, BASE_PAGE_SIZE};
 use crate::nrproc::NrProcess;
 use crate::process::Pid;
-use crate::transport::shmem::ShmemRegion;
 
 #[derive(Debug)]
 pub(crate) struct AllocatePhysicalReq {
@@ -58,17 +59,14 @@ pub(crate) fn rpc_allocate_physical(pid: Pid, size: u64, affinity: u64) -> KResu
             return Err(KError::from(RPCError::ExtraData));
         }
 
-        if let Ok((node_id, frame_base)) = res {
+        if let Ok((frame_affinity, frame_base)) = res {
             // Associate frame with the local process
-            let shmem_region = ShmemRegion {
-                base: *frame_base,
-                size,
-            };
-            let frame = shmem_region.get_frame(0);
+            let frame = Frame::new(
+                PAddr::from(*frame_base),
+                size as usize,
+                *frame_affinity as NodeId,
+            );
             let fid = NrProcess::<Ring3Process>::allocate_frame_to_process(pid, frame)?;
-
-            // Add frame mapping to client map
-            CLIENT_STATE.add_frame(fid, *node_id);
 
             log::debug!("AllocatePhysical() done");
             return Ok((fid as u64, *frame_base));
@@ -114,16 +112,16 @@ pub(crate) fn handle_allocate_physical(
     // TODO(error_handling): should handle errors gracefully here, maybe percolate to client?
     let frame = {
         let mut client_state = state.get_client_state_by_dcm_id(dcm_node_id).lock();
-        let mut manager = client_state
-            .shmem_manager
-            .as_mut()
-            .expect("No shmem manager found for client");
-
+        let mut manager = client_state.shmem_manager.as_mut();
         manager
             .allocate_large_page()
             .expect("DCM should ensure we have a frame to allocate here.")
     };
 
-    construct_ret(hdr, payload, Ok((dcm_node_id, frame.base.as_u64())));
+    construct_ret(
+        hdr,
+        payload,
+        Ok((frame.affinity as u64, frame.base.as_u64())),
+    );
     Ok(state)
 }

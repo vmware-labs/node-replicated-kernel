@@ -14,7 +14,9 @@ use rpc::rpc::{RPCError, RPCHeader};
 use rpc::RPCClient;
 
 use super::dcm::{node_registration::dcm_register_node, DCMNodeId};
-use crate::arch::rackscale::controller_state::{ControllerState, PerClientState};
+use crate::arch::rackscale::controller_state::{
+    ControllerState, PerClientState, SHMEM_MEMSLICE_ALLOCATORS,
+};
 use crate::error::KResult;
 use crate::memory::backends::AllocatorStatistics;
 use crate::memory::mcache::MCache;
@@ -126,20 +128,20 @@ pub(crate) fn register_client(
         log::debug!("client_threads: {:?}", client_threads);
 
         // Create shmem memory manager
-        let shmem_manager = Box::new(MCache::<0, 2048>::new_with_frame(
+        let frame = Frame::new(
+            PAddr::from(req.shmem_region_base),
+            req.shmem_region_size,
             get_shmem_affinity(req.machine_id),
-            Frame::new(
-                PAddr::from(req.shmem_region_base),
-                req.shmem_region_size,
-                get_shmem_affinity(req.machine_id),
-            ),
-        ));
-
-        let memslices = shmem_manager.free_large_pages() as u64;
+        );
+        let memslices = {
+            let mut shmem_managers = SHMEM_MEMSLICE_ALLOCATORS.lock();
+            let mut shmem_manager = &mut shmem_managers[req.machine_id as usize - 1];
+            shmem_manager.populate_4k_first(frame);
+            shmem_manager.free_large_pages() as u64
+        };
         log::info!(
-            "Created shmem manager on behalf of client {:?}: {:?} ({:?} memslices)",
+            "Created shmem manager on behalf of client {:?}: ({:?} memslices)",
             req.machine_id,
-            shmem_manager,
             memslices
         );
 
@@ -150,7 +152,7 @@ pub(crate) fn register_client(
             dcm_node_id
         );
 
-        let client_state = PerClientState::new(req.machine_id, shmem_manager, client_threads);
+        let client_state = PerClientState::new(req.machine_id, client_threads);
         state.add_client(dcm_node_id, client_state);
         Ok(state)
     } else {

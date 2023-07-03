@@ -11,7 +11,7 @@ use kpi::FileOperation;
 use rpc::rpc::*;
 use rpc::RPCClient;
 
-use super::super::controller_state::ControllerState;
+use super::super::controller_state::{ControllerState, SHMEM_MEMSLICE_ALLOCATORS};
 use super::super::dcm::resource_alloc::dcm_resource_alloc;
 use super::super::kernelrpc::*;
 use crate::arch::process::Ring3Process;
@@ -111,8 +111,9 @@ pub(crate) fn handle_allocate_physical(
 
     // TODO(error_handling): should handle errors gracefully here, maybe percolate to client?
     let frame = {
-        let mut client_state = state.get_client_state_by_dcm_id(dcm_node_id).lock();
-        let mut manager = client_state.shmem_manager.as_mut();
+        let mid = state.dcm_id_to_mid(dcm_node_id);
+        let mut shmem_managers = SHMEM_MEMSLICE_ALLOCATORS.lock();
+        let mut manager = &mut shmem_managers[mid as usize - 1];
         manager
             .allocate_large_page()
             .expect("DCM should ensure we have a frame to allocate here.")

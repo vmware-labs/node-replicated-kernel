@@ -15,7 +15,7 @@ use rpc::rpc::*;
 use rpc::RPCClient;
 
 use super::client_state::CLIENT_STATE;
-use super::controller_state::ControllerState;
+use super::controller_state::{ControllerState, SHMEM_MEMSLICE_ALLOCATORS};
 use super::dcm::{affinity_alloc::dcm_affinity_alloc, resource_alloc::dcm_resource_alloc};
 use super::kernelrpc::*;
 use crate::error::{KError, KResult};
@@ -145,12 +145,10 @@ pub(crate) fn handle_get_shmem_frames(
             return Ok(state);
         }
 
-        // Take the frames from the local allocator
+        // Take the frames from the shmem allocator belonging to the requested mid/node_id
         {
-            let mut client_state = state.get_client_state_by_dcm_id(node_id).lock();
-            let mid = client_state.mid;
-            let mut manager = client_state.shmem_manager.as_mut();
-
+            let mut shmem_managers = SHMEM_MEMSLICE_ALLOCATORS.lock();
+            let mut manager = &mut shmem_managers[mid - 1];
             for _i in 0..num_frames {
                 let frame = manager
                     .allocate_large_page()
@@ -170,12 +168,13 @@ pub(crate) fn handle_get_shmem_frames(
             log::debug!("Received node assignment from DCM: node {:?}", dcm_id);
 
             // TODO(error_handling): should handle errors gracefully here, maybe percolate to client?
-            let mut client_state = state.get_client_state_by_dcm_id(dcm_id).lock();
-            let mut manager = client_state.shmem_manager.as_mut();
+            let mid = state.dcm_id_to_mid(dcm_id) as usize;
+            let mut shmem_managers = SHMEM_MEMSLICE_ALLOCATORS.lock();
+            let mut manager = &mut shmem_managers[mid - 1];
             let frame = manager
                 .allocate_large_page()
                 .expect("DCM OK'd allocation, this should succeed");
-            assert!(frame.affinity == get_shmem_affinity(client_state.mid));
+            assert!(frame.affinity == get_shmem_affinity(mid));
             regions.push(ShmemRegion {
                 base: frame.base.as_u64(),
                 affinity: frame.affinity,

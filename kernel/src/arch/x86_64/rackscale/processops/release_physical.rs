@@ -17,6 +17,7 @@ use super::super::kernelrpc::*;
 use super::super::ControllerState;
 use super::super::CLIENT_STATE;
 use crate::arch::process::Ring3Process;
+use crate::arch::rackscale::controller_state::SHMEM_MEMSLICE_ALLOCATORS;
 use crate::error::{KError, KResult};
 use crate::fs::fd::FileDescriptor;
 use crate::memory::backends::PhysicalPageProvider;
@@ -111,8 +112,8 @@ pub(crate) fn handle_release_physical(
 
     // TODO(error_handling): should handle errors gracefully here, maybe percolate to client?
     let ret = {
-        let mut client_state = state.get_client_state_by_mid(mid).lock();
-        let mut manager = client_state.shmem_manager.as_mut();
+        let mut shmem_managers = SHMEM_MEMSLICE_ALLOCATORS.lock();
+        let mut manager = &mut shmem_managers[mid as usize - 1];
         manager.release_large_page(frame)
     };
 

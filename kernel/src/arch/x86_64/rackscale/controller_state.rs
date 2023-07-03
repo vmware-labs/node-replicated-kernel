@@ -17,10 +17,11 @@ use crate::arch::rackscale::dcm::DCMNodeId;
 use crate::arch::rackscale::FrameCacheBase;
 use crate::arch::MAX_MACHINES;
 use crate::memory::backends::MemManager;
-use crate::memory::shmem_affinity::get_local_shmem_affinity;
+use crate::memory::shmem_affinity::{get_local_shmem_affinity, get_shmem_affinity};
 use crate::memory::{mcache::MCache, LARGE_PAGE_SIZE};
 use crate::transport::shmem::get_affinity_shmem;
 
+/// TODO(rackscale): think about how we should constrain this?
 /// Global state about the local rackscale client
 lazy_static! {
     pub(crate) static ref CONTROLLER_SHMEM_CACHES: Arc<Mutex<ArrayVec<Box<dyn MemManager + Send>, MAX_MACHINES>>> = {
@@ -30,10 +31,25 @@ lazy_static! {
             get_affinity_shmem(),
         )) as Box<dyn MemManager + Send>);
         for i in 1..MAX_MACHINES {
-            shmem_caches.push(Box::new(FrameCacheBase::new(i)) as Box<dyn MemManager + Send>);
+            shmem_caches
+                .push(Box::new(FrameCacheBase::new(get_shmem_affinity(i)))
+                    as Box<dyn MemManager + Send>);
         }
 
         Arc::new(Mutex::new(shmem_caches))
+    };
+}
+
+/// TODO(rackscale): think about how we should constrain this?
+/// TODO(rackscale): want to lock around individual allocators?
+/// Global state about the local rackscale client
+lazy_static! {
+    pub(crate) static ref SHMEM_MEMSLICE_ALLOCATORS: Arc<Mutex<ArrayVec<MCache<0, 2048>, MAX_MACHINES>>> = {
+        let mut shmem_allocators = ArrayVec::new();
+        for i in 0..MAX_MACHINES {
+            shmem_allocators.push(MCache::<0, 2048>::new(get_shmem_affinity(i + 1)));
+        }
+        Arc::new(Mutex::new(shmem_allocators))
     };
 }
 
@@ -42,34 +58,19 @@ pub(crate) struct PerClientState {
     /// The client believes it has this ID
     pub(crate) mid: MachineId,
 
-    /// TODO(rackscale): think about how we should constrain this?
-    /// Memory manager for the affinity shmem for the client
-    pub(crate) shmem_manager: Box<MCache<0, 2048>>,
-
     /// A list of the hardware threads belonging to this client and whether the thread is scheduler or not
     /// TODO(rackscale, performance): make this a core map??
     pub(crate) hw_threads: Vec<(CpuThread, bool)>,
 }
 
 impl PerClientState {
-    pub(crate) fn new(
-        mid: MachineId,
-        shmem_manager: Box<MCache<0, 2048>>,
-        hw_threads: Vec<(CpuThread, bool)>,
-    ) -> PerClientState {
-        PerClientState {
-            mid,
-            shmem_manager,
-            hw_threads,
-        }
+    pub(crate) fn new(mid: MachineId, hw_threads: Vec<(CpuThread, bool)>) -> PerClientState {
+        PerClientState { mid, hw_threads }
     }
 }
 
 /// This is the state of the controller, including all per-client state
 pub(crate) struct ControllerState {
-    /// Maximum number of clients managed by this controller
-    max_clients: usize,
-
     /// State related to each client. We want fast lookup by both keys
     per_client_state: HashMap<DCMNodeId, Arc<Mutex<PerClientState>>>,
     mid_to_dcm_id: HashMap<MachineId, DCMNodeId>,
@@ -78,7 +79,6 @@ pub(crate) struct ControllerState {
 impl ControllerState {
     pub(crate) fn new(max_clients: usize) -> ControllerState {
         ControllerState {
-            max_clients,
             // TODO(rackscale, memory): try_with_capacity??
             per_client_state: HashMap::with_capacity(max_clients),
             mid_to_dcm_id: HashMap::with_capacity(max_clients),
@@ -103,6 +103,10 @@ impl ControllerState {
 
     pub(crate) fn mid_to_dcm_id(&self, mid: MachineId) -> DCMNodeId {
         *self.mid_to_dcm_id.get(&mid).unwrap()
+    }
+
+    pub(crate) fn dcm_id_to_mid(&self, dcm_id: DCMNodeId) -> MachineId {
+        self.get_client_state_by_dcm_id(dcm_id).lock().mid
     }
 
     pub(crate) fn get_client_state_by_mid(&self, mid: MachineId) -> &Arc<Mutex<PerClientState>> {

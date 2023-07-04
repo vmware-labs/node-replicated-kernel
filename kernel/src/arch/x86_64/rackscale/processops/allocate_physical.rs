@@ -105,13 +105,12 @@ pub(crate) fn handle_allocate_physical(
     }
 
     // Let DCM choose node
-    let (_, dcm_node_ids) = dcm_resource_alloc(pid, 0, 1);
-    let dcm_node_id = dcm_node_ids[0];
-    log::debug!("Received node assignment from DCM: node {:?}", dcm_node_id);
+    let (_, mids) = dcm_resource_alloc(pid, 0, 1);
+    let mid = mids[0];
+    log::debug!("Received node assignment from DCM: mid {:?}", mid);
 
     // TODO(error_handling): should handle errors gracefully here, maybe percolate to client?
     let frame = {
-        let mid = state.dcm_id_to_mid(dcm_node_id);
         let mut shmem_managers = SHMEM_MEMSLICE_ALLOCATORS.lock();
         let mut manager = &mut shmem_managers[mid as usize - 1];
         manager

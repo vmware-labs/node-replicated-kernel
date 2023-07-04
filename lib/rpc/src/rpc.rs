@@ -19,6 +19,7 @@ pub enum RPCError {
     ClientConnectError,
     ServerListenError,
     MemoryAllocationError,
+    RegistrationError,
 }
 unsafe_abomonate!(RPCError);
 

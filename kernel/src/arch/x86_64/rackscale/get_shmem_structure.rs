@@ -20,7 +20,7 @@ use crate::arch::kcb::per_core_mem;
 use crate::arch::process::{Ring3Process, PROCESS_LOGS};
 use crate::arch::tlb::{Shootdown, RACKSCALE_CLIENT_WORKQUEUES};
 use crate::error::{KError, KResult};
-use crate::memory::shmem_affinity::get_local_shmem_affinity;
+use crate::memory::shmem_affinity::local_shmem_affinity;
 use crate::memory::vspace::TlbFlushHandle;
 use crate::memory::{kernel_vaddr_to_paddr, paddr_to_kernel_vaddr, PAddr, VAddr};
 use crate::nr::{Op, NR_LOG};
@@ -56,7 +56,7 @@ pub(crate) fn rpc_get_shmem_structure(
 
     // Encode the request
     let req = ShmemStructureRequest {
-        shmem_affinity: get_local_shmem_affinity(),
+        shmem_affinity: local_shmem_affinity(),
         structure: shmem_structure,
     };
     let mut req_data = [0u8; core::mem::size_of::<ShmemStructureRequest>()];

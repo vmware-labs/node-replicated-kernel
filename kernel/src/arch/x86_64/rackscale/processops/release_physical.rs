@@ -12,7 +12,6 @@ use rpc::rpc::*;
 use rpc::RPCClient;
 
 use super::super::dcm::resource_release::dcm_resource_release;
-use super::super::dcm::DCMNodeId;
 use super::super::kernelrpc::*;
 use super::super::ControllerState;
 use super::super::CLIENT_STATE;
@@ -21,7 +20,7 @@ use crate::arch::rackscale::controller_state::SHMEM_MEMSLICE_ALLOCATORS;
 use crate::error::{KError, KResult};
 use crate::fs::fd::FileDescriptor;
 use crate::memory::backends::PhysicalPageProvider;
-use crate::memory::shmem_affinity::get_shmem_affinity_index;
+use crate::memory::shmem_affinity::shmem_affinity_to_mid;
 use crate::memory::{Frame, PAddr, LARGE_PAGE_SIZE};
 use crate::nrproc::NrProcess;
 use crate::process::Pid;
@@ -92,15 +91,13 @@ pub(crate) fn handle_release_physical(
             return Ok(state);
         }
     };
-    let mid = get_shmem_affinity_index(req.affinity);
-    let node_id = state.mid_to_dcm_id(mid);
+    let mid = shmem_affinity_to_mid(req.affinity);
     log::debug!(
-        "ReleasePhysical(frame_base={:x?}, frame_size={:?}), affinity={:?} mid={:?} dcm_node_id={:?}",
+        "ReleasePhysical(frame_base={:x?}, frame_size={:?}), affinity={:?} mid={:?}",
         req.frame_base,
         req.frame_size,
         req.affinity,
         mid,
-        node_id,
     );
 
     // we only allocate in large frames, so let's also deallocate in large frames.
@@ -121,7 +118,7 @@ pub(crate) fn handle_release_physical(
     let res = match ret {
         Ok(()) => {
             // Tell DCM the resource is no longer being used
-            if dcm_resource_release(node_id, req.pid, false) == 0 {
+            if dcm_resource_release(mid, req.pid, false) == 0 {
                 log::debug!("DCM release resource was successful");
                 Ok((0, 0))
             } else {

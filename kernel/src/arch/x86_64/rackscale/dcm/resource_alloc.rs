@@ -5,12 +5,13 @@ use alloc::vec::Vec;
 
 use fallible_collections::FallibleVecGlobal;
 
+use kpi::system::MachineId;
 use rpc::rpc::RPCType;
 use rpc::RPCClient;
 use rpc::RPCServer;
 
 use super::super::kernelrpc::*;
-use super::{DCMNodeId, DCMOps, DCM_INTERFACE};
+use super::{DCMOps, DCM_INTERFACE};
 
 #[derive(Debug, Default)]
 #[repr(C)]
@@ -55,7 +56,7 @@ pub(crate) fn dcm_resource_alloc(
     pid: usize,
     cores: u64,
     memslices: u64,
-) -> (Vec<DCMNodeId>, Vec<DCMNodeId>) {
+) -> (Vec<MachineId>, Vec<MachineId>) {
     // TODO(rackscale): make debug assert
     assert!(cores > 0 || memslices > 0);
     log::debug!(
@@ -102,9 +103,9 @@ pub(crate) fn dcm_resource_alloc(
                     panic!("AllocIds do not match!");
                 }
                 if alloc_id - res.alloc_id < cores {
-                    dcm_node_for_cores.push(node);
+                    dcm_node_for_cores.push(node as MachineId);
                 } else {
-                    dcm_node_for_memslices.push(node);
+                    dcm_node_for_memslices.push(node as MachineId);
                 }
                 received_allocations += 1;
             }

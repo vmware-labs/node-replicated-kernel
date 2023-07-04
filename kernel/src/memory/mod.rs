@@ -56,7 +56,7 @@ static MEM_PROVIDER: KernelAllocator = KernelAllocator {
 #[cfg(feature = "rackscale")]
 use {
     atopology::NodeId,
-    shmem_affinity::{get_shmem_affinity_index, is_shmem_affinity},
+    shmem_affinity::{is_shmem_affinity, shmem_affinity_to_mid},
 };
 
 /// Different types of allocator that the KernelAllocator can use.
@@ -335,14 +335,17 @@ impl KernelAllocator {
         needed_base_pages: usize,
         needed_large_pages: usize,
     ) -> Result<(), KError> {
+        use fallible_collections::FallibleVecGlobal;
+
         use crate::arch::rackscale::controller_state::CONTROLLER_SHMEM_CACHES;
+        use crate::arch::rackscale::dcm::affinity_alloc::dcm_affinity_alloc;
         use crate::arch::rackscale::get_shmem_frames::rpc_get_shmem_frames;
         use crate::arch::rackscale::CLIENT_STATE;
 
         // We only request at large page granularity
         let mut total_needed_large_pages = needed_large_pages;
         let mut total_needed_base_pages = needed_base_pages;
-        let affinity_index = get_shmem_affinity_index(affinity);
+        let affinity_index = shmem_affinity_to_mid(affinity);
         let is_controller = crate::CMDLINE
             .get()
             .map_or(false, |c| c.mode == crate::cmdline::Mode::Controller);
@@ -395,18 +398,26 @@ impl KernelAllocator {
             }
         }
 
-        // Refill by asking DCM for memory.
+        // We shouldn't call an RPC while using shmem as memory allocator, so use current node
         {
             let pcm = try_per_core_mem().ok_or(KError::KcbUnavailable)?;
-            // We shouldn't call an RPC while using shmem as memory allocator.
-            // So use current node
             pcm.set_mem_affinity(*crate::environment::NODE_ID)
                 .expect("Can't change affinity");
-        }
+        };
 
-        // TODO: call different function for controller.
-        // Query controller (DCM) to get frames of shmem
-        let large_shmem_frames = rpc_get_shmem_frames(None, total_needed_large_pages)?;
+        // Refill by asking DCM for memory.
+        let large_shmem_frames = if is_controller {
+            let regions =
+                dcm_affinity_alloc(shmem_affinity_to_mid(affinity), total_needed_large_pages)?;
+            let mut frames =
+                Vec::try_with_capacity(regions.len()).expect("Failed to allocate space for frames");
+            for r in regions {
+                frames.push(Frame::new(PAddr::from(r.base), LARGE_PAGE_SIZE, r.affinity));
+            }
+            frames
+        } else {
+            rpc_get_shmem_frames(None, total_needed_large_pages)?
+        };
 
         // Reset to shmem manager
         let pcm = try_per_core_mem().ok_or(KError::KcbUnavailable)?;

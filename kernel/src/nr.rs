@@ -32,10 +32,10 @@ lazy_static! {
         {
             use node_replication::Log;
             use crate::arch::kcb::per_core_mem;
-            use crate::memory::{LARGE_PAGE_SIZE, shmem_affinity::get_local_shmem_affinity};
+            use crate::memory::{LARGE_PAGE_SIZE, shmem_affinity::local_shmem_affinity};
 
             let pcm = per_core_mem();
-            pcm.set_mem_affinity(get_local_shmem_affinity())
+            pcm.set_mem_affinity(local_shmem_affinity())
                 .expect("Can't change affinity");
 
             let log = Arc::try_new(Log::<Op>::new(LARGE_PAGE_SIZE)).expect("Not enough memory to initialize system");

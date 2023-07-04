@@ -19,7 +19,7 @@ use super::mcache::FrameCacheSmall;
 
 #[cfg(feature = "rackscale")]
 use {
-    super::shmem_affinity::{get_shmem_affinity_index, is_shmem_affinity},
+    super::shmem_affinity::{is_shmem_affinity, shmem_affinity_to_mid},
     crate::arch::MAX_MACHINES,
 };
 
@@ -145,7 +145,7 @@ impl PerCoreMemory {
             && (!is_shmem_affinity(node)
                 && node < core::cmp::max(1, atopology::MACHINE_TOPOLOGY.num_nodes())
                 || (is_shmem_affinity(node)
-                    && get_shmem_affinity_index(node) < *crate::environment::NUM_MACHINES));
+                    && shmem_affinity_to_mid(node) < *crate::environment::NUM_MACHINES));
 
         #[cfg(not(feature = "rackscale"))]
         let is_valid_node = node < arenas.len()

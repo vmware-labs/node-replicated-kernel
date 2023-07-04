@@ -68,9 +68,9 @@ pub(crate) fn run() {
         .get()
         .map_or(false, |c| c.transport == Transport::Shmem)
     {
-        for machine_id in 1..=num_clients {
+        for mid in 1..=num_clients {
             let transport = Box::try_new(
-                create_shmem_transport(machine_id.try_into().unwrap())
+                create_shmem_transport(mid.try_into().unwrap())
                     .expect("Failed to create shmem transport"),
             )
             .expect("Out of memory during init");
@@ -90,6 +90,35 @@ pub(crate) fn run() {
         controller_state = server
             .add_client(&CLIENT_REGISTRAR, controller_state)
             .expect("Failed to connect to remote server");
+    }
+
+    #[cfg(feature = "test-controller-shmem-alloc")]
+    {
+        // We don't put this in integration.rs because it must happen midway-through controller initialization
+        use crate::arch::debug::shutdown;
+        use crate::arch::rackscale::dcm::affinity_alloc::dcm_affinity_alloc;
+        use crate::memory::shmem_affinity::mid_to_shmem_affinity;
+        use crate::transport::shmem::SHMEM;
+        use crate::ExitReason;
+
+        let LARGE_PAGES_PER_CLIENT = 2;
+
+        for mid in 1..(num_clients + 1) {
+            let regions = dcm_affinity_alloc(mid, LARGE_PAGES_PER_CLIENT)
+                .expect("Controller failed to allocate!");
+            assert!(regions.len() == LARGE_PAGES_PER_CLIENT);
+            for i in 0..LARGE_PAGES_PER_CLIENT {
+                assert!(
+                    regions[i].base >= SHMEM.devices[mid].region.base.as_u64()
+                        && regions[i].base
+                            < SHMEM.devices[mid].region.base.as_u64()
+                                + SHMEM.devices[mid].region.size as u64
+                );
+                assert!(regions[i].affinity == mid_to_shmem_affinity(mid));
+            }
+        }
+        log::info!("controller_shmem_alloc OK");
+        shutdown(ExitReason::Ok);
     }
 
     // Start running the RPC server

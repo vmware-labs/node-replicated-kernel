@@ -13,26 +13,24 @@ use rpc::client::Client;
 use rpc::rpc::{RPCError, RPCHeader};
 use rpc::RPCClient;
 
-use super::dcm::{node_registration::dcm_register_node, DCMNodeId};
-use crate::arch::rackscale::controller_state::{
-    ControllerState, PerClientState, SHMEM_MEMSLICE_ALLOCATORS,
-};
+use super::dcm::node_registration::dcm_register_node;
+use crate::arch::rackscale::controller_state::{ControllerState, SHMEM_MEMSLICE_ALLOCATORS};
 use crate::error::KResult;
 use crate::memory::backends::AllocatorStatistics;
 use crate::memory::mcache::MCache;
-use crate::memory::shmem_affinity::get_shmem_affinity;
+use crate::memory::shmem_affinity::mid_to_shmem_affinity;
 use crate::memory::{Frame, PAddr, LARGE_PAGE_SIZE};
 use crate::transport::shmem::get_affinity_shmem;
 
 #[derive(Debug, Default)]
 pub(crate) struct ClientRegistrationRequest {
-    pub(crate) machine_id: MachineId,
+    pub(crate) mid: MachineId,
     pub(crate) shmem_region_base: u64,
     pub(crate) shmem_region_size: usize,
     pub(crate) num_cores: u64,
 }
 unsafe_abomonate!(
-    ClientRegistrationRequest: machine_id,
+    ClientRegistrationRequest: mid,
     shmem_region_base,
     shmem_region_size,
     num_cores
@@ -65,7 +63,7 @@ pub(crate) fn initialize_client(
 
         // Construct client registration request
         let req = ClientRegistrationRequest {
-            machine_id: *crate::environment::MACHINE_ID,
+            mid: *crate::environment::MACHINE_ID,
             shmem_region_base: shmem_region.base.as_u64(),
             shmem_region_size: shmem_region.size,
             num_cores: num_threads as u64,
@@ -101,7 +99,7 @@ pub(crate) fn register_client(
     {
         log::info!(
             "Received registration request from client {:?} with {:?} cores and shmem {:x?}-{:x?}",
-            req.machine_id,
+            req.mid,
             req.num_cores,
             req.shmem_region_base,
             req.shmem_region_base + req.shmem_region_size as u64
@@ -120,40 +118,33 @@ pub(crate) fn register_client(
             }
         };
 
-        let mut client_threads = Vec::try_with_capacity(hw_threads.len())
-            .expect("Failed to allocate space for client hw thread data");
-        for hwthread in hw_threads {
-            client_threads.push((*hwthread, false));
-        }
-        log::debug!("client_threads: {:?}", client_threads);
-
         // Create shmem memory manager
         let frame = Frame::new(
             PAddr::from(req.shmem_region_base),
             req.shmem_region_size,
-            get_shmem_affinity(req.machine_id),
+            mid_to_shmem_affinity(req.mid),
         );
         let memslices = {
             let mut shmem_managers = SHMEM_MEMSLICE_ALLOCATORS.lock();
-            let mut shmem_manager = &mut shmem_managers[req.machine_id as usize - 1];
+            let mut shmem_manager = &mut shmem_managers[req.mid as usize - 1];
             shmem_manager.populate_4k_first(frame);
             shmem_manager.free_large_pages() as u64
         };
         log::info!(
             "Created shmem manager on behalf of client {:?}: ({:?} memslices)",
-            req.machine_id,
+            req.mid,
             memslices
         );
 
         // Register client resources with DCM
-        let dcm_node_id = dcm_register_node(req.num_cores, memslices);
-        log::info!(
-            "Registered client DCM, assigned dcm_node_id={:?}",
-            dcm_node_id
-        );
+        if dcm_register_node(req.mid, req.num_cores, memslices) {
+            log::info!("Registered client DCM");
+        } else {
+            log::error!("Failed to register client with DCM");
+            return Err(RPCError::RegistrationError);
+        }
 
-        let client_state = PerClientState::new(req.machine_id, client_threads);
-        state.add_client(dcm_node_id, client_state);
+        state.add_client(req.mid, hw_threads);
         Ok(state)
     } else {
         log::error!("Failed to decode client registration request during register_client");

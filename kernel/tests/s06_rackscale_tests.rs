@@ -20,7 +20,7 @@ use testutils::helpers::{
     spawn_shmem_server, wait_for_client_termination, CLIENT_BUILD_DELAY, SHMEM_SIZE,
 };
 use testutils::runner_args::{
-    check_for_successful_exit_no_log, log_qemu_out_with_name,
+    check_for_successful_exit, check_for_successful_exit_no_log, log_qemu_out_with_name,
     wait_for_sigterm_or_successful_exit_no_log, RunnerArgs,
 };
 
@@ -646,7 +646,6 @@ fn s06_rackscale_shmem_shootdown_test() {
             .kernel_feature("shmem")
             .kernel_feature("ethernet")
             .kernel_feature("rackscale")
-            .kernel_feature("test-rackscale-shootdown")
             .release()
             .build(),
     );
@@ -1323,5 +1322,138 @@ fn rackscale_userspace_rumprt_fs(is_shmem: bool) {
     }
 
     client_ret.unwrap();
+    controller_ret.unwrap();
+}
+
+#[cfg(not(feature = "baremetal"))]
+#[test]
+fn s06_rackscale_controller_shmem_alloc() {
+    use std::sync::Arc;
+    use std::thread::sleep;
+    use std::time::Duration;
+
+    let timeout = 120_000;
+    let clients = 2;
+    let mut processes = Vec::with_capacity(clients);
+    let cores = 2;
+
+    setup_network(clients + 1);
+
+    let mut shmem_servers = Vec::new();
+    let mut shmem_sockets = Vec::new();
+    for i in 0..(clients + 1) {
+        let (shmem_socket, shmem_file) = get_shmem_names(Some(i));
+        let shmem_server = spawn_shmem_server(&shmem_socket, &shmem_file, SHMEM_SIZE, None)
+            .expect("Failed to start shmem server");
+        shmem_servers.push(shmem_server);
+        shmem_sockets.push(shmem_socket);
+    }
+
+    let mut dcm = spawn_dcm(1).expect("Failed to start DCM");
+
+    let (tx, rx) = channel();
+    let rx_mut = Arc::new(Mutex::new(rx));
+
+    let build = Arc::new(
+        BuildArgs::default()
+            .module("init")
+            .kernel_feature("shmem")
+            .kernel_feature("ethernet")
+            .kernel_feature("rackscale")
+            .kernel_feature("test-controller-shmem-alloc")
+            .release()
+            .build(),
+    );
+
+    let controller_build = build.clone();
+    let my_shmem_sockets = shmem_sockets.clone();
+    let controller = std::thread::Builder::new()
+        .name("Controller".to_string())
+        .spawn(move || {
+            let cmdline_controller = RunnerArgs::new_with_build("userspace-smp", &controller_build)
+                .timeout(timeout)
+                .cmd("mode=controller transport=shmem")
+                .shmem_size(vec![SHMEM_SIZE as usize; clients + 1])
+                .shmem_path(my_shmem_sockets)
+                .tap("tap0")
+                .no_network_setup()
+                .workers(clients + 1)
+                .use_vmxnet3();
+
+            let mut output = String::new();
+            let mut qemu_run = || -> Result<WaitStatus> {
+                let mut p = spawn_nrk(&cmdline_controller)?;
+                output += p.exp_string("controller_shmem_alloc OK")?.as_str();
+                output += p.exp_eof()?.as_str();
+
+                // Notify clients all are done.
+                for _i in 0..clients {
+                    notify_controller_of_termination(&tx);
+                }
+                p.process.exit()
+            };
+            // This will only find sigterm, that's okay
+            check_for_successful_exit(&cmdline_controller, qemu_run(), output);
+        })
+        .expect("Controller thread failed to spawn");
+
+    for i in 0..clients {
+        let tap = format!("tap{}", 2 * (i + 1));
+        let client_build = build.clone();
+        let my_shmem_sockets = shmem_sockets.clone();
+        let my_rx_mut = rx_mut.clone();
+        let client = std::thread::Builder::new()
+            .name(format!("Client{}", i + 1))
+            .spawn(move || {
+                sleep(Duration::from_millis((i + 1) as u64 * CLIENT_BUILD_DELAY));
+                let cmdline_client = RunnerArgs::new_with_build("userspace-smp", &client_build)
+                    .timeout(timeout)
+                    .cmd("mode=client transport=shmem")
+                    .shmem_size(vec![SHMEM_SIZE as usize; clients + 1])
+                    .shmem_path(my_shmem_sockets)
+                    .tap(&tap)
+                    .no_network_setup()
+                    .workers(clients + 1)
+                    .nobuild()
+                    .cores(cores)
+                    .use_vmxnet3();
+
+                let qemu_run = || -> Result<WaitStatus> {
+                    let mut p = spawn_nrk(&cmdline_client)?;
+
+                    // Wait for the shootdown client to complete
+                    let rx = my_rx_mut.lock().expect("Failed to unwrap rx mutex");
+                    wait_for_client_termination::<()>(&rx);
+
+                    let ret = p.process.kill(SIGTERM);
+                    let _ = p.exp_eof()?.as_str();
+                    ret
+                };
+                // Could exit with 'success' or from sigterm, depending on number of clients.
+                let ret = qemu_run();
+                wait_for_sigterm_or_successful_exit_no_log(
+                    &cmdline_client,
+                    ret,
+                    format!("Client{}", i + 1),
+                );
+            })
+            .expect(&format!("Client{} thread failed", i + 1));
+        processes.push(client);
+    }
+
+    let mut client_rets = Vec::with_capacity(clients);
+    for p in processes {
+        client_rets.push(p.join());
+    }
+    let controller_ret = controller.join();
+
+    for shmem_server in shmem_servers.iter_mut() {
+        let _ignore = shmem_server.send_control('c');
+    }
+    let _ignore = dcm.process.kill(SIGKILL);
+
+    for ret in client_rets {
+        ret.unwrap();
+    }
     controller_ret.unwrap();
 }

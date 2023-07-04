@@ -52,8 +52,8 @@ lazy_static! {
             .map_or(false, |c| c.mode == crate::cmdline::Mode::Controller)
         {
             use crate::arch::kcb::per_core_mem;
-            use crate::memory::shmem_affinity::get_local_shmem_affinity;
-            let local_affinity = get_local_shmem_affinity();
+            use crate::memory::shmem_affinity::local_shmem_affinity;
+            let local_affinity = local_shmem_affinity();
 
             // We want to allocate the queues in shared memory
             let affinity = {
@@ -419,7 +419,7 @@ pub(crate) fn shootdown(handle: TlbFlushHandle) {
 pub(crate) fn remote_shootdown(handles: Vec<TlbFlushHandle>) {
     use crate::arch::irq::REMOTE_TLB_WORK_PENDING_SHMEM_VECTOR;
     use crate::arch::kcb::per_core_mem;
-    use crate::memory::shmem_affinity::get_local_shmem_affinity;
+    use crate::memory::shmem_affinity::local_shmem_affinity;
     use crate::transport::shmem::SHMEM;
 
     let my_mtid = kpi::system::mtid_from_gtid(*crate::environment::CORE_ID);
@@ -442,7 +442,7 @@ pub(crate) fn remote_shootdown(handles: Vec<TlbFlushHandle>) {
                 // We want to allocate the logs in shared memory
                 let pcm = per_core_mem();
                 let affinity = pcm.physical_memory.borrow().affinity;
-                pcm.set_mem_affinity(get_local_shmem_affinity())
+                pcm.set_mem_affinity(local_shmem_affinity())
                     .expect("Can't change affinity");
                 affinity
             };

@@ -21,15 +21,15 @@ use crate::fallible_string::TryString;
 
 #[derive(Debug)]
 pub(crate) struct LogReq {
-    pub machine_id: MachineId,
+    pub mid: MachineId,
 }
-unsafe_abomonate!(LogReq: machine_id);
+unsafe_abomonate!(LogReq: mid);
 
 pub(crate) fn rpc_log(msg: String) -> KResult<(u64, u64)> {
     if let Some(print_str) = SerialControl::buffered_print_and_return(&msg) {
         // Construct request data
         let req = LogReq {
-            machine_id: *crate::environment::MACHINE_ID,
+            mid: *crate::environment::MACHINE_ID,
         };
         let mut req_data = [0u8; core::mem::size_of::<LogReq>()];
         unsafe { encode(&req, &mut (&mut req_data).as_mut()) }
@@ -70,7 +70,7 @@ pub(crate) fn handle_log(
         match core::str::from_utf8(
             &remaining[0..(hdr.msg_len as usize - core::mem::size_of::<LogReq>())],
         ) {
-            Ok(msg_str) => sprint!("RemoteLog({}) {}", res.machine_id, msg_str),
+            Ok(msg_str) => sprint!("RemoteLog({}) {}", res.mid, msg_str),
             Err(e) => log::error!(
                 "log: invalid UTF-8 string: {:?}",
                 &payload[0..hdr.msg_len as usize]

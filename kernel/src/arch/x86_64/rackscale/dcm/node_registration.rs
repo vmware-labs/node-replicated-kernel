@@ -1,14 +1,16 @@
 // Copyright © 2022 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
+use kpi::system::MachineId;
 use rpc::rpc::RPCType;
 use rpc::RPCClient;
 
-use super::{DCMNodeId, DCMOps, DCM_INTERFACE};
+use super::{DCMOps, DCM_INTERFACE};
 
 #[derive(Debug, Default)]
 #[repr(C)]
 struct NodeRegistrationRequest {
+    mid: u64,
     cores: u64,
     memslices: u64,
 }
@@ -30,7 +32,7 @@ impl NodeRegistrationRequest {
 #[derive(Debug, Default)]
 #[repr(C)]
 struct NodeRegistrationResponse {
-    node_id: DCMNodeId,
+    is_success: bool,
 }
 const RES_SIZE: usize = core::mem::size_of::<NodeRegistrationResponse>();
 
@@ -47,10 +49,14 @@ impl NodeRegistrationResponse {
     }
 }
 
-pub(crate) fn dcm_register_node(cores: u64, memslices: u64) -> DCMNodeId {
+pub(crate) fn dcm_register_node(mid: MachineId, cores: u64, memslices: u64) -> bool {
     // Create request and space for response
-    let req = NodeRegistrationRequest { cores, memslices };
-    let mut res = NodeRegistrationResponse { node_id: 0 };
+    let req = NodeRegistrationRequest {
+        mid: mid as u64,
+        cores,
+        memslices,
+    };
+    let mut res = NodeRegistrationResponse { is_success: false };
 
     // Send call, get allocation response in return
     {
@@ -65,6 +71,6 @@ pub(crate) fn dcm_register_node(cores: u64, memslices: u64) -> DCMNodeId {
             .expect("Failed to send register node RPC to DCM");
     }
 
-    log::debug!("Received node id in response: {:?}", res.node_id);
-    return res.node_id;
+    log::debug!("Registered node is successful? {:?}", res.is_success);
+    return res.is_success;
 }

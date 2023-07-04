@@ -1,19 +1,24 @@
-// Copyright © 2022 VMware, Inc. All Rights Reserved.
+// Copyright © 2023 University of Colorado Boulder and VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
+use alloc::vec::Vec;
+
+use kpi::system::MachineId;
 use rpc::rpc::RPCType;
 use rpc::RPCClient;
-use smoltcp::socket::UdpSocket;
-use smoltcp::time::Instant;
 
+use super::super::controller_state::SHMEM_MEMSLICE_ALLOCATORS;
+use super::super::get_shmem_frames::ShmemRegion;
 use super::super::kernelrpc::*;
-use super::{DCMNodeId, DCMOps, DCM_INTERFACE};
-use crate::transport::ethernet::ETHERNET_IFACE;
+use super::{DCMOps, DCM_INTERFACE};
+use crate::error::{KError, KResult};
+use crate::memory::backends::PhysicalPageProvider;
+use crate::memory::shmem_affinity::mid_to_shmem_affinity;
 
 #[derive(Debug, Default)]
 #[repr(C)]
 struct AffinityAllocReq {
-    node_id: DCMNodeId,
+    mid: u64,
     num_cores: u64,
     num_memslices: u64,
 }
@@ -46,31 +51,57 @@ impl AffinityAllocRes {
     }
 }
 
-pub(crate) fn dcm_affinity_alloc(node_id: DCMNodeId, num_memslices: usize) -> bool {
-    assert!(num_memslices > 0);
-
-    let req = AffinityAllocReq {
-        node_id,
-        num_cores: 0,
-        num_memslices: num_memslices as u64,
-    };
+pub(crate) fn dcm_affinity_alloc(
+    mid: MachineId,
+    num_memslices: usize,
+) -> KResult<Vec<ShmemRegion>> {
+    // controller (mid == 0) shmem is not managed by DCM
+    assert!(mid != 0);
+    debug_assert!(num_memslices > 0);
     log::debug!(
-        "dcm_affinity_alloc(node={:?}, cores={:?}, memslices={:?})",
-        node_id,
+        "dcm_affinity_alloc(mid={:?}, cores={:?}, memslices={:?})",
+        mid,
         0,
         num_memslices
     );
+
+    // Prepare RPC request and return
+    let req = AffinityAllocReq {
+        mid: mid as u64,
+        num_cores: 0,
+        num_memslices: num_memslices as u64,
+    };
     let mut res = AffinityAllocRes { can_satisfy: false };
 
-    DCM_INTERFACE
-        .lock()
-        .client
-        .call(
-            DCMOps::AffinityAlloc as RPCType,
-            unsafe { &[req.as_bytes()] },
-            unsafe { &mut [res.as_mut_bytes()] },
-        )
-        .expect("Failed to send resource alloc RPC to DCM");
-    log::debug!("Can the allocation be satisfied? {:?}", res.can_satisfy);
-    return res.can_satisfy;
+    // Ask DCM to make sure we can safely take from the shmem allocators
+    DCM_INTERFACE.lock().client.call(
+        DCMOps::AffinityAlloc as RPCType,
+        unsafe { &[req.as_bytes()] },
+        unsafe { &mut [res.as_mut_bytes()] },
+    )?;
+
+    // TODO(rackscales): if it fails, ask for memory from somewhere else??
+    // Maybe implement this with a boolean "force" mode?
+    if !res.can_satisfy {
+        log::error!("dcm_affinity_alloc failed due to lack of memory");
+        return Err(KError::DCMNotEnoughMemory);
+    }
+
+    // Take the frames from the shmem allocator belonging to the requested mid
+    let mut regions = Vec::<ShmemRegion>::new();
+    {
+        let mut shmem_managers = SHMEM_MEMSLICE_ALLOCATORS.lock();
+        let mut manager = &mut shmem_managers[mid - 1];
+        for _i in 0..num_memslices {
+            let frame = manager
+                .allocate_large_page()
+                .expect("DCM OK'd allocation, this should succeed");
+            assert!(frame.affinity == mid_to_shmem_affinity(mid));
+            regions.push(ShmemRegion {
+                base: frame.base.as_u64(),
+                affinity: frame.affinity,
+            });
+        }
+    }
+    return Ok(regions);
 }

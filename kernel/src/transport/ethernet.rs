@@ -58,17 +58,17 @@ pub(crate) fn init_network<'a>() -> KResult<Arc<Mutex<Interface<'a, DevQueuePhy>
         // Create the EthernetInterface wrapping the VMX device
         let device = DevQueuePhy::new(vmx).expect("Can't create PHY");
         let neighbor_cache = NeighborCache::new(BTreeMap::new());
-        let machine_id: u8 = (*crate::environment::MACHINE_ID).try_into().unwrap();
+        let mid: u8 = (*crate::environment::MACHINE_ID).try_into().unwrap();
 
         let (ethernet_addr, ip_addrs) = match crate::CMDLINE.get().map_or(Mode::Native, |c| c.mode)
         {
             Mode::Client => (
-                EthernetAddress([0x56, 0xb4, 0x44, 0xe9, 0x62, 0xd0 + machine_id as u8]),
-                [IpCidr::new(IpAddress::v4(172, 31, 0, 11 + machine_id), 24)],
+                EthernetAddress([0x56, 0xb4, 0x44, 0xe9, 0x62, 0xd0 + mid as u8]),
+                [IpCidr::new(IpAddress::v4(172, 31, 0, 11 + mid), 24)],
             ),
             _ => (
-                EthernetAddress([0x56, 0xb4, 0x44, 0xe9, 0x62, 0xd0 + machine_id as u8]),
-                [IpCidr::new(IpAddress::v4(172, 31, 0, 11 + machine_id), 24)],
+                EthernetAddress([0x56, 0xb4, 0x44, 0xe9, 0x62, 0xd0 + mid as u8]),
+                [IpCidr::new(IpAddress::v4(172, 31, 0, 11 + mid), 24)],
             ),
         };
 

@@ -129,5 +129,5 @@ cause-double-fault = []
 test-timer = []
 # test-shmem: print something on a shmem interrupt.
 test-shmem = []
-# test-rackscale-shootodwn: print something on receipt of a remote TLB shootdown.
-test-rackscale-shootdown = []
+# test-shmem: print something after testing if controller can allocate from all clients
+test-controller-shmem-alloc = []

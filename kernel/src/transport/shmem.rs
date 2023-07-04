@@ -13,7 +13,7 @@ use spin::Mutex;
 
 use kpi::KERNEL_BASE;
 
-use crate::memory::shmem_affinity::get_shmem_affinity;
+use crate::memory::shmem_affinity::mid_to_shmem_affinity;
 use crate::memory::vspace::MapAction;
 use crate::memory::{paddr_to_kernel_vaddr, Frame, PAddr, BASE_PAGE_SIZE};
 use crate::pci::claim_devices;
@@ -66,7 +66,7 @@ impl Shmem {
                 Vec::try_with_capacity(pci_devices.len()).expect("Failed to alloc memory");
             let mut i = 0;
             for pci_device in pci_devices {
-                if let Some(shmem_device) = ShmemDevice::new(pci_device, get_shmem_affinity(i)) {
+                if let Some(shmem_device) = ShmemDevice::new(pci_device, mid_to_shmem_affinity(i)) {
                     devices.push(shmem_device);
                 } else {
                     panic!("Failed to initialize shmem device");
@@ -312,17 +312,17 @@ const_assert!(2 * SHMEM_QUEUE_SIZE * MAX_BUFF_LEN <= SHMEM_TRANSPORT_SIZE as usi
 pub(crate) const SHMEM_TRANSPORT_SIZE: u64 = 2 * 1024 * 1024;
 
 #[cfg(feature = "rpc")]
-pub(crate) fn create_shmem_transport(machine_id: MachineId) -> KResult<ShmemTransport<'static>> {
+pub(crate) fn create_shmem_transport(mid: MachineId) -> KResult<ShmemTransport<'static>> {
     use rpc::transport::shmem::allocator::ShmemAllocator;
     use rpc::transport::shmem::Queue;
     use rpc::transport::shmem::{Receiver, Sender};
 
-    let machine_id = machine_id as u64;
+    let mid = mid as u64;
     let (region_size, region_base) =
         { (SHMEM.devices[0].region.size, SHMEM.devices[0].region.base) };
-    assert!(region_size as u64 >= (machine_id + 1) * SHMEM_TRANSPORT_SIZE);
+    assert!(region_size as u64 >= (mid + 1) * SHMEM_TRANSPORT_SIZE);
 
-    let base_addr = region_base + KERNEL_BASE + machine_id * SHMEM_TRANSPORT_SIZE;
+    let base_addr = region_base + KERNEL_BASE + mid * SHMEM_TRANSPORT_SIZE;
     let allocator = ShmemAllocator::new(base_addr.as_u64(), SHMEM_TRANSPORT_SIZE);
     match crate::CMDLINE.get().map_or(Mode::Native, |c| c.mode) {
         Mode::Controller => {
@@ -334,7 +334,7 @@ pub(crate) fn create_shmem_transport(machine_id: MachineId) -> KResult<ShmemTran
             let server_receiver = Receiver::with_shared_queue(client_to_server_queue.clone());
             log::info!(
                 "Controller: Created shared-memory transport for machine {}! size={:?}, base={:?}",
-                machine_id,
+                mid,
                 SHMEM_TRANSPORT_SIZE,
                 base_addr
             );

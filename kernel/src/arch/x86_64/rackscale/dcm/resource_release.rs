@@ -1,19 +1,16 @@
 // Copyright © 2022 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
+use kpi::system::MachineId;
 use rpc::rpc::RPCType;
 use rpc::RPCClient;
-use smoltcp::socket::UdpSocket;
-use smoltcp::time::Instant;
 
-use super::super::kernelrpc::*;
-use super::{DCMNodeId, DCMOps, DCM_INTERFACE};
-use crate::transport::ethernet::ETHERNET_IFACE;
+use super::{DCMOps, DCM_INTERFACE};
 
 #[derive(Debug, Default)]
 #[repr(C)]
 struct ResourceReleaseRequest {
-    node_id: DCMNodeId,
+    mid: u64,
     application: u64,
     cores: u64,
     memslices: u64,
@@ -53,9 +50,9 @@ impl ResourceReleaseResponse {
     }
 }
 
-pub(crate) fn dcm_resource_release(node_id: DCMNodeId, pid: usize, is_core: bool) -> u64 {
+pub(crate) fn dcm_resource_release(mid: MachineId, pid: usize, is_core: bool) -> u64 {
     let req = ResourceReleaseRequest {
-        node_id: node_id,
+        mid: mid as u64,
         application: pid as u64,
         cores: if is_core { 1 } else { 0 },
         memslices: if is_core { 0 } else { 1 },

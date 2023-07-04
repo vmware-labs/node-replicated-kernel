@@ -19,20 +19,20 @@ pub(crate) fn is_shmem_affinity(affinity: NodeId) -> bool {
 /// Get the id of the shmem region
 #[allow(unused)]
 #[inline(always)]
-pub(crate) fn get_shmem_affinity(mid: MachineId) -> NodeId {
+pub(crate) fn mid_to_shmem_affinity(mid: MachineId) -> NodeId {
     // shmem regions are placed after local numa, so offset by MAX_NUMA_NODES
     MAX_NUMA_NODES + (mid as NodeId)
 }
 
 #[allow(unused)]
 #[inline(always)]
-pub(crate) fn get_shmem_affinity_index(affinity: NodeId) -> MachineId {
+pub(crate) fn shmem_affinity_to_mid(affinity: NodeId) -> MachineId {
     // shmem regions are placed after local numa, so offset by MAX_NUMA_NODES
     affinity - MAX_NUMA_NODES
 }
 
 #[allow(unused)]
 #[inline(always)]
-pub(crate) fn get_local_shmem_affinity() -> NodeId {
-    get_shmem_affinity(*crate::environment::MACHINE_ID)
+pub(crate) fn local_shmem_affinity() -> NodeId {
+    mid_to_shmem_affinity(*crate::environment::MACHINE_ID)
 }

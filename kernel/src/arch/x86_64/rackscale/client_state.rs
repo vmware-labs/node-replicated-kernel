@@ -7,11 +7,10 @@ use alloc::vec::Vec;
 use core::cell::RefCell;
 
 use arrayvec::ArrayVec;
-use atopology::NodeId;
 use fallible_collections::FallibleVecGlobal;
 use hashbrown::HashMap;
 use lazy_static::lazy_static;
-use spin::{Mutex, Once};
+use spin::Mutex;
 
 use rpc::client::Client;
 use rpc::rpc::RPCError;
@@ -23,7 +22,7 @@ use crate::arch::MAX_MACHINES;
 use crate::cmdline::Transport;
 use crate::error::{KError, KResult};
 use crate::memory::backends::MemManager;
-use crate::memory::shmem_affinity::{get_local_shmem_affinity, get_shmem_affinity};
+use crate::memory::shmem_affinity::{local_shmem_affinity, mid_to_shmem_affinity};
 use crate::process::MAX_PROCESSES;
 
 /// This is the state the client records about itself
@@ -64,14 +63,13 @@ impl ClientState {
         let mut per_process_base_pages = ArrayVec::new();
         for _i in 0..MAX_PROCESSES {
             // TODO(rackscale): this is a bogus affinity because it should really be "ANY_SHMEM"
-            per_process_base_pages.push(FrameCacheBase::new(get_local_shmem_affinity()));
+            per_process_base_pages.push(FrameCacheBase::new(local_shmem_affinity()));
         }
 
         let mut affinity_base_pages = ArrayVec::new();
         for i in 0..MAX_MACHINES {
-            affinity_base_pages
-                .push(Box::new(FrameCacheBase::new(get_shmem_affinity(i)))
-                    as Box<dyn MemManager + Send>);
+            affinity_base_pages.push(Box::new(FrameCacheBase::new(mid_to_shmem_affinity(i)))
+                as Box<dyn MemManager + Send>);
         }
 
         log::debug!("Finished initializing client state");
@@ -95,7 +93,7 @@ pub(crate) fn create_client_rpc_shmem_buffers() {
         let original_affinity = {
             let pcm = try_per_core_mem().expect("Failed to get pcm when creating rw shmem buffer");
             let affinity = pcm.physical_memory.borrow().affinity;
-            pcm.set_mem_affinity(get_local_shmem_affinity())
+            pcm.set_mem_affinity(local_shmem_affinity())
                 .expect("Can't change affinity");
             affinity
         };

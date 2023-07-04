@@ -3,24 +3,22 @@
 
 use alloc::boxed::Box;
 use alloc::sync::Arc;
-use alloc::vec::Vec;
 
 use abomonation::{decode, unsafe_abomonate, Abomonation};
 use core2::io::Result as IOResult;
 use core2::io::Write;
 use lazy_static::lazy_static;
-use smoltcp::iface::{Interface, SocketHandle};
-use smoltcp::socket::{UdpPacketMetadata, UdpSocket, UdpSocketBuffer};
+use smoltcp::iface::Interface;
 use smoltcp::wire::IpAddress;
 use spin::Mutex;
 
+use kpi::system::MachineId;
 use rpc::api::{RPCHandler, RegistrationHandler};
 use rpc::client::Client;
 use rpc::rpc::{RPCError, RPCHeader, RPCType};
 use rpc::server::Server;
 use rpc::transport::TCPTransport;
 use rpc::RPCServer;
-use vmxnet3::smoltcp::DevQueuePhy;
 
 use crate::error::{KError, KResult};
 use crate::transport::ethernet::{init_ethernet_rpc, ETHERNET_IFACE};
@@ -29,8 +27,6 @@ pub(crate) mod affinity_alloc;
 pub(crate) mod node_registration;
 pub(crate) mod resource_alloc;
 pub(crate) mod resource_release;
-
-pub(crate) type DCMNodeId = u64;
 
 const DCM_CLIENT_PORT: u16 = 10100;
 const DCM_SERVER_PORT: u16 = 10101;
@@ -51,9 +47,9 @@ const DCM_CLIENT_REGISTRAR: RegistrationHandler<Option<(u64, u64)>> = register_d
 #[repr(C)]
 struct NodeAssignment {
     alloc_id: u64,
-    node: DCMNodeId,
+    mid: u64,
 }
-unsafe_abomonate!(NodeAssignment: alloc_id, node);
+unsafe_abomonate!(NodeAssignment: alloc_id, mid);
 
 // RPC Handler function for close() RPCs in the controller
 fn handle_dcm_node_assignment(
@@ -64,12 +60,12 @@ fn handle_dcm_node_assignment(
     // Decode request
     if let Some((req, _)) = unsafe { decode::<NodeAssignment>(payload) } {
         log::debug!(
-            "NodeAssignment(alloc_id={:?}), node={:?}",
+            "NodeAssignment(alloc_id={:?}), mid={:?}",
             req.alloc_id,
-            req.node
+            req.mid
         );
         hdr.msg_len = 0;
-        Ok(Some((req.alloc_id, req.node)))
+        Ok(Some((req.alloc_id, req.mid)))
     } else {
         // Report error if failed to decode request
         Err(RPCError::MalformedRequest)

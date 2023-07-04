@@ -1,6 +1,5 @@
 // Copyright © 2023 University of Colorado and VMware Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
-use alloc::boxed::Box;
 use alloc::vec::Vec;
 use core::fmt::Debug;
 
@@ -20,41 +19,38 @@ use super::dcm::{affinity_alloc::dcm_affinity_alloc, resource_alloc::dcm_resourc
 use super::kernelrpc::*;
 use crate::error::{KError, KResult};
 use crate::memory::backends::PhysicalPageProvider;
-use crate::memory::shmem_affinity::get_shmem_affinity;
+use crate::memory::shmem_affinity::mid_to_shmem_affinity;
 use crate::memory::{Frame, PAddr, LARGE_PAGE_SIZE};
 use crate::process::Pid;
 
 use crate::memory::backends::AllocatorStatistics;
 
 struct ShmemFrameReq {
-    machine_id: Option<MachineId>,
+    mid: Option<MachineId>,
     pid: Option<Pid>,
     num_frames: usize,
 }
-unsafe_abomonate!(ShmemFrameReq: machine_id, pid, num_frames);
+unsafe_abomonate!(ShmemFrameReq: mid, pid, num_frames);
 
-struct ShmemRegion {
-    base: u64,
-    affinity: NodeId,
+pub(crate) struct ShmemRegion {
+    pub(crate) base: u64,
+    pub(crate) affinity: NodeId,
 }
 unsafe_abomonate!(ShmemRegion: base, affinity);
 
 // This isn't truly a syscall
-pub(crate) fn rpc_get_shmem_frames(
-    pid: Option<Pid>,
-    num_frames: usize,
-) -> KResult<Box<Vec<Frame>>> {
+pub(crate) fn rpc_get_shmem_frames(pid: Option<Pid>, num_frames: usize) -> KResult<Vec<Frame>> {
     assert!(num_frames > 0);
     log::debug!("GetShmemFrames({:?})", num_frames);
 
-    let machine_id = if pid.is_none() {
+    let mid = if pid.is_none() {
         Some(*crate::environment::MACHINE_ID)
     } else {
         None
     };
 
     let req = ShmemFrameReq {
-        machine_id,
+        mid,
         pid,
         num_frames,
     };
@@ -87,7 +83,7 @@ pub(crate) fn rpc_get_shmem_frames(
         match ret {
             Ok(_) => {
                 // Construct frames from remaining data
-                let mut frames = Box::new(Vec::<Frame>::new());
+                let mut frames = Vec::<Frame>::new();
                 if let Some((regions, remaining)) = unsafe { decode::<Vec<ShmemRegion>>(remaining) }
                 {
                     if remaining.len() > 0 {
@@ -124,8 +120,8 @@ pub(crate) fn handle_get_shmem_frames(
     log::debug!("Handling get_shmem_frames()");
 
     // Parse request
-    let (machine_id, pid, num_frames) = match unsafe { decode::<ShmemFrameReq>(payload) } {
-        Some((req, _)) => (req.machine_id, req.pid, req.num_frames),
+    let (mid, pid, num_frames) = match unsafe { decode::<ShmemFrameReq>(payload) } {
+        Some((req, _)) => (req.mid, req.pid, req.num_frames),
         None => {
             log::error!("Invalid payload for request: {:?}", hdr);
             construct_error_ret(hdr, payload, KError::from(RPCError::MalformedRequest));
@@ -135,46 +131,29 @@ pub(crate) fn handle_get_shmem_frames(
 
     let mut regions = Vec::<ShmemRegion>::new();
 
-    if let Some(mid) = machine_id {
+    if let Some(mid) = mid {
         // Ask DCM to make sure we can safely take from the local allocators
-        let node_id = state.mid_to_dcm_id(mid);
-        // TODO: if it fails, ask for memory from somewhere else??
-        if !dcm_affinity_alloc(node_id, num_frames) {
-            log::error!("GetShmemFrames failed due to lack of memory");
-            construct_error_ret(hdr, payload, KError::DCMNotEnoughMemory);
-            return Ok(state);
-        }
-
-        // Take the frames from the shmem allocator belonging to the requested mid/node_id
-        {
-            let mut shmem_managers = SHMEM_MEMSLICE_ALLOCATORS.lock();
-            let mut manager = &mut shmem_managers[mid - 1];
-            for _i in 0..num_frames {
-                let frame = manager
-                    .allocate_large_page()
-                    .expect("DCM OK'd allocation, this should succeed");
-                assert!(frame.affinity == get_shmem_affinity(mid));
-                regions.push(ShmemRegion {
-                    base: frame.base.as_u64(),
-                    affinity: frame.affinity,
-                });
+        match dcm_affinity_alloc(mid, num_frames) {
+            Ok(new_regions) => regions = new_regions,
+            Err(kerr) => {
+                construct_error_ret(hdr, payload, kerr);
+                return Ok(state);
             }
         }
     } else if let Some(pid) = pid {
         // Let DCM choose node
-        let (_, dcm_ids) = dcm_resource_alloc(pid, 0, num_frames as u64);
+        let (_, mids) = dcm_resource_alloc(pid, 0, num_frames as u64);
         for i in 0..num_frames {
-            let dcm_id = dcm_ids[i];
-            log::debug!("Received node assignment from DCM: node {:?}", dcm_id);
+            let mid = mids[i];
+            log::debug!("Received node assignment from DCM: node {:?}", mid);
 
             // TODO(error_handling): should handle errors gracefully here, maybe percolate to client?
-            let mid = state.dcm_id_to_mid(dcm_id) as usize;
             let mut shmem_managers = SHMEM_MEMSLICE_ALLOCATORS.lock();
             let mut manager = &mut shmem_managers[mid - 1];
             let frame = manager
                 .allocate_large_page()
                 .expect("DCM OK'd allocation, this should succeed");
-            assert!(frame.affinity == get_shmem_affinity(mid));
+            assert!(frame.affinity == mid_to_shmem_affinity(mid));
             regions.push(ShmemRegion {
                 base: frame.base.as_u64(),
                 affinity: frame.affinity,

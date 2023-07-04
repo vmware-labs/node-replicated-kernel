@@ -11,7 +11,7 @@ use core::ptr::NonNull;
 
 use atopology::NodeId;
 
-use super::shmem_affinity::{get_shmem_affinity_index, is_shmem_affinity};
+use super::shmem_affinity::{is_shmem_affinity, shmem_affinity_to_mid};
 use crate::arch::kcb::per_core_mem;
 
 #[derive(Clone)]
@@ -23,7 +23,7 @@ impl ShmemAlloc {
     pub(crate) fn new(affinity: NodeId) -> ShmemAlloc {
         assert!(
             is_shmem_affinity(affinity)
-                && get_shmem_affinity_index(affinity) < *crate::environment::NUM_MACHINES
+                && shmem_affinity_to_mid(affinity) < *crate::environment::NUM_MACHINES
         );
         ShmemAlloc { affinity }
     }

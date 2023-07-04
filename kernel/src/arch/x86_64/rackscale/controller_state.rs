@@ -6,18 +6,15 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use arrayvec::ArrayVec;
-use hashbrown::HashMap;
 use lazy_static::lazy_static;
 use spin::Mutex;
-use static_assertions as sa;
 
 use kpi::system::{CpuThread, MachineId};
 
-use crate::arch::rackscale::dcm::DCMNodeId;
 use crate::arch::rackscale::FrameCacheBase;
 use crate::arch::MAX_MACHINES;
 use crate::memory::backends::MemManager;
-use crate::memory::shmem_affinity::{get_local_shmem_affinity, get_shmem_affinity};
+use crate::memory::shmem_affinity::{local_shmem_affinity, mid_to_shmem_affinity};
 use crate::memory::{mcache::MCache, LARGE_PAGE_SIZE};
 use crate::transport::shmem::get_affinity_shmem;
 
@@ -27,13 +24,12 @@ lazy_static! {
     pub(crate) static ref CONTROLLER_SHMEM_CACHES: Arc<Mutex<ArrayVec<Box<dyn MemManager + Send>, MAX_MACHINES>>> = {
         let mut shmem_caches = ArrayVec::new();
         shmem_caches.push(Box::new(MCache::<2048, 2048>::new_with_frame::<2048, 2048>(
-            get_local_shmem_affinity(),
+            local_shmem_affinity(),
             get_affinity_shmem(),
         )) as Box<dyn MemManager + Send>);
         for i in 1..MAX_MACHINES {
-            shmem_caches
-                .push(Box::new(FrameCacheBase::new(get_shmem_affinity(i)))
-                    as Box<dyn MemManager + Send>);
+            shmem_caches.push(Box::new(FrameCacheBase::new(mid_to_shmem_affinity(i)))
+                as Box<dyn MemManager + Send>);
         }
 
         Arc::new(Mutex::new(shmem_caches))
@@ -47,7 +43,7 @@ lazy_static! {
     pub(crate) static ref SHMEM_MEMSLICE_ALLOCATORS: Arc<Mutex<ArrayVec<MCache<0, 2048>, MAX_MACHINES>>> = {
         let mut shmem_allocators = ArrayVec::new();
         for i in 0..MAX_MACHINES {
-            shmem_allocators.push(MCache::<0, 2048>::new(get_shmem_affinity(i + 1)));
+            shmem_allocators.push(MCache::<0, 2048>::new(mid_to_shmem_affinity(i + 1)));
         }
         Arc::new(Mutex::new(shmem_allocators))
     };
@@ -71,54 +67,41 @@ impl PerClientState {
 
 /// This is the state of the controller, including all per-client state
 pub(crate) struct ControllerState {
-    /// State related to each client. We want fast lookup by both keys
-    per_client_state: HashMap<DCMNodeId, Arc<Mutex<PerClientState>>>,
-    mid_to_dcm_id: HashMap<MachineId, DCMNodeId>,
+    /// State related to each client.
+    per_client_state: ArrayVec<Arc<Mutex<PerClientState>>, MAX_MACHINES>,
 }
 
 impl ControllerState {
     pub(crate) fn new(max_clients: usize) -> ControllerState {
-        ControllerState {
-            // TODO(rackscale, memory): try_with_capacity??
-            per_client_state: HashMap::with_capacity(max_clients),
-            mid_to_dcm_id: HashMap::with_capacity(max_clients),
+        let mut per_client_state = ArrayVec::new();
+        for i in 0..max_clients {
+            per_client_state.push(Arc::new(Mutex::new(PerClientState::new(i, Vec::new()))));
+        }
+        ControllerState { per_client_state }
+    }
+
+    pub(crate) fn add_client(&mut self, mid: MachineId, threads: &Vec<CpuThread>) {
+        let mut client_state = self.per_client_state[mid - 1].lock();
+        assert!(client_state.hw_threads.len() == 0);
+
+        client_state
+            .hw_threads
+            .try_reserve_exact(threads.len())
+            .expect("Failed to reserve room in hw threads vector");
+        for thread in threads {
+            client_state.hw_threads.push((*thread, false));
         }
     }
 
-    pub(crate) fn add_client(&mut self, dcm_id: DCMNodeId, client_state: PerClientState) {
-        assert!(!self.per_client_state.contains_key(&dcm_id));
-        assert!(!self.mid_to_dcm_id.contains_key(&client_state.mid));
-
-        self.mid_to_dcm_id.insert(client_state.mid, dcm_id);
-        self.per_client_state
-            .insert(dcm_id, Arc::new(Mutex::new(client_state)));
+    pub(crate) fn get_client_state(&self, mid: MachineId) -> &Arc<Mutex<PerClientState>> {
+        &self.per_client_state[mid - 1]
     }
 
-    pub(crate) fn get_client_state_by_dcm_id(
-        &self,
-        dcm_id: DCMNodeId,
-    ) -> &Arc<Mutex<PerClientState>> {
-        self.per_client_state.get(&dcm_id).unwrap()
-    }
-
-    pub(crate) fn mid_to_dcm_id(&self, mid: MachineId) -> DCMNodeId {
-        *self.mid_to_dcm_id.get(&mid).unwrap()
-    }
-
-    pub(crate) fn dcm_id_to_mid(&self, dcm_id: DCMNodeId) -> MachineId {
-        self.get_client_state_by_dcm_id(dcm_id).lock().mid
-    }
-
-    pub(crate) fn get_client_state_by_mid(&self, mid: MachineId) -> &Arc<Mutex<PerClientState>> {
-        let dcm_id = self.mid_to_dcm_id.get(&mid).unwrap();
-        self.per_client_state.get(dcm_id).unwrap()
-    }
-
-    // TODO(efficiency): allocates memory on the fly & also has nested loop
+    // TODO(rackscale, efficiency): allocates memory on the fly & also has nested loop
     // should be called sparingly or rewritten
     pub(crate) fn get_hardware_threads(&self) -> Vec<CpuThread> {
         let mut hw_threads = Vec::new();
-        for client_state in self.per_client_state.values() {
+        for client_state in &self.per_client_state {
             let state = client_state.lock();
             hw_threads
                 .try_reserve_exact(state.hw_threads.len())

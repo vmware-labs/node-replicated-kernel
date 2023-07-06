@@ -22,6 +22,7 @@ use crate::pci::claim_devices;
 use {
     crate::cmdline::{Mode, Transport},
     crate::error::{KError, KResult},
+    crate::memory::shmem_affinity::shmem_affinity_to_mid,
     alloc::boxed::Box,
     kpi::system::MachineId,
     rpc::rpc::MAX_BUFF_LEN,
@@ -442,6 +443,15 @@ pub(crate) fn is_shmem_addr(addr: u64, is_affinity: bool, is_kaddr: bool) -> boo
         }
         false
     }
+}
+
+#[cfg(feature = "rackscale")]
+#[inline(always)]
+pub(crate) fn is_shmem_addr_with_affinity(addr: u64, affinity: NodeId, is_kaddr: bool) -> bool {
+    let offset = if is_kaddr { KERNEL_BASE } else { 0 };
+    let mid = shmem_affinity_to_mid(affinity);
+    let frame = get_affinity_shmem_by_mid(mid);
+    addr >= frame.base.as_u64() + offset && addr < frame.base.as_u64() + offset + frame.size as u64
 }
 
 #[cfg(feature = "rackscale")]

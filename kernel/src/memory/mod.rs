@@ -631,7 +631,7 @@ unsafe impl GlobalAlloc for KernelAllocator {
             |pcm| {
                 #[cfg(feature = "rackscale")]
                 {
-                    use crate::transport::shmem::{is_shmem_addr, SHMEM_INITIALIZED};
+                    use crate::transport::shmem::{is_shmem_addr, is_shmem_addr_with_affinity, SHMEM_INITIALIZED};
                     use core::sync::atomic::Ordering;
 
                     // If shmem is not initialized, do not force it.
@@ -640,10 +640,10 @@ unsafe impl GlobalAlloc for KernelAllocator {
                         let affinity = { pcm.physical_memory.borrow().affinity };
                         if is_shmem_addr(ptr as u64, false, false) {
                             panic!("Should not be trying to dealloc non-kernel mapped shmem in kernel dealloc");
-                        } else if is_shmem_affinity(affinity) && !is_shmem_addr(ptr as u64, false, true) {
-                            log::error!("Trying to deallocate non-shmem into shmem allocator - losing this memory. Oh well.");
+                        } else if is_shmem_affinity(affinity) && !is_shmem_addr_with_affinity(ptr as u64, affinity, true) {
+                            log::error!("Trying to deallocate memory not in shmem affinity into shmem allocator - losing this memory. Oh well.");
                             return;
-                        } else if !is_shmem_affinity(affinity) && (is_shmem_addr(ptr as u64, false, true)){
+                        } else if !is_shmem_affinity(affinity) && is_shmem_addr(ptr as u64, false, true) {
                             log::error!("Trying to deallocate shmem into non-shmem allocator - losing this memory. Oh well.");
                             return;
                         }
@@ -743,7 +743,7 @@ unsafe impl GlobalAlloc for KernelAllocator {
                 } else {
                     #[cfg(feature = "rackscale")]
                     {
-                        use crate::transport::shmem::{is_shmem_addr, SHMEM_INITIALIZED};
+                        use crate::transport::shmem::{is_shmem_addr, is_shmem_addr_with_affinity, SHMEM_INITIALIZED};
                         use core::sync::atomic::Ordering;
 
                         // If shmem is not initialized, do not force it.
@@ -751,10 +751,10 @@ unsafe impl GlobalAlloc for KernelAllocator {
                             let affinity = { pcm.physical_memory.borrow().affinity };
                             if is_shmem_addr(ptr as u64, false, false) {
                                 panic!("Should not be trying to realloc non-kernel mapped shmem in kernel dealloc");
-                            } else if is_shmem_affinity(affinity) && !is_shmem_addr(ptr as u64, false, true) {
+                            } else if is_shmem_affinity(affinity) && !is_shmem_addr_with_affinity(ptr as u64, affinity, true) {
                                 // TODO(rackscale): should switch to non-shmem affinity for alloc below.
                                 // TODO(rackscale): check if shmem is a match for id?
-                                panic!("Trying to realloc non-shmem using shmem allocator");
+                                panic!("Trying to realloc shmem to wrong or non- shmem allocator");
                             } else if !is_shmem_affinity(affinity) && is_shmem_addr(ptr as u64, false, true) {
                                 // TODO(rackscale): should switch to use shmem affinity for alloc below.
                                 // TODO(rackscale): check if shmem is a match for id?

@@ -317,12 +317,14 @@ pub(crate) fn create_shmem_transport(mid: MachineId) -> KResult<ShmemTransport<'
     use rpc::transport::shmem::Queue;
     use rpc::transport::shmem::{Receiver, Sender};
 
-    let mid = mid as u64;
-    let (region_size, region_base) =
-        { (SHMEM.devices[0].region.size, SHMEM.devices[0].region.base) };
-    assert!(region_size as u64 >= (mid + 1) * SHMEM_TRANSPORT_SIZE);
+    let (region_size, base_addr) = {
+        (
+            SHMEM.devices[mid].region.size,
+            SHMEM.devices[mid].region.base + KERNEL_BASE,
+        )
+    };
+    assert!(region_size as u64 >= SHMEM_TRANSPORT_SIZE);
 
-    let base_addr = region_base + KERNEL_BASE + mid * SHMEM_TRANSPORT_SIZE;
     let allocator = ShmemAllocator::new(base_addr.as_u64(), SHMEM_TRANSPORT_SIZE);
     match crate::CMDLINE.get().map_or(Mode::Native, |c| c.mode) {
         Mode::Controller => {
@@ -377,20 +379,23 @@ pub(crate) fn init_shmem_rpc(
 }
 
 #[cfg(feature = "rackscale")]
+#[inline(always)]
 pub(crate) fn get_affinity_shmem() -> Frame {
     get_affinity_shmem_by_mid(*crate::environment::MACHINE_ID)
 }
 
 #[cfg(feature = "rackscale")]
+#[inline(always)]
 pub(crate) fn get_affinity_shmem_by_mid(mid: MachineId) -> Frame {
     let mut region = SHMEM.devices[mid].region;
-    if crate::CMDLINE.get().map_or(false, |c| {
-        c.transport == Transport::Shmem && c.mode == Mode::Controller
-    }) {
+    if crate::CMDLINE
+        .get()
+        .map_or(false, |c| c.transport == Transport::Shmem && mid != 0)
+    {
         // Offset base and size to exclude shmem used for client transports
-        let num_workers = (*crate::environment::NUM_MACHINES - 1) as u64;
-        region.base = region.base + SHMEM_TRANSPORT_SIZE * num_workers;
-        region.size = region.size - (SHMEM_TRANSPORT_SIZE * num_workers) as usize;
+        // we assume that mid=0 is controller, all the rest are clients
+        region.base = region.base + SHMEM_TRANSPORT_SIZE;
+        region.size = region.size - SHMEM_TRANSPORT_SIZE as usize;
     };
 
     log::trace!(

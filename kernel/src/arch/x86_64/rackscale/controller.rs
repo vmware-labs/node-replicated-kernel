@@ -19,7 +19,7 @@ use crate::transport::shmem::create_shmem_transport;
 
 use super::*;
 
-const PORT: u16 = 6970;
+pub(crate) const CONTROLLER_PORT_BASE: u16 = 6970;
 
 /// Controller main method
 pub(crate) fn run() {
@@ -51,19 +51,21 @@ pub(crate) fn run() {
         .get()
         .map_or(false, |c| c.transport == Transport::Ethernet)
     {
-        if num_clients > 1 {
-            panic!("Ethernet transport only supports on client, currently");
-        }
-
-        let transport = Box::try_new(
-            TCPTransport::new(None, PORT, Arc::clone(&ETHERNET_IFACE))
+        for mid in 0..num_clients {
+            let transport = Box::try_new(
+                TCPTransport::new(
+                    None,
+                    CONTROLLER_PORT_BASE + mid as u16,
+                    Arc::clone(&ETHERNET_IFACE),
+                )
                 .expect("Failed to create TCP transport"),
-        )
-        .expect("Out of memory during init");
-        let mut server: Box<dyn RPCServer<ControllerState>> =
-            Box::try_new(Server::new(transport)).expect("Out of memory during init");
-        register_rpcs(&mut server);
-        servers.push(server);
+            )
+            .expect("Out of memory during init");
+            let mut server: Box<dyn RPCServer<ControllerState>> =
+                Box::try_new(Server::new(transport)).expect("Out of memory during init");
+            register_rpcs(&mut server);
+            servers.push(server);
+        }
     } else if crate::CMDLINE
         .get()
         .map_or(false, |c| c.transport == Transport::Shmem)

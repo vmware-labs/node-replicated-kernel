@@ -944,7 +944,18 @@ fn rackscale_userspace_multicore_test(is_shmem: bool) {
 
 #[cfg(not(feature = "baremetal"))]
 #[test]
+fn s06_rackscale_ethernet_userspace_multicore_multiclient() {
+    rackscale_userspace_multicore_multiclient(false);
+}
+
+#[cfg(not(feature = "baremetal"))]
+#[test]
 fn s06_rackscale_shmem_userspace_multicore_multiclient() {
+    rackscale_userspace_multicore_multiclient(true);
+}
+
+#[cfg(not(feature = "baremetal"))]
+fn rackscale_userspace_multicore_multiclient(is_shmem: bool) {
     use std::sync::Arc;
     use std::thread::sleep;
     use std::time::Duration;
@@ -993,9 +1004,14 @@ fn s06_rackscale_shmem_userspace_multicore_multiclient() {
     let controller = std::thread::Builder::new()
         .name("Controller".to_string())
         .spawn(move || {
+            let controller_cmd = if is_shmem {
+                "mode=controller transport=shmem"
+            } else {
+                "mode=controller transport=ethernet"
+            };
             let cmdline_controller = RunnerArgs::new_with_build("userspace-smp", &controller_build)
                 .timeout(timeout)
-                .cmd("mode=controller transport=shmem")
+                .cmd(controller_cmd)
                 .shmem_size(vec![SHMEM_SIZE as usize; 3])
                 .shmem_path(shmem_sockets)
                 .tap("tap0")
@@ -1047,10 +1063,15 @@ fn s06_rackscale_shmem_userspace_multicore_multiclient() {
     let client = std::thread::Builder::new()
         .name("Client1".to_string())
         .spawn(move || {
+            let client_cmd = if is_shmem {
+                "mode=client transport=shmem"
+            } else {
+                "mode=client transport=ethernet"
+            };
             sleep(Duration::from_millis(CLIENT_BUILD_DELAY));
             let cmdline_client = RunnerArgs::new_with_build("userspace-smp", &client1_build)
                 .timeout(timeout)
-                .cmd("mode=client transport=shmem")
+                .cmd(client_cmd)
                 .shmem_size(vec![SHMEM_SIZE as usize; 3])
                 .shmem_path(shmem_sockets)
                 .tap("tap2")
@@ -1103,10 +1124,15 @@ fn s06_rackscale_shmem_userspace_multicore_multiclient() {
     let client2 = std::thread::Builder::new()
         .name("Client2".to_string())
         .spawn(move || {
+            let client_cmd = if is_shmem {
+                "mode=client transport=shmem"
+            } else {
+                "mode=client transport=ethernet"
+            };
             sleep(Duration::from_millis(CLIENT_BUILD_DELAY * 2));
             let cmdline_client = RunnerArgs::new_with_build("userspace-smp", &client2_build)
                 .timeout(timeout)
-                .cmd("mode=client transport=shmem")
+                .cmd(client_cmd)
                 .shmem_size(vec![SHMEM_SIZE as usize; 3])
                 .shmem_path(shmem_sockets)
                 .tap("tap4")

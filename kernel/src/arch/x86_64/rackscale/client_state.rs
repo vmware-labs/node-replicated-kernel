@@ -16,6 +16,7 @@ use rpc::client::Client;
 use rpc::rpc::RPCError;
 
 use crate::arch::kcb::try_per_core_mem;
+use crate::arch::rackscale::controller::CONTROLLER_PORT_BASE;
 use crate::arch::rackscale::fileops::rw::{RW_SHMEM_BUF, RW_SHMEM_BUF_LEN};
 use crate::arch::rackscale::FrameCacheBase;
 use crate::arch::MAX_MACHINES;
@@ -47,7 +48,7 @@ impl ClientState {
             Arc::new(Mutex::new(
                 crate::transport::ethernet::init_ethernet_rpc(
                     smoltcp::wire::IpAddress::v4(172, 31, 0, 11),
-                    6970,
+                    CONTROLLER_PORT_BASE + (*crate::environment::MACHINE_ID as u16 - 1),
                     true,
                 )
                 .expect("Failed to initialize ethernet RPC"),

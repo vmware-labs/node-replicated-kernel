@@ -109,11 +109,19 @@ fn rackscale_fxmark_benchmark(is_shmem: bool) {
         if cfg!(feature = "baseline") {
             setup_network(1);
             let mut num_nodes = 1;
-            for cores in (0..max_cores).step_by(4) {
-                let cores = if cores == 0 { 1 } else { cores };
-                if num_nodes * cores_per_node < cores {
-                    num_nodes = 2 * num_nodes;
+            let mut cores = 1;
+            while cores < max_cores {
+                // Round up to get the number of clients
+                let new_num_nodes = (cores + (cores_per_node - 1)) / cores_per_node;
+
+                // Make sure cores are divisible by num replicas (nodes) if num replicas changes.
+                if num_nodes != new_num_nodes {
+                    num_nodes = new_num_nodes;
+
+                    // ensure total cores is divisible by num nodes
+                    cores = cores - (cores % num_nodes);
                 }
+
                 let timeout = 120_000 + 20000 * cores as u64;
                 let open_files: Vec<usize> = open_files(benchmark, max_cores, max_numa);
 
@@ -217,17 +225,34 @@ fn rackscale_fxmark_benchmark(is_shmem: bool) {
                     check_for_successful_exit(&cmdline_baseline, qemu_run(cores), output);
                     let _ignore = shmem_server.send_control('c');
                 }
+
+                if cores == 1 {
+                    cores = 0;
+                }
+
+                if num_nodes == 3 {
+                    cores += 3;
+                } else {
+                    cores += 4;
+                }
             }
         }
 
         // Run the rackscale test
         let mut num_clients = 1;
         setup_network(num_clients + 1);
-        for total_cores in (0..max_cores).step_by(4) {
-            let total_cores = if total_cores == 0 { 1 } else { total_cores };
-            if num_clients * cores_per_node < total_cores {
-                num_clients = num_clients * 2;
+        let mut total_cores = 1;
+        while total_cores < max_cores {
+            // Round up to get the number of clients
+            let new_num_clients = (total_cores + (cores_per_node - 1)) / cores_per_node;
+
+            // Do network setup if number of clients has changed.
+            if num_clients != new_num_clients {
+                num_clients = new_num_clients;
                 setup_network(num_clients + 1);
+
+                // ensure total cores is divisible by num clients
+                total_cores = total_cores - (total_cores % num_clients);
             }
             let cores = total_cores / num_clients;
             let open_files: Vec<usize> = open_files(benchmark, max_cores, max_numa);
@@ -454,6 +479,16 @@ fn rackscale_fxmark_benchmark(is_shmem: bool) {
                 }
                 controller_ret.unwrap();
             }
+
+            if total_cores == 1 {
+                total_cores = 0;
+            }
+
+            if num_clients == 3 {
+                total_cores += 3;
+            } else {
+                total_cores += 4;
+            }
         }
     }
 }
@@ -564,11 +599,19 @@ fn rackscale_vmops_benchmark(is_shmem: bool, benchtype: VMOpsBench) {
         // Run the baseline test
         setup_network(1);
         let mut num_nodes = 1;
-        for cores in (0..max_cores).step_by(4) {
-            let cores = if cores == 0 { 1 } else { cores };
-            if num_nodes * cores_per_node < cores {
-                num_nodes = 2 * num_nodes;
+        let mut cores = 1;
+        while cores < max_cores {
+            // Round up to get the number of clients
+            let new_num_nodes = (cores + (cores_per_node - 1)) / cores_per_node;
+
+            // Make sure cores are divisible by num replicas (nodes) if num replicas changes.
+            if num_nodes != new_num_nodes {
+                num_nodes = new_num_nodes;
+
+                // ensure total cores is divisible by num nodes
+                cores = cores - (cores % num_nodes);
             }
+
             let timeout = 20_000 * (cores) as u64;
             eprintln!(
                 "\tRunning NrOS vmops baseline with {} core(s) and {} node(s)",
@@ -678,17 +721,34 @@ fn rackscale_vmops_benchmark(is_shmem: bool, benchtype: VMOpsBench) {
             };
             check_for_successful_exit(&cmdline_baseline, qemu_run(cores), output);
             let _ignore = shmem_server.send_control('c');
+
+            if cores == 1 {
+                cores = 0;
+            }
+
+            if num_nodes == 3 {
+                cores += 3;
+            } else {
+                cores += 4;
+            }
         }
     }
 
     // Run the rackscale test
     let mut num_clients = 1;
     setup_network(num_clients + 1);
-    for total_cores in (0..max_cores).step_by(4) {
-        let total_cores = if total_cores == 0 { 1 } else { total_cores };
-        if num_clients * cores_per_node < total_cores {
-            num_clients = num_clients * 2;
+    let mut total_cores = 1;
+    while total_cores < max_cores {
+        // Round up to get the number of clients
+        let new_num_clients = (total_cores + (cores_per_node - 1)) / cores_per_node;
+
+        // Do network setup if number of clients has changed.
+        if num_clients != new_num_clients {
+            num_clients = new_num_clients;
             setup_network(num_clients + 1);
+
+            // ensure total cores is divisible by num clients
+            total_cores = total_cores - (total_cores % num_clients);
         }
         let cores = total_cores / num_clients;
 
@@ -926,6 +986,16 @@ fn rackscale_vmops_benchmark(is_shmem: bool, benchtype: VMOpsBench) {
             client_ret.unwrap();
         }
         controller_ret.unwrap();
+
+        if total_cores == 1 {
+            total_cores = 0;
+        }
+
+        if num_clients == 3 {
+            total_cores += 3;
+        } else {
+            total_cores += 4;
+        }
     }
 }
 

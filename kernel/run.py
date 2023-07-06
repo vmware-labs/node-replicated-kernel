@@ -110,6 +110,9 @@ parser.add_argument("--dcm-path",
 # QEMU related arguments
 parser.add_argument("--qemu-nodes", type=int,
                     help="How many NUMA nodes and sockets (for qemu).", required=False, default=None)
+parser.add_argument("--qemu-node-offset", type=int,
+                    help="What offset to start the numa from (e.g., --qemu-node-offset 2 with " \
+                        "--qemu-nodes 3 would give 2, 3, 0 on a 4 socket machine)", required=False, default=None)
 parser.add_argument("--qemu-cores", type=int,
                     help="How many cores (will get evenly divided among nodes).", default=1)
 parser.add_argument("--qemu-memory", type=int,
@@ -451,6 +454,7 @@ def run_qemu(args):
     if args.qemu_nodes and args.qemu_nodes > 0:
         for node in range(0, args.qemu_nodes):
             if args.qemu_cores > 1:
+                offset = args.qemu_node_offset if args.qemu_node_offset else 0
                 mem_per_node = args.qemu_memory / args.qemu_nodes
                 prealloc = "on" if args.qemu_prealloc else "off"
                 large_pages = ",hugetlb=on,hugetlbsize=2M" if args.qemu_large_pages else ""
@@ -458,7 +462,7 @@ def run_qemu(args):
                 # This is untested, not sure it works
                 # assert args.pvrdma and not args.qemu_default_args
                 qemu_default_args += ['-object', '{},id=nmem{},merge=off,dump=on,prealloc={},size={}M,host-nodes={},policy=bind{},share=on'.format(
-                    backend, node, prealloc, int(mem_per_node), 0 if num_host_numa_nodes == 0 else host_numa_nodes_list[node % num_host_numa_nodes], large_pages)]
+                    backend, node, prealloc, int(mem_per_node), 0 if num_host_numa_nodes == 0 else host_numa_nodes_list[(node + offset) % num_host_numa_nodes], large_pages)]
 
                 qemu_default_args += ['-numa',
                                       "node,memdev=nmem{},nodeid={}".format(node, node)]

@@ -52,7 +52,7 @@ fn rackscale_fxmark_benchmark(is_shmem: bool) {
         vec!["mixX10"]
     } else {
         // For rackscale, for now, just do 100% reads.
-        vec!["mixX0"] //vec!["mixX0", "mixX10", "mixX100"]
+        vec!["mixX0", "mixX10", "mixX100"]
     };
 
     let file_name = if is_shmem {
@@ -101,7 +101,8 @@ fn rackscale_fxmark_benchmark(is_shmem: bool) {
     } else {
         machine.max_cores()
     };
-    let cores_per_node = machine.max_cores() / machine.max_numa_nodes();
+    let max_numa = machine.max_numa_nodes();
+    let cores_per_node = core::cmp::max(1, max_cores / max_numa);
 
     for benchmark in benchmarks {
         // Run the baseline test
@@ -114,8 +115,7 @@ fn rackscale_fxmark_benchmark(is_shmem: bool) {
                     num_nodes = 2 * num_nodes;
                 }
                 let timeout = 120_000 + 20000 * cores as u64;
-                let open_files: Vec<usize> =
-                    open_files(benchmark, max_cores, machine.max_numa_nodes());
+                let open_files: Vec<usize> = open_files(benchmark, max_cores, max_numa);
 
                 for &of in open_files.iter() {
                     eprintln!(
@@ -153,6 +153,7 @@ fn rackscale_fxmark_benchmark(is_shmem: bool) {
                             .workers(1)
                             .cores(cores)
                             .nodes(num_nodes)
+                            .node_offset(0)
                             .setaffinity(placement_cores[0].1.clone())
                             .use_vmxnet3()
                             .cmd(baseline_cmdline.as_str());
@@ -229,7 +230,7 @@ fn rackscale_fxmark_benchmark(is_shmem: bool) {
                 setup_network(num_clients + 1);
             }
             let cores = total_cores / num_clients;
-            let open_files: Vec<usize> = open_files(benchmark, max_cores, machine.max_numa_nodes());
+            let open_files: Vec<usize> = open_files(benchmark, max_cores, max_numa);
             let all_outputs = Arc::new(Mutex::new(Vec::new()));
 
             let mut vm_cores = vec![cores; num_clients + 1];
@@ -281,6 +282,8 @@ fn rackscale_fxmark_benchmark(is_shmem: bool) {
                             .cmd(&controller_cmdline)
                             .shmem_size(vec![shmem_size as usize; num_clients + 1])
                             .shmem_path(my_shmem_sockets)
+                            .nodes(1)
+                            .node_offset(controller_placement_cores[0].0)
                             .tap("tap0")
                             .setaffinity(controller_placement_cores[0].1.clone())
                             .no_network_setup()
@@ -388,6 +391,8 @@ fn rackscale_fxmark_benchmark(is_shmem: bool) {
                                 .no_network_setup()
                                 .workers(num_clients + 1)
                                 .cores(cores)
+                                .nodes(1)
+                                .node_offset(my_placement_cores[nclient].0)
                                 .setaffinity(my_placement_cores[nclient].1.clone())
                                 .use_vmxnet3()
                                 .nobuild()
@@ -540,19 +545,20 @@ fn rackscale_vmops_benchmark(is_shmem: bool, benchtype: VMOpsBench) {
     });
 
     let machine = Machine::determine();
-    let baseline_shmem_size = if cfg!(feature = "smoke") || machine.max_cores() <= 32 {
+    let max_cores = if cfg!(feature = "smoke") {
+        1
+    } else {
+        machine.max_cores()
+    };
+    let baseline_shmem_size = if max_cores <= 32 {
         SHMEM_SIZE * 2
     } else {
         SHMEM_SIZE * 4
     };
     let shmem_size = SHMEM_SIZE;
 
-    let max_cores = if cfg!(feature = "smoke") {
-        1
-    } else {
-        machine.max_cores()
-    };
-    let cores_per_node = machine.max_cores() / machine.max_numa_nodes();
+    let max_numa = machine.max_numa_nodes();
+    let cores_per_node = core::cmp::max(1, max_cores / max_numa);
 
     if cfg!(feature = "baseline") {
         // Run the baseline test
@@ -597,6 +603,7 @@ fn rackscale_vmops_benchmark(is_shmem: bool, benchtype: VMOpsBench) {
                 .workers(1)
                 .cores(cores)
                 .nodes(num_nodes)
+                .node_offset(placement_cores[0].0)
                 .setaffinity(placement_cores[0].1.clone())
                 .use_vmxnet3()
                 .cmd(baseline_cmdline.as_str());
@@ -735,6 +742,8 @@ fn rackscale_vmops_benchmark(is_shmem: bool, benchtype: VMOpsBench) {
                 .shmem_size(vec![shmem_size as usize; num_clients + 1])
                 .shmem_path(my_shmem_sockets)
                 .tap("tap0")
+                .nodes(1)
+                .node_offset(controller_placement_cores[0].0)
                 .no_network_setup()
                 .workers(num_clients + 1)
                 .setaffinity(controller_placement_cores[0].1.clone())
@@ -850,6 +859,8 @@ fn rackscale_vmops_benchmark(is_shmem: bool, benchtype: VMOpsBench) {
                     .no_network_setup()
                     .workers(num_clients + 1)
                     .cores(cores)
+                    .nodes(1)
+                    .node_offset(my_placement_cores[nclient].0)
                     .setaffinity(my_placement_cores[nclient].1.clone())
                     .use_vmxnet3()
                     .nobuild()

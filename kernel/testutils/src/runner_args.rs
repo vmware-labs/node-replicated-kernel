@@ -19,6 +19,8 @@ pub struct RunnerArgs<'a> {
     kernel_test: &'a str,
     /// Number of NUMA nodes the VM should have.
     nodes: usize,
+    /// Which host node to start with
+    node_offset: usize,
     /// Number of cores the VM should have.
     cores: usize,
     /// Total memory of the system (in MiB).
@@ -67,6 +69,7 @@ impl<'a> RunnerArgs<'a> {
             kernel_test,
             build_args: built.with_args.clone(),
             nodes: 0,
+            node_offset: 0,
             cores: 1,
             memory: 1024,
             pmem: 0,
@@ -101,6 +104,7 @@ impl<'a> RunnerArgs<'a> {
             kernel_test,
             build_args: Default::default(),
             nodes: 0,
+            node_offset: 0,
             cores: 1,
             memory: 1024,
             pmem: 0,
@@ -138,6 +142,12 @@ impl<'a> RunnerArgs<'a> {
     /// How many NUMA nodes QEMU should simulate.
     pub fn nodes(mut self, nodes: usize) -> RunnerArgs<'a> {
         self.nodes = nodes;
+        self
+    }
+
+    /// Which host node to start with.
+    pub fn node_offset(mut self, node_offset: usize) -> RunnerArgs<'a> {
+        self.node_offset = node_offset;
         self
     }
 
@@ -307,6 +317,9 @@ impl<'a> RunnerArgs<'a> {
 
                 cmd.push(String::from("--qemu-nodes"));
                 cmd.push(format!("{}", self.nodes));
+
+                cmd.push(String::from("--qemu-node-offset"));
+                cmd.push(format!("{}", self.node_offset));
 
                 cmd.push(String::from("--qemu-memory"));
                 cmd.push(format!("{}", self.memory));

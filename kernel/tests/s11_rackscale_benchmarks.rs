@@ -131,8 +131,13 @@ fn rackscale_fxmark_benchmark(is_shmem: bool) {
                         benchmark, cores, num_nodes, of
                     );
 
-                    let vm_cores = vec![cores / num_nodes; num_nodes]; // client vms
+                    let vm_cores = vec![cores / num_nodes; num_nodes]; // replicas
                     let placement_cores = machine.rackscale_core_affinity(vm_cores);
+                    let mut all_placement_cores = Vec::new();
+                    let placement_offset = placement_cores[0].0;
+                    for placement in placement_cores {
+                        all_placement_cores.extend(placement.1);
+                    }
 
                     let baseline_cmdline = format!(
                         "transport={} initargs={}X{}X{}",
@@ -161,8 +166,8 @@ fn rackscale_fxmark_benchmark(is_shmem: bool) {
                             .workers(1)
                             .cores(cores)
                             .nodes(num_nodes)
-                            .node_offset(0)
-                            .setaffinity(placement_cores[0].1.clone())
+                            .node_offset(placement_offset)
+                            .setaffinity(all_placement_cores)
                             .use_vmxnet3()
                             .cmd(baseline_cmdline.as_str());
 
@@ -637,6 +642,11 @@ fn rackscale_vmops_benchmark(is_shmem: bool, benchtype: VMOpsBench) {
 
             let vm_cores = vec![cores / num_nodes; num_nodes]; // client vms
             let placement_cores = machine.rackscale_core_affinity(vm_cores);
+            let mut all_placement_cores = Vec::new();
+            let placement_offset = placement_cores[0].0;
+            for placement in placement_cores {
+                all_placement_cores.extend(placement.1);
+            }
 
             let mut cmdline_baseline = RunnerArgs::new_with_build("userspace-smp", &build_baseline)
                 .timeout(timeout)
@@ -646,8 +656,8 @@ fn rackscale_vmops_benchmark(is_shmem: bool, benchtype: VMOpsBench) {
                 .workers(1)
                 .cores(cores)
                 .nodes(num_nodes)
-                .node_offset(placement_cores[0].0)
-                .setaffinity(placement_cores[0].1.clone())
+                .node_offset(placement_offset)
+                .setaffinity(all_placement_cores)
                 .use_vmxnet3()
                 .cmd(baseline_cmdline.as_str());
 

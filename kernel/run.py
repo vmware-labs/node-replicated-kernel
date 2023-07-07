@@ -786,7 +786,9 @@ if __name__ == '__main__':
     user = whoami().strip()
 
     # Setup network
-    if not ('no_network_setup' in args and args.no_network_setup) or args.qemu_cores or args.qemu_affinity:
+    requires_net_setup = not ('no_network_setup' in args and args.no_network_setup)
+    requires_core_setup = args.qemu_cores and args.qemu_affinity
+    if requires_net_setup or requires_core_setup:
         try:
             from plumbum.cmd import sudo
             r = sudo['-n']['true']()

@@ -858,7 +858,7 @@ fn s10_memcached_benchmark_internal() {
         32 * 1024 // MB
     };
 
-    let file_name = "memcached_benchmark_internal.csv";
+    let file_name = "s10_memcached_benchmark_internal.csv";
     let _r = std::fs::remove_file(file_name);
 
     for thread in threads.iter() {

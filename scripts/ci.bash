@@ -20,13 +20,14 @@ rm -f rackscale_shmem_fxmark_benchmark.csv
 RUST_TEST_THREADS=1 cargo test --test s10* -- s10_vmops_benchmark --nocapture
 RUST_TEST_THREADS=1 cargo test --test s10* -- s10_vmops_latency_benchmark --nocapture
 RUST_TEST_THREADS=1 cargo test --test s10* -- s10_redis_benchmark_ --nocapture
-#RUST_TEST_THREADS=1 cargo test --test s10* -- s10_memcached_benchmark --nocapture
+RUST_TEST_THREADS=1 cargo test --test s10* -- s10_memcached_benchmark_internal --nocapture
 RUST_TEST_THREADS=1 cargo test --test s10* -- s10_leveldb_benchmark --nocapture
 RUST_TEST_THREADS=1 cargo test --test s10* -- s10_fxmark_bench --nocapture
 
 RUST_TEST_THREADS=1 cargo test --test s11* -- s11_rackscale_shmem_vmops_maptput_benchmark --nocapture
 RUST_TEST_THREADS=1 cargo test --test s11* -- s11_rackscale_shmem_vmops_maplat_benchmark --nocapture
 RUST_TEST_THREADS=1 cargo test --test s11* -- s11_rackscale_shmem_fxmark_bench --nocapture
+RUST_TEST_THREADS=1 cargo test --test s11* -- s11_rackscale_memcached_benchmark_internal --nocapture
 
 # Clone repo
 rm -rf gh-pages
@@ -50,15 +51,15 @@ mv redis_benchmark.csv ${DEPLOY_DIR}
 gzip ${DEPLOY_DIR}/redis_benchmark.csv
 
 # Copy memcached results
-#DEPLOY_DIR="gh-pages/memcached/${CI_MACHINE_TYPE}/${GIT_REV_CURRENT}/"
-#if [ -d "${DEPLOY_DIR}" ]; then
-#    # If we already have results (created the directory),
-#    # we will add the new results in a subdir
-#    DEPLOY_DIR=${DEPLOY_DIR}${DATE_PREFIX}
-#fi
-#mkdir -p ${DEPLOY_DIR}
-#mv memcached_benchmark.csv ${DEPLOY_DIR}
-#gzip ${DEPLOY_DIR}/memcached_benchmark.csv
+DEPLOY_DIR="gh-pages/memcached/${CI_MACHINE_TYPE}/${GIT_REV_CURRENT}/"
+if [ -d "${DEPLOY_DIR}" ]; then
+   # If we already have results (created the directory),
+   # we will add the new results in a subdir
+   DEPLOY_DIR=${DEPLOY_DIR}${DATE_PREFIX}
+fi
+mkdir -p ${DEPLOY_DIR}
+mv s10_memcached_benchmark_internal.csv ${DEPLOY_DIR}
+gzip ${DEPLOY_DIR}/s10_memcached_benchmark_internal.csv
 
 # Copy vmops results
 DEPLOY_DIR="gh-pages/vmops/${CI_MACHINE_TYPE}/${GIT_REV_CURRENT}/"
@@ -120,6 +121,17 @@ fi
 mkdir -p ${DEPLOY_DIR}
 mv rackscale_shmem_fxmark_benchmark.csv ${DEPLOY_DIR}
 gzip ${DEPLOY_DIR}/rackscale_shmem_fxmark_benchmark.csv
+
+# Copy rackscale memcached results
+DEPLOY_DIR="gh-pages/rackscale/memcached/${CI_MACHINE_TYPE}/${GIT_REV_CURRENT}/"
+if [ -d "${DEPLOY_DIR}" ]; then
+    # If we already have results (created the directory),
+    # we will add the new results in a subdir
+    DEPLOY_DIR=${DEPLOY_DIR}${DATE_PREFIX}
+fi
+mkdir -p ${DEPLOY_DIR}
+mv rackscale_shmem_memcached_benchmark.csv.csv ${DEPLOY_DIR}
+gzip ${DEPLOY_DIR}/rackscale_shmem_memcached_benchmark.csv
 
 # Update CI history plots
 python3 gh-pages/_scripts/ci_history.py --append --machine $CI_MACHINE_TYPE

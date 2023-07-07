@@ -832,7 +832,6 @@ fn s10_leveldb_benchmark() {
     }
 }
 
-
 #[test]
 fn s10_memcached_benchmark_internal() {
     let machine = Machine::determine();
@@ -924,14 +923,21 @@ fn s10_memcached_benchmark_internal() {
             // benchmark took 7937984 queries / second
             let (prev, matched) = p.exp_regex(r#"benchmark took (\d+) queries / second"#)?;
             println!("> {}", matched);
-            let b_thpt = matched.replace("benchmark took ", "").replace(" queries / second", "");
+            let b_thpt = matched
+                .replace("benchmark took ", "")
+                .replace(" queries / second", "");
 
             output += prev.as_str();
             output += matched.as_str();
 
             let (prev, matched) = p.exp_regex(r#"benchmark executed (\d+)"#)?;
             println!("> {}", matched);
-            let b_queries = matched.replace("benchmark executed ", "").split(" ").next().unwrap().to_string();
+            let b_queries = matched
+                .replace("benchmark executed ", "")
+                .split(" ")
+                .next()
+                .unwrap()
+                .to_string();
 
             output += prev.as_str();
             output += matched.as_str();
@@ -953,11 +959,7 @@ fn s10_memcached_benchmark_internal() {
             assert!(r.is_ok());
             let out = format!(
                 "memcached,{},{},{},{},{}",
-                b_threads,
-                b_mem,
-                b_queries,
-                b_time,
-                b_thpt,
+                b_threads, b_mem, b_queries, b_time, b_thpt,
             );
             let r = csv_file.write(out.as_bytes());
             assert!(r.is_ok());

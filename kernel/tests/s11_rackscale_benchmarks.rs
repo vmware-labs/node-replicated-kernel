@@ -147,7 +147,8 @@ fn rackscale_fxmark_benchmark(is_shmem: bool) {
                         benchmark
                     );
 
-                    let (shmem_socket, shmem_file) = get_shmem_names(None);
+                    let (shmem_socket, shmem_file) =
+                        get_shmem_names(None, cfg!(feature = "affinity-shmem"));
                     let shmem_affinity = if cfg!(feature = "affinity-shmem") {
                         Some(0)
                     } else {
@@ -285,7 +286,8 @@ fn rackscale_fxmark_benchmark(is_shmem: bool) {
                     } else {
                         None
                     };
-                    let (shmem_socket, shmem_file) = get_shmem_names(Some(i));
+                    let (shmem_socket, shmem_file) =
+                        get_shmem_names(Some(i), cfg!(feature = "affinity-shmem"));
                     let shmem_server =
                         spawn_shmem_server(&shmem_socket, &shmem_file, shmem_size, shmem_affinity)
                             .expect("Failed to start shmem server");
@@ -623,7 +625,8 @@ fn rackscale_vmops_benchmark(is_shmem: bool, benchtype: VMOpsBench) {
                 cores, num_nodes
             );
 
-            let (shmem_socket, shmem_file) = get_shmem_names(None);
+            let (shmem_socket, shmem_file) =
+                get_shmem_names(None, cfg!(feature = "affinity-shmem"));
             let shmem_affinity = if cfg!(feature = "affinity-shmem") {
                 Some(0)
             } else {
@@ -784,7 +787,8 @@ fn rackscale_vmops_benchmark(is_shmem: bool, benchtype: VMOpsBench) {
             } else {
                 None
             };
-            let (shmem_socket, shmem_file) = get_shmem_names(Some(i));
+            let (shmem_socket, shmem_file) =
+                get_shmem_names(Some(i), cfg!(feature = "affinity-shmem"));
             let shmem_server =
                 spawn_shmem_server(&shmem_socket, &shmem_file, shmem_size, shmem_affinity)
                     .expect("Failed to start shmem server");

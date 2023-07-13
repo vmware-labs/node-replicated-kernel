@@ -49,8 +49,8 @@ fn rackscale_userspace_smoke_test(is_shmem: bool) {
 
     setup_network(2);
 
-    let (shmem_socket0, shmem_file0) = get_shmem_names(Some(0));
-    let (shmem_socket1, shmem_file1) = get_shmem_names(Some(1));
+    let (shmem_socket0, shmem_file0) = get_shmem_names(Some(0), false);
+    let (shmem_socket1, shmem_file1) = get_shmem_names(Some(1), false);
     let mut shmem_server0 = spawn_shmem_server(&shmem_socket0, &shmem_file0, SHMEM_SIZE, None)
         .expect("Failed to start shmem server 0");
     let mut shmem_server1 = spawn_shmem_server(&shmem_socket1, &shmem_file1, SHMEM_SIZE, None)
@@ -205,8 +205,8 @@ fn s06_rackscale_phys_alloc_test() {
 
     setup_network(2);
 
-    let (shmem_socket0, shmem_file0) = get_shmem_names(Some(0));
-    let (shmem_socket1, shmem_file1) = get_shmem_names(Some(1));
+    let (shmem_socket0, shmem_file0) = get_shmem_names(Some(0), false);
+    let (shmem_socket1, shmem_file1) = get_shmem_names(Some(1), false);
     let mut shmem_server0 = spawn_shmem_server(&shmem_socket0, &shmem_file0, SHMEM_SIZE, None)
         .expect("Failed to start shmem server 0");
     let mut shmem_server1 = spawn_shmem_server(&shmem_socket1, &shmem_file1, SHMEM_SIZE, None)
@@ -348,8 +348,8 @@ fn rackscale_fs_test(is_shmem: bool) {
 
     setup_network(2);
 
-    let (shmem_socket0, shmem_file0) = get_shmem_names(Some(0));
-    let (shmem_socket1, shmem_file1) = get_shmem_names(Some(1));
+    let (shmem_socket0, shmem_file0) = get_shmem_names(Some(0), false);
+    let (shmem_socket1, shmem_file1) = get_shmem_names(Some(1), false);
     let mut shmem_server0 = spawn_shmem_server(&shmem_socket0, &shmem_file0, SHMEM_SIZE, None)
         .expect("Failed to start shmem server 0");
     let mut shmem_server1 = spawn_shmem_server(&shmem_socket1, &shmem_file1, SHMEM_SIZE, None)
@@ -490,8 +490,8 @@ fn s06_rackscale_shmem_fs_prop_test() {
 
     setup_network(2);
 
-    let (shmem_socket0, shmem_file0) = get_shmem_names(Some(0));
-    let (shmem_socket1, shmem_file1) = get_shmem_names(Some(1));
+    let (shmem_socket0, shmem_file0) = get_shmem_names(Some(0), false);
+    let (shmem_socket1, shmem_file1) = get_shmem_names(Some(1), false);
     let mut shmem_server0 = spawn_shmem_server(&shmem_socket0, &shmem_file0, shmem_size, None)
         .expect("Failed to start shmem server 0");
     let mut shmem_server1 = spawn_shmem_server(&shmem_socket1, &shmem_file1, shmem_size, None)
@@ -625,7 +625,7 @@ fn s06_rackscale_shmem_shootdown_test() {
     let mut shmem_servers = Vec::new();
     let mut shmem_sockets = Vec::new();
     for i in 0..(clients + 1) {
-        let (shmem_socket, shmem_file) = get_shmem_names(Some(i));
+        let (shmem_socket, shmem_file) = get_shmem_names(Some(i), false);
         let shmem_server = spawn_shmem_server(&shmem_socket, &shmem_file, SHMEM_SIZE, None)
             .expect("Failed to start shmem server");
         shmem_servers.push(shmem_server);
@@ -800,8 +800,8 @@ fn rackscale_userspace_multicore_test(is_shmem: bool) {
     setup_network(2);
 
     // Setup ivshmem
-    let (shmem_socket0, shmem_file0) = get_shmem_names(Some(0));
-    let (shmem_socket1, shmem_file1) = get_shmem_names(Some(1));
+    let (shmem_socket0, shmem_file0) = get_shmem_names(Some(0), false);
+    let (shmem_socket1, shmem_file1) = get_shmem_names(Some(1), false);
     let mut shmem_server0 = spawn_shmem_server(&shmem_socket0, &shmem_file0, SHMEM_SIZE, None)
         .expect("Failed to start shmem server 0");
     let mut shmem_server1 = spawn_shmem_server(&shmem_socket1, &shmem_file1, SHMEM_SIZE, None)
@@ -958,9 +958,9 @@ fn s06_rackscale_shmem_userspace_multicore_multiclient() {
     let (tx2, rx2) = channel();
     let all_outputs = Arc::new(Mutex::new(Vec::new()));
 
-    let (shmem_socket0, shmem_file0) = get_shmem_names(Some(0));
-    let (shmem_socket1, shmem_file1) = get_shmem_names(Some(1));
-    let (shmem_socket2, shmem_file2) = get_shmem_names(Some(2));
+    let (shmem_socket0, shmem_file0) = get_shmem_names(Some(0), false);
+    let (shmem_socket1, shmem_file1) = get_shmem_names(Some(1), false);
+    let (shmem_socket2, shmem_file2) = get_shmem_names(Some(2), false);
     let mut shmem_server0 = spawn_shmem_server(&shmem_socket0, &shmem_file0, SHMEM_SIZE, None)
         .expect("Failed to start shmem server 0");
     let mut shmem_server1 = spawn_shmem_server(&shmem_socket1, &shmem_file1, SHMEM_SIZE, None)
@@ -1195,8 +1195,8 @@ fn rackscale_userspace_rumprt_fs(is_shmem: bool) {
     setup_network(2);
 
     // Setup ivshmem file
-    let (shmem_socket0, shmem_file0) = get_shmem_names(Some(0));
-    let (shmem_socket1, shmem_file1) = get_shmem_names(Some(1));
+    let (shmem_socket0, shmem_file0) = get_shmem_names(Some(0), false);
+    let (shmem_socket1, shmem_file1) = get_shmem_names(Some(1), false);
     let mut shmem_server0 = spawn_shmem_server(&shmem_socket0, &shmem_file0, SHMEM_SIZE, None)
         .expect("Failed to start shmem server 0");
     let mut shmem_server1 = spawn_shmem_server(&shmem_socket1, &shmem_file1, SHMEM_SIZE, None)
@@ -1342,7 +1342,7 @@ fn s06_rackscale_controller_shmem_alloc() {
     let mut shmem_servers = Vec::new();
     let mut shmem_sockets = Vec::new();
     for i in 0..(clients + 1) {
-        let (shmem_socket, shmem_file) = get_shmem_names(Some(i));
+        let (shmem_socket, shmem_file) = get_shmem_names(Some(i), false);
         let shmem_server = spawn_shmem_server(&shmem_socket, &shmem_file, SHMEM_SIZE, None)
             .expect("Failed to start shmem server");
         shmem_servers.push(shmem_server);

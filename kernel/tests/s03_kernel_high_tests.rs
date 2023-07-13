@@ -175,7 +175,7 @@ fn s03_phys_alloc() {
 #[test]
 fn s03_ivshmem_write_and_read() {
     let build = BuildArgs::default().build();
-    let (shmem_socket, shmem_file) = get_shmem_names(None);
+    let (shmem_socket, shmem_file) = get_shmem_names(None, false);
     let shmem_sockets = vec![shmem_socket.clone()];
     let shmem_size = 2; // in MB
 
@@ -222,8 +222,8 @@ fn s03_ivshmem_interrupt() {
     use std::time::Duration;
 
     let build = Arc::new(BuildArgs::default().kernel_feature("test-shmem").build());
-    let (shmem_socket0, shmem_file0) = get_shmem_names(Some(0));
-    let (shmem_socket1, shmem_file1) = get_shmem_names(Some(1));
+    let (shmem_socket0, shmem_file0) = get_shmem_names(Some(0), false);
+    let (shmem_socket1, shmem_file1) = get_shmem_names(Some(1), false);
     let shmem_size = 2; // in MB
 
     let mut shmem_server0 = spawn_shmem_server(&shmem_socket0, &shmem_file0, shmem_size, None)
@@ -296,8 +296,8 @@ fn s03_ivshmem_interrupt() {
 #[test]
 fn s03_ivshmem_read_and_write_multi() {
     let build = BuildArgs::default().build();
-    let (shmem_socket0, shmem_file0) = get_shmem_names(Some(0));
-    let (shmem_socket1, shmem_file1) = get_shmem_names(Some(1));
+    let (shmem_socket0, shmem_file0) = get_shmem_names(Some(0), false);
+    let (shmem_socket1, shmem_file1) = get_shmem_names(Some(1), false);
     let shmem_size = 2; // in MB
 
     let shmem_sizes = vec![shmem_size; 2];

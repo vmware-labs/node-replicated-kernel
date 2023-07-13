@@ -51,8 +51,8 @@ pub fn setup_network(num_nodes: usize) {
     network_setup().unwrap();
 }
 
-pub fn get_shmem_names(id: Option<usize>) -> (String, String) {
-    let shmem_path = if cfg!(feature = "affinity-shmem") {
+pub fn get_shmem_names(id: Option<usize>, is_affinity: bool) -> (String, String) {
+    let shmem_path = if is_affinity {
         SHMEM_AFFINITY_PATH
     } else {
         "."

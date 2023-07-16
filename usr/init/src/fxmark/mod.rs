@@ -156,8 +156,6 @@ pub fn max_open_files() -> usize {
     if cfg!(feature = "rackscale") {
         1
     } else {
-        panic!("HELP");
-        /*
         let mut nodes = vibrio::syscalls::System::threads()
             .expect("Can't get system topology")
             .iter()
@@ -166,7 +164,6 @@ pub fn max_open_files() -> usize {
         nodes.sort();
         nodes.dedup();
         nodes.len()
-        */
     }
 }
 

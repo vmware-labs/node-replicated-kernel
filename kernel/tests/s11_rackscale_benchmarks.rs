@@ -49,10 +49,11 @@ fn rackscale_fxmark_benchmark(is_shmem: bool) {
 
     // benchmark naming convention = nameXwrite - mixX10 is - mix benchmark for 10% writes.
     let benchmarks = if cfg!(feature = "smoke") {
-        vec!["mixX10"]
+        vec!["mixX0"]
     } else {
         // For rackscale, for now, just do 100% reads.
-        vec!["mixX0", "mixX10", "mixX100"]
+        vec!["mixX0"]
+        //vec!["mixX0", "mixX10", "mixX100"]
     };
 
     let file_name = if is_shmem {
@@ -66,6 +67,7 @@ fn rackscale_fxmark_benchmark(is_shmem: bool) {
         let mut build = BuildArgs::default()
             .module("init")
             .user_feature("fxmark")
+            .user_feature("rackscale")
             .kernel_feature("shmem")
             .kernel_feature("ethernet")
             .release();
@@ -77,22 +79,7 @@ fn rackscale_fxmark_benchmark(is_shmem: bool) {
         (Arc::new(build.build()), Arc::new(baseline_build.build()))
     };
 
-    fn open_files(benchmark: &str, max_cores: usize, nodes: usize) -> Vec<usize> {
-        if benchmark.contains("mix") {
-            if cfg!(feature = "smoke") {
-                vec![1]
-            } else {
-                if max_cores / nodes == 1 {
-                    vec![1]
-                } else {
-                    vec![1, max_cores / nodes]
-                }
-            }
-        } else {
-            vec![0]
-        }
-    }
-
+    let open_files = 1;
     let machine = Machine::determine();
     let shmem_size = SHMEM_SIZE;
 
@@ -123,114 +110,110 @@ fn rackscale_fxmark_benchmark(is_shmem: bool) {
                 }
 
                 let timeout = 120_000 + 20000 * cores as u64;
-                let open_files: Vec<usize> = open_files(benchmark, max_cores, max_numa);
 
-                for &of in open_files.iter() {
-                    eprintln!(
+                eprintln!(
                         "\tRunning NrOS fxmark {} baseline with {} core(s) and {} node(s) and {} open files",
-                        benchmark, cores, num_nodes, of
+                        benchmark, cores, num_nodes, open_files
                     );
 
-                    let vm_cores = vec![cores / num_nodes; num_nodes]; // replicas
-                    let placement_cores = machine.rackscale_core_affinity(vm_cores);
-                    let mut all_placement_cores = Vec::new();
-                    let placement_offset = placement_cores[0].0;
-                    for placement in placement_cores {
-                        all_placement_cores.extend(placement.1);
-                    }
+                let vm_cores = vec![cores / num_nodes; num_nodes]; // replicas
+                let placement_cores = machine.rackscale_core_affinity(vm_cores);
+                let mut all_placement_cores = Vec::new();
+                let placement_offset = placement_cores[0].0;
+                for placement in placement_cores {
+                    all_placement_cores.extend(placement.1);
+                }
 
-                    let baseline_cmdline = format!(
-                        "transport={} initargs={}X{}X{}",
-                        if is_shmem { "shmem" } else { "ethernet" },
-                        cores,
-                        of,
-                        benchmark
-                    );
+                let baseline_cmdline = format!(
+                    "transport={} initargs={}X{}X{}",
+                    if is_shmem { "shmem" } else { "ethernet" },
+                    cores,
+                    open_files,
+                    benchmark
+                );
 
-                    let (shmem_socket, shmem_file) =
-                        get_shmem_names(None, cfg!(feature = "affinity-shmem"));
-                    let shmem_affinity = if cfg!(feature = "affinity-shmem") {
-                        Some(0)
+                let (shmem_socket, shmem_file) =
+                    get_shmem_names(None, cfg!(feature = "affinity-shmem"));
+                let shmem_affinity = if cfg!(feature = "affinity-shmem") {
+                    Some(0)
+                } else {
+                    None
+                };
+                let mut shmem_server =
+                    spawn_shmem_server(&shmem_socket, &shmem_file, shmem_size, shmem_affinity)
+                        .expect("Failed to start shmem server");
+
+                let mut cmdline_baseline =
+                    RunnerArgs::new_with_build("userspace-smp", &build_baseline)
+                        .timeout(timeout)
+                        .shmem_size(vec![shmem_size as usize])
+                        .shmem_path(vec![shmem_socket])
+                        .tap("tap0")
+                        .workers(1)
+                        .cores(cores)
+                        .nodes(num_nodes)
+                        .node_offset(placement_offset)
+                        .setaffinity(all_placement_cores)
+                        .use_vmxnet3()
+                        .cmd(baseline_cmdline.as_str());
+
+                if cfg!(feature = "smoke") {
+                    cmdline_baseline = cmdline_baseline.memory(8192);
+                } else {
+                    cmdline_baseline = cmdline_baseline.memory(core::cmp::max(73728, cores * 2048));
+                }
+
+                let mut output = String::new();
+                let mut qemu_run = |baseline_cores| -> Result<WaitStatus> {
+                    let mut p = spawn_nrk(&cmdline_baseline)?;
+
+                    // Parse lines like
+                    // `init::fxmark: 1,fxmark,2,2048,10000,4000,1863272`
+                    // write them to a CSV file
+                    let expected_lines = if cfg!(feature = "smoke") {
+                        1
                     } else {
-                        None
+                        baseline_cores * 10
                     };
-                    let mut shmem_server =
-                        spawn_shmem_server(&shmem_socket, &shmem_file, shmem_size, shmem_affinity)
-                            .expect("Failed to start shmem server");
 
-                    let mut cmdline_baseline =
-                        RunnerArgs::new_with_build("userspace-smp", &build_baseline)
-                            .timeout(timeout)
-                            .shmem_size(vec![shmem_size as usize])
-                            .shmem_path(vec![shmem_socket])
-                            .tap("tap0")
-                            .workers(1)
-                            .cores(cores)
-                            .nodes(num_nodes)
-                            .node_offset(placement_offset)
-                            .setaffinity(all_placement_cores)
-                            .use_vmxnet3()
-                            .cmd(baseline_cmdline.as_str());
+                    for _i in 0..expected_lines {
+                        let (prev, matched) = p.exp_regex(
+                            r#"init::fxmark: (\d+),(.*),(\d+),(\d+),(\d+),(\d+),(\d+),(\d+)"#,
+                        )?;
+                        output += prev.as_str();
+                        output += matched.as_str();
 
-                    if cfg!(feature = "smoke") {
-                        cmdline_baseline = cmdline_baseline.memory(8192);
-                    } else {
-                        cmdline_baseline =
-                            cmdline_baseline.memory(core::cmp::max(73728, cores * 2048));
-                    }
-
-                    let mut output = String::new();
-                    let mut qemu_run = |baseline_cores| -> Result<WaitStatus> {
-                        let mut p = spawn_nrk(&cmdline_baseline)?;
-
-                        // Parse lines like
-                        // `init::fxmark: 1,fxmark,2,2048,10000,4000,1863272`
-                        // write them to a CSV file
-                        let expected_lines = if cfg!(feature = "smoke") {
-                            1
-                        } else {
-                            baseline_cores * 10
-                        };
-
-                        for _i in 0..expected_lines {
-                            let (prev, matched) = p.exp_regex(
-                                r#"init::fxmark: (\d+),(.*),(\d+),(\d+),(\d+),(\d+),(\d+),(\d+)"#,
-                            )?;
-                            output += prev.as_str();
-                            output += matched.as_str();
-
-                            // Append parsed results to a CSV file
-                            let write_headers = !Path::new(file_name).exists();
-                            let mut csv_file = OpenOptions::new()
-                                .append(true)
-                                .create(true)
-                                .open(file_name)
-                                .expect("Can't open file");
-                            if write_headers {
-                                let row = "git_rev,nclients,nreplicas,thread_id,benchmark,ncores,write_ratio,open_files,duration_total,duration,operations\n";
-                                let r = csv_file.write(row.as_bytes());
-                                assert!(r.is_ok());
-                            }
-
-                            let parts: Vec<&str> = matched.split("init::fxmark: ").collect();
-                            let r = csv_file.write(format!("{},", env!("GIT_HASH")).as_bytes());
-                            assert!(r.is_ok());
-                            let r = csv_file.write(format!("{},", 0).as_bytes());
-                            assert!(r.is_ok());
-                            let r = csv_file.write(format!("{},", num_nodes).as_bytes());
-                            assert!(r.is_ok());
-                            let r = csv_file.write(parts[1].as_bytes());
-                            assert!(r.is_ok());
-                            let r = csv_file.write("\n".as_bytes());
+                        // Append parsed results to a CSV file
+                        let write_headers = !Path::new(file_name).exists();
+                        let mut csv_file = OpenOptions::new()
+                            .append(true)
+                            .create(true)
+                            .open(file_name)
+                            .expect("Can't open file");
+                        if write_headers {
+                            let row = "git_rev,nclients,nreplicas,thread_id,benchmark,ncores,write_ratio,open_files,duration_total,duration,operations\n";
+                            let r = csv_file.write(row.as_bytes());
                             assert!(r.is_ok());
                         }
 
-                        output += p.exp_eof()?.as_str();
-                        p.process.exit()
-                    };
-                    check_for_successful_exit(&cmdline_baseline, qemu_run(cores), output);
-                    let _ignore = shmem_server.send_control('c');
-                }
+                        let parts: Vec<&str> = matched.split("init::fxmark: ").collect();
+                        let r = csv_file.write(format!("{},", env!("GIT_HASH")).as_bytes());
+                        assert!(r.is_ok());
+                        let r = csv_file.write(format!("{},", 0).as_bytes());
+                        assert!(r.is_ok());
+                        let r = csv_file.write(format!("{},", num_nodes).as_bytes());
+                        assert!(r.is_ok());
+                        let r = csv_file.write(parts[1].as_bytes());
+                        assert!(r.is_ok());
+                        let r = csv_file.write("\n".as_bytes());
+                        assert!(r.is_ok());
+                    }
+
+                    output += p.exp_eof()?.as_str();
+                    p.process.exit()
+                };
+                check_for_successful_exit(&cmdline_baseline, qemu_run(cores), output);
+                let _ignore = shmem_server.send_control('c');
 
                 if cores == 1 {
                     cores = 0;
@@ -261,7 +244,6 @@ fn rackscale_fxmark_benchmark(is_shmem: bool) {
                 total_cores = total_cores - (total_cores % num_clients);
             }
             let cores = total_cores / num_clients;
-            let open_files: Vec<usize> = open_files(benchmark, max_cores, max_numa);
             let all_outputs = Arc::new(Mutex::new(Vec::new()));
 
             let mut vm_cores = vec![cores; num_clients + 1];
@@ -269,223 +251,218 @@ fn rackscale_fxmark_benchmark(is_shmem: bool) {
             let placement_cores = machine.rackscale_core_affinity(vm_cores);
             let timeout = 120_000 + 20000 * (cores + num_clients) as u64;
 
-            for &of in open_files.iter() {
-                eprintln!(
+            eprintln!(
                     "\tRunning fxmark test {} with {:?} total core(s), {:?} client(s) (cores_per_client={:?}) and {:?} open files",
-                    benchmark, total_cores, num_clients, cores, of
+                    benchmark, total_cores, num_clients, cores, open_files
                 );
 
-                let (tx, rx) = channel();
-                let rx_mut = Arc::new(Mutex::new(rx));
+            let (tx, rx) = channel();
+            let rx_mut = Arc::new(Mutex::new(rx));
 
-                let mut shmem_sockets = Vec::new();
-                let mut shmem_servers = Vec::new();
-                for i in 0..(num_clients + 1) {
-                    let shmem_affinity = if cfg!(feature = "affinity-shmem") {
-                        Some(placement_cores[i].0)
-                    } else {
-                        None
-                    };
-                    let (shmem_socket, shmem_file) =
-                        get_shmem_names(Some(i), cfg!(feature = "affinity-shmem"));
-                    let shmem_server =
-                        spawn_shmem_server(&shmem_socket, &shmem_file, shmem_size, shmem_affinity)
-                            .expect("Failed to start shmem server");
-                    shmem_sockets.push(shmem_socket);
-                    shmem_servers.push(shmem_server);
+            let mut shmem_sockets = Vec::new();
+            let mut shmem_servers = Vec::new();
+            for i in 0..(num_clients + 1) {
+                let shmem_affinity = if cfg!(feature = "affinity-shmem") {
+                    Some(placement_cores[i].0)
+                } else {
+                    None
+                };
+                let (shmem_socket, shmem_file) =
+                    get_shmem_names(Some(i), cfg!(feature = "affinity-shmem"));
+                let shmem_server =
+                    spawn_shmem_server(&shmem_socket, &shmem_file, shmem_size, shmem_affinity)
+                        .expect("Failed to start shmem server");
+                shmem_sockets.push(shmem_socket);
+                shmem_servers.push(shmem_server);
+            }
+
+            let mut dcm = spawn_dcm(1).expect("Failed to start DCM");
+
+            let controller_cmdline = format!(
+                "mode=controller transport={}",
+                if is_shmem { "shmem" } else { "ethernet" }
+            );
+
+            // Create controller
+            let build1 = build.clone();
+            let controller_output_array = all_outputs.clone();
+            let controller_placement_cores = placement_cores.clone();
+            let my_shmem_sockets = shmem_sockets.clone();
+            let controller = std::thread::spawn(move || {
+                let mut cmdline_controller = RunnerArgs::new_with_build("userspace-smp", &build1)
+                    .timeout(timeout)
+                    .cmd(&controller_cmdline)
+                    .shmem_size(vec![shmem_size as usize; num_clients + 1])
+                    .shmem_path(my_shmem_sockets)
+                    .nodes(1)
+                    .node_offset(controller_placement_cores[0].0)
+                    .tap("tap0")
+                    .setaffinity(controller_placement_cores[0].1.clone())
+                    .no_network_setup()
+                    .workers(num_clients + 1)
+                    .use_vmxnet3();
+
+                if cfg!(feature = "smoke") {
+                    cmdline_controller = cmdline_controller.memory(8192);
+                } else {
+                    cmdline_controller =
+                        cmdline_controller.memory(core::cmp::max(73728, cores * 2048));
                 }
 
-                let mut dcm = spawn_dcm(1).expect("Failed to start DCM");
+                let mut output = String::new();
+                let mut qemu_run = || -> Result<WaitStatus> {
+                    let mut p = spawn_nrk(&cmdline_controller)?;
 
-                let controller_cmdline = format!(
-                    "mode=controller transport={}",
-                    if is_shmem { "shmem" } else { "ethernet" }
+                    // Parse lines like
+                    // `init::fxmark: 1,fxmark,2,2048,10000,4000,1863272`
+                    // write them to a CSV file
+                    let expected_lines = if cfg!(feature = "smoke") {
+                        1
+                    } else {
+                        total_cores * 10
+                    };
+
+                    for _i in 0..expected_lines {
+                        let (prev, matched) = p.exp_regex(
+                            r#"init::fxmark: (\d+),(.*),(\d+),(\d+),(\d+),(\d+),(\d+),(\d+)"#,
+                        )?;
+                        output += prev.as_str();
+                        output += matched.as_str();
+
+                        // Append parsed results to a CSV file
+                        let write_headers = !Path::new(file_name).exists();
+                        let mut csv_file = OpenOptions::new()
+                            .append(true)
+                            .create(true)
+                            .open(file_name)
+                            .expect("Can't open file");
+                        if write_headers {
+                            let row = "git_rev,nclients,nreplicas,thread_id,benchmark,ncores,write_ratio,open_files,duration_total,duration,operations\n";
+                            let r = csv_file.write(row.as_bytes());
+                            assert!(r.is_ok());
+                        }
+
+                        let parts: Vec<&str> = matched.split("init::fxmark: ").collect();
+                        let r = csv_file.write(format!("{},", env!("GIT_HASH")).as_bytes());
+                        assert!(r.is_ok());
+                        let r = csv_file.write(format!("{},", num_clients).as_bytes());
+                        assert!(r.is_ok());
+                        let r = csv_file.write(format!("{},", num_clients).as_bytes());
+                        assert!(r.is_ok());
+                        let r = csv_file.write(parts[1].as_bytes());
+                        assert!(r.is_ok());
+                        let r = csv_file.write("\n".as_bytes());
+                        assert!(r.is_ok());
+                    }
+
+                    for _i in 0..num_clients {
+                        notify_controller_of_termination(&tx);
+                    }
+                    p.process.kill(SIGTERM)
+                };
+                let ret = qemu_run();
+                controller_output_array
+                    .lock()
+                    .expect("Failed to get output mutex")
+                    .push((String::from("Controller"), output));
+
+                // This will only find sigterm, that's okay
+                wait_for_sigterm_or_successful_exit_no_log(
+                    &cmdline_controller,
+                    ret,
+                    String::from("Controller"),
+                );
+            });
+
+            let mut clients = Vec::new();
+            for nclient in 1..(num_clients + 1) {
+                let kernel_cmdline = format!(
+                    "mode=client transport={} initargs={}X{}X{}",
+                    if is_shmem { "shmem" } else { "ethernet" },
+                    total_cores,
+                    open_files,
+                    benchmark
                 );
 
-                // Create controller
-                let build1 = build.clone();
-                let controller_output_array = all_outputs.clone();
-                let controller_placement_cores = placement_cores.clone();
+                let tap = format!("tap{}", 2 * nclient);
+                let my_rx_mut = rx_mut.clone();
+                let my_output_array = all_outputs.clone();
+                let my_placement_cores = placement_cores.clone();
                 let my_shmem_sockets = shmem_sockets.clone();
-                let controller = std::thread::spawn(move || {
-                    let mut cmdline_controller =
-                        RunnerArgs::new_with_build("userspace-smp", &build1)
-                            .timeout(timeout)
-                            .cmd(&controller_cmdline)
-                            .shmem_size(vec![shmem_size as usize; num_clients + 1])
-                            .shmem_path(my_shmem_sockets)
-                            .nodes(1)
-                            .node_offset(controller_placement_cores[0].0)
-                            .tap("tap0")
-                            .setaffinity(controller_placement_cores[0].1.clone())
-                            .no_network_setup()
-                            .workers(num_clients + 1)
-                            .use_vmxnet3();
+                let build2 = build.clone();
+                let client = std::thread::spawn(move || {
+                    sleep(Duration::from_millis(
+                        CLIENT_BUILD_DELAY * (nclient as u64 + 1),
+                    ));
+                    let mut cmdline_client = RunnerArgs::new_with_build("userspace-smp", &build2)
+                        .timeout(timeout)
+                        .shmem_size(vec![shmem_size as usize; num_clients + 1])
+                        .shmem_path(my_shmem_sockets)
+                        .tap(&tap)
+                        .no_network_setup()
+                        .workers(num_clients + 1)
+                        .cores(cores)
+                        .nodes(1)
+                        .node_offset(my_placement_cores[nclient].0)
+                        .setaffinity(my_placement_cores[nclient].1.clone())
+                        .use_vmxnet3()
+                        .nobuild()
+                        .cmd(kernel_cmdline.as_str());
 
                     if cfg!(feature = "smoke") {
-                        cmdline_controller = cmdline_controller.memory(8192);
+                        cmdline_client = cmdline_client.memory(8192);
                     } else {
-                        cmdline_controller =
-                            cmdline_controller.memory(core::cmp::max(73728, cores * 2048));
+                        cmdline_client = cmdline_client.memory(core::cmp::max(73728, cores * 2048));
                     }
 
                     let mut output = String::new();
-                    let mut qemu_run = || -> Result<WaitStatus> {
-                        let mut p = spawn_nrk(&cmdline_controller)?;
+                    let mut qemu_run = |_with_cores: usize| -> Result<WaitStatus> {
+                        let mut p = spawn_nrk(&cmdline_client)?;
 
-                        // Parse lines like
-                        // `init::fxmark: 1,fxmark,2,2048,10000,4000,1863272`
-                        // write them to a CSV file
-                        let expected_lines = if cfg!(feature = "smoke") {
-                            1
-                        } else {
-                            total_cores * 10
-                        };
-
-                        for _i in 0..expected_lines {
-                            let (prev, matched) = p.exp_regex(
-                                r#"init::fxmark: (\d+),(.*),(\d+),(\d+),(\d+),(\d+),(\d+),(\d+)"#,
-                            )?;
-                            output += prev.as_str();
-                            output += matched.as_str();
-
-                            // Append parsed results to a CSV file
-                            let write_headers = !Path::new(file_name).exists();
-                            let mut csv_file = OpenOptions::new()
-                                .append(true)
-                                .create(true)
-                                .open(file_name)
-                                .expect("Can't open file");
-                            if write_headers {
-                                let row = "git_rev,nclients,nreplicas,thread_id,benchmark,ncores,write_ratio,open_files,duration_total,duration,operations\n";
-                                let r = csv_file.write(row.as_bytes());
-                                assert!(r.is_ok());
-                            }
-
-                            let parts: Vec<&str> = matched.split("init::fxmark: ").collect();
-                            let r = csv_file.write(format!("{},", env!("GIT_HASH")).as_bytes());
-                            assert!(r.is_ok());
-                            let r = csv_file.write(format!("{},", num_clients).as_bytes());
-                            assert!(r.is_ok());
-                            let r = csv_file.write(format!("{},", num_clients).as_bytes());
-                            assert!(r.is_ok());
-                            let r = csv_file.write(parts[1].as_bytes());
-                            assert!(r.is_ok());
-                            let r = csv_file.write("\n".as_bytes());
-                            assert!(r.is_ok());
-                        }
-
-                        for _i in 0..num_clients {
-                            notify_controller_of_termination(&tx);
-                        }
-                        p.process.kill(SIGTERM)
+                        let rx = my_rx_mut.lock().expect("Failed to get rx lock");
+                        let _ = wait_for_client_termination::<()>(&rx);
+                        let ret = p.process.kill(SIGTERM);
+                        output += p.exp_eof()?.as_str();
+                        ret
                     };
-                    let ret = qemu_run();
-                    controller_output_array
+                    // Could exit with 'success' or from sigterm, depending on number of clients.
+                    let ret = qemu_run(cores);
+                    my_output_array
                         .lock()
-                        .expect("Failed to get output mutex")
-                        .push((String::from("Controller"), output));
-
-                    // This will only find sigterm, that's okay
+                        .expect("Failed to get lock for outputs")
+                        .push((format!("Client{}", nclient), output));
                     wait_for_sigterm_or_successful_exit_no_log(
-                        &cmdline_controller,
+                        &cmdline_client,
                         ret,
-                        String::from("Controller"),
+                        format!("Client{}", nclient),
                     );
                 });
-
-                let mut clients = Vec::new();
-                for nclient in 1..(num_clients + 1) {
-                    let kernel_cmdline = format!(
-                        "mode=client transport={} initargs={}X{}X{}",
-                        if is_shmem { "shmem" } else { "ethernet" },
-                        total_cores,
-                        of,
-                        benchmark
-                    );
-
-                    let tap = format!("tap{}", 2 * nclient);
-                    let my_rx_mut = rx_mut.clone();
-                    let my_output_array = all_outputs.clone();
-                    let my_placement_cores = placement_cores.clone();
-                    let my_shmem_sockets = shmem_sockets.clone();
-                    let build2 = build.clone();
-                    let client = std::thread::spawn(move || {
-                        sleep(Duration::from_millis(
-                            CLIENT_BUILD_DELAY * (nclient as u64 + 1),
-                        ));
-                        let mut cmdline_client =
-                            RunnerArgs::new_with_build("userspace-smp", &build2)
-                                .timeout(timeout)
-                                .shmem_size(vec![shmem_size as usize; num_clients + 1])
-                                .shmem_path(my_shmem_sockets)
-                                .tap(&tap)
-                                .no_network_setup()
-                                .workers(num_clients + 1)
-                                .cores(cores)
-                                .nodes(1)
-                                .node_offset(my_placement_cores[nclient].0)
-                                .setaffinity(my_placement_cores[nclient].1.clone())
-                                .use_vmxnet3()
-                                .nobuild()
-                                .cmd(kernel_cmdline.as_str());
-
-                        if cfg!(feature = "smoke") {
-                            cmdline_client = cmdline_client.memory(8192);
-                        } else {
-                            cmdline_client =
-                                cmdline_client.memory(core::cmp::max(73728, cores * 2048));
-                        }
-
-                        let mut output = String::new();
-                        let mut qemu_run = |_with_cores: usize| -> Result<WaitStatus> {
-                            let mut p = spawn_nrk(&cmdline_client)?;
-
-                            let rx = my_rx_mut.lock().expect("Failed to get rx lock");
-                            let _ = wait_for_client_termination::<()>(&rx);
-                            let ret = p.process.kill(SIGTERM);
-                            output += p.exp_eof()?.as_str();
-                            ret
-                        };
-                        // Could exit with 'success' or from sigterm, depending on number of clients.
-                        let ret = qemu_run(cores);
-                        my_output_array
-                            .lock()
-                            .expect("Failed to get lock for outputs")
-                            .push((format!("Client{}", nclient), output));
-                        wait_for_sigterm_or_successful_exit_no_log(
-                            &cmdline_client,
-                            ret,
-                            format!("Client{}", nclient),
-                        );
-                    });
-                    clients.push(client)
-                }
-
-                let controller_ret = controller.join();
-                let mut client_rets = Vec::new();
-                for client in clients {
-                    client_rets.push(client.join());
-                }
-
-                for shmem_server in shmem_servers.iter_mut() {
-                    let _ignore = shmem_server.send_control('c');
-                }
-                let _ignore = dcm.process.kill(SIGKILL);
-
-                // If there's been an error, print everything
-                if controller_ret.is_err() || (&client_rets).into_iter().any(|ret| ret.is_err()) {
-                    let outputs = all_outputs.lock().expect("Failed to get lock for outputs");
-                    for (name, output) in outputs.iter() {
-                        log_qemu_out_with_name(None, name.to_string(), output.to_string());
-                    }
-                }
-
-                for client_ret in client_rets {
-                    client_ret.unwrap();
-                }
-                controller_ret.unwrap();
+                clients.push(client)
             }
+
+            let controller_ret = controller.join();
+            let mut client_rets = Vec::new();
+            for client in clients {
+                client_rets.push(client.join());
+            }
+
+            for shmem_server in shmem_servers.iter_mut() {
+                let _ignore = shmem_server.send_control('c');
+            }
+            let _ignore = dcm.process.kill(SIGKILL);
+
+            // If there's been an error, print everything
+            if controller_ret.is_err() || (&client_rets).into_iter().any(|ret| ret.is_err()) {
+                let outputs = all_outputs.lock().expect("Failed to get lock for outputs");
+                for (name, output) in outputs.iter() {
+                    log_qemu_out_with_name(None, name.to_string(), output.to_string());
+                }
+            }
+
+            for client_ret in client_rets {
+                client_ret.unwrap();
+            }
+            controller_ret.unwrap();
 
             if total_cores == 1 {
                 total_cores = 0;

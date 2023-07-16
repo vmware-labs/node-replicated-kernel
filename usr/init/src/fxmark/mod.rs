@@ -153,14 +153,21 @@ where
 }
 
 pub fn max_open_files() -> usize {
-    let mut nodes = vibrio::syscalls::System::threads()
-        .expect("Can't get system topology")
-        .iter()
-        .map(|c| c.node_id)
-        .collect::<Vec<_>>();
-    nodes.sort();
-    nodes.dedup();
-    nodes.len()
+    if cfg!(feature = "rackscale") {
+        1
+    } else {
+        panic!("HELP");
+        /*
+        let mut nodes = vibrio::syscalls::System::threads()
+            .expect("Can't get system topology")
+            .iter()
+            .map(|c| c.node_id)
+            .collect::<Vec<_>>();
+        nodes.sort();
+        nodes.dedup();
+        nodes.len()
+        */
+    }
 }
 
 pub fn bench(ncores: Option<usize>, open_files: usize, benchmark: String, write_ratio: usize) {

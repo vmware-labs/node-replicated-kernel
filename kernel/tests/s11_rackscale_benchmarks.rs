@@ -67,7 +67,6 @@ fn rackscale_fxmark_benchmark(is_shmem: bool) {
         let mut build = BuildArgs::default()
             .module("init")
             .user_feature("fxmark")
-            .user_feature("rackscale")
             .kernel_feature("shmem")
             .kernel_feature("ethernet")
             .release();

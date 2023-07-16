@@ -64,9 +64,6 @@ smoke = []
 # Do latency measurements in benchmarks
 latency = []
 
-# For rackscale build (useful in benchmarks)
-rackscale = []
-
 all-tests = [
     "test-print",
     "test-map",

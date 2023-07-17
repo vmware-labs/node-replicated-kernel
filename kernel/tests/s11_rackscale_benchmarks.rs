@@ -507,6 +507,11 @@ fn rackscale_memcached_benchmark(is_shmem: bool) {
     });
 
     let machine = Machine::determine();
+    let max_cores = if cfg!(feature = "smoke") {
+        1
+    } else {
+        machine.max_cores()
+    };
     let baseline_shmem_size = if cfg!(feature = "smoke") || machine.max_cores() <= 32 {
         SHMEM_SIZE * 2
     } else {
@@ -514,11 +519,6 @@ fn rackscale_memcached_benchmark(is_shmem: bool) {
     };
     let shmem_size = SHMEM_SIZE;
 
-    let max_cores = if cfg!(feature = "smoke") {
-        1
-    } else {
-        machine.max_cores()
-    };
     let cores_per_node = machine.max_cores() / machine.max_numa_nodes();
 
     if cfg!(feature = "baseline") {
@@ -526,17 +526,27 @@ fn rackscale_memcached_benchmark(is_shmem: bool) {
         setup_network(1);
         let mut num_nodes = 1;
         for cores in (0..max_cores).step_by(4) {
-            let cores = if cores == 0 { 1 } else { cores };
-            if num_nodes * cores_per_node < cores {
-                num_nodes = 2 * num_nodes;
+            let mut cores = if cores == 0 { 1 } else { cores };
+
+            // Round up to get the number of clients
+            let new_num_nodes = (cores + (cores_per_node - 1)) / cores_per_node;
+
+            // Make sure cores are divisible by num replicas (nodes) if num replicas changes.
+            if num_nodes != new_num_nodes {
+                num_nodes = new_num_nodes;
+
+                // ensure total cores is divisible by num nodes
+                cores = cores - (cores % num_nodes);
             }
+
             let timeout = 20_000 * (cores) as u64;
             eprintln!(
                 "\tRunning NrOS Memcached baseline with {} core(s) and {} node(s)",
                 cores, num_nodes
             );
 
-            let (shmem_socket, shmem_file) = get_shmem_names(None);
+            let (shmem_socket, shmem_file) =
+                get_shmem_names(None, cfg!(feature = "affinity-shmem"));
             let shmem_affinity = if cfg!(feature = "affinity-shmem") {
                 Some(0)
             } else {
@@ -555,6 +565,11 @@ fn rackscale_memcached_benchmark(is_shmem: bool) {
 
             let vm_cores = vec![cores / num_nodes; num_nodes]; // client vms
             let placement_cores = machine.rackscale_core_affinity(vm_cores);
+            let mut all_placement_cores = Vec::new();
+            let placement_offset = placement_cores[0].0;
+            for placement in placement_cores {
+                all_placement_cores.extend(placement.1);
+            }
 
             let mut cmdline_baseline = RunnerArgs::new_with_build("userspace-smp", &build_baseline)
                 .timeout(timeout)
@@ -564,7 +579,8 @@ fn rackscale_memcached_benchmark(is_shmem: bool) {
                 .workers(1)
                 .cores(cores)
                 .nodes(num_nodes)
-                .setaffinity(placement_cores[0].1.clone())
+                .node_offset(placement_offset)
+                .setaffinity(all_placement_cores)
                 .use_vmxnet3()
                 .cmd(baseline_cmdline.as_str());
 
@@ -602,6 +618,12 @@ fn rackscale_memcached_benchmark(is_shmem: bool) {
 
                 // number of keys: 131072
                 let (prev, matched) = p.exp_regex(r#"number of keys: (\d+)"#)?;
+                println!("> {}", matched);
+
+                output += prev.as_str();
+                output += matched.as_str();
+
+                let (prev, matched) = p.exp_regex(r#"Executing (\d+) queries with (\d+) threads"#)?;
                 println!("> {}", matched);
 
                 output += prev.as_str();
@@ -672,11 +694,21 @@ fn rackscale_memcached_benchmark(is_shmem: bool) {
     // Run the rackscale test
     let mut num_clients = 1;
     setup_network(num_clients + 1);
-    for total_cores in (0..max_cores).step_by(4) {
-        let total_cores = if total_cores == 0 { 1 } else { total_cores };
-        if num_clients * cores_per_node < total_cores {
-            num_clients = num_clients * 2;
+    for mut total_cores in (0..max_cores).step_by(4) {
+        if total_cores == 0 {
+            total_cores = 1;
+        }
+
+        // Round up to get the number of clients
+        let new_num_clients = (total_cores + (cores_per_node - 1)) / cores_per_node;
+
+        // Do network setup if number of clients has changed.
+        if num_clients != new_num_clients {
+            num_clients = new_num_clients;
             setup_network(num_clients + 1);
+
+            // ensure total cores is divisible by num clients
+            total_cores = total_cores - (total_cores % num_clients);
         }
         let cores = total_cores / num_clients;
 
@@ -702,7 +734,8 @@ fn rackscale_memcached_benchmark(is_shmem: bool) {
             } else {
                 None
             };
-            let (shmem_socket, shmem_file) = get_shmem_names(Some(i));
+            let (shmem_socket, shmem_file) =
+                get_shmem_names(Some(i), cfg!(feature = "affinity-shmem"));
             let shmem_server =
                 spawn_shmem_server(&shmem_socket, &shmem_file, shmem_size, shmem_affinity)
                     .expect("Failed to start shmem server");
@@ -730,6 +763,8 @@ fn rackscale_memcached_benchmark(is_shmem: bool) {
                 .shmem_size(vec![shmem_size as usize; num_clients + 1])
                 .shmem_path(my_shmem_sockets)
                 .tap("tap0")
+                .nodes(1)
+                .node_offset(controller_placement_cores[0].0)
                 .no_network_setup()
                 .workers(num_clients + 1)
                 .setaffinity(controller_placement_cores[0].1.clone())
@@ -769,6 +804,12 @@ fn rackscale_memcached_benchmark(is_shmem: bool) {
 
                 // number of keys: 131072
                 let (prev, matched) = p.exp_regex(r#"number of keys: (\d+)"#)?;
+                println!("> {}", matched);
+
+                output += prev.as_str();
+                output += matched.as_str();
+
+                let (prev, matched) = p.exp_regex(r#"Executing (\d+) queries with (\d+) threads"#)?;
                 println!("> {}", matched);
 
                 output += prev.as_str();
@@ -873,6 +914,8 @@ fn rackscale_memcached_benchmark(is_shmem: bool) {
                     .no_network_setup()
                     .workers(num_clients + 1)
                     .cores(cores)
+                    .nodes(1)
+                    .node_offset(my_placement_cores[nclient].0)
                     .setaffinity(my_placement_cores[nclient].1.clone())
                     .use_vmxnet3()
                     .nobuild()

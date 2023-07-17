@@ -851,10 +851,10 @@ fn s10_memcached_benchmark_internal() {
         .collect();
 
     // memcached arguments // currently not there.
-    let memsize = if cfg!(feature = "smoke") {
-        10 //MB
+    let (memsize, queries) = if cfg!(feature = "smoke") {
+        (10 /* MB */, 2000000)
     } else {
-        32 * 1024 // MB
+        (32 * 1024 /* MB */, 50000000)
     };
 
     let file_name = "s10_memcached_benchmark_internal.csv";
@@ -862,21 +862,20 @@ fn s10_memcached_benchmark_internal() {
 
     for thread in threads.iter() {
         let kernel_cmdline = format!(
-            r#"init=memcachedbench.bin initargs={} appcmd='--x-benchmark-mem={}'"#,
-            *thread, memsize
+            r#"init=memcachedbench.bin initargs={} appcmd='--x-benchmark-mem={} --x-benchmark-queries={}'"#,
+            *thread, memsize, queries
         );
         let mut cmdline = RunnerArgs::new_with_build("userspace-smp", &build)
-            .timeout(600_000)
+            .timeout(1800_000)
             .cores(machine.max_cores())
             .nodes(2)
             .setaffinity(Vec::new())
-            .cmd(kernel_cmdline.as_str())
-            .no_network_setup();
+            .cmd(kernel_cmdline.as_str());
 
         if cfg!(feature = "smoke") {
-            cmdline = cmdline.memory(88192);
+            cmdline = cmdline.memory(4096);
         } else {
-            cmdline = cmdline.memory(80_000);
+            cmdline = cmdline.memory(100_000);
         }
 
         let mut output = String::new();
@@ -907,6 +906,12 @@ fn s10_memcached_benchmark_internal() {
 
             // number of keys: 131072
             let (prev, matched) = p.exp_regex(r#"number of keys: (\d+)"#)?;
+            println!("> {}", matched);
+
+            output += prev.as_str();
+            output += matched.as_str();
+
+            let (prev, matched) = p.exp_regex(r#"Executing (\d+) queries with (\d+) threads"#)?;
             println!("> {}", matched);
 
             output += prev.as_str();

@@ -20,13 +20,15 @@ use rexpect::process::wait::WaitStatus;
 
 use testutils::builder::{BuildArgs, Machine};
 use testutils::helpers::{
-    get_shmem_names, notify_controller_of_termination, setup_network, spawn_dcm, spawn_nrk,
-    spawn_shmem_server, wait_for_client_termination, CLIENT_BUILD_DELAY, SHMEM_SIZE,
+    get_shmem_names, setup_network, spawn_dcm, spawn_nrk, spawn_shmem_server, CLIENT_BUILD_DELAY,
+    SHMEM_SIZE,
 };
 use testutils::runner_args::{
     check_for_successful_exit, log_qemu_out_with_name, wait_for_sigterm_or_successful_exit_no_log,
     RackscaleMode, RackscaleTransport, RunnerArgs,
 };
+
+use testutils::rackscale_runner::{notify_of_termination, wait_for_termination};
 
 #[test]
 #[cfg(not(feature = "baremetal"))]
@@ -345,7 +347,7 @@ fn rackscale_fxmark_benchmark(transport: RackscaleTransport) {
                     }
 
                     for _i in 0..num_clients {
-                        notify_controller_of_termination(&tx);
+                        notify_of_termination(&tx);
                     }
                     p.process.kill(SIGTERM)
                 };
@@ -406,7 +408,7 @@ fn rackscale_fxmark_benchmark(transport: RackscaleTransport) {
                         let mut p = spawn_nrk(&cmdline_client)?;
 
                         let rx = my_rx_mut.lock().expect("Failed to get rx lock");
-                        let _ = wait_for_client_termination::<()>(&rx);
+                        let _ = wait_for_termination::<()>(&rx);
                         let ret = p.process.kill(SIGTERM);
                         output += p.exp_eof()?.as_str();
                         ret
@@ -848,7 +850,7 @@ fn rackscale_vmops_benchmark(transport: RackscaleTransport, benchtype: VMOpsBenc
                 }
 
                 for _i in 0..num_clients {
-                    notify_controller_of_termination(&tx);
+                    notify_of_termination(&tx);
                 }
                 p.process.kill(SIGTERM)
             };
@@ -907,7 +909,7 @@ fn rackscale_vmops_benchmark(transport: RackscaleTransport, benchtype: VMOpsBenc
                 let mut qemu_run = || -> Result<WaitStatus> {
                     let mut p = spawn_nrk(&cmdline_client)?;
                     let rx = my_rx_mut.lock().expect("Failed to get rx lock");
-                    let _ = wait_for_client_termination::<()>(&rx);
+                    let _ = wait_for_termination::<()>(&rx);
                     let ret = p.process.kill(SIGTERM);
                     output += p.exp_eof()?.as_str();
                     ret

@@ -34,7 +34,7 @@ fn main() {
     }
 
     let output = Command::new("git")
-        .args(&["rev-parse", "HEAD"])
+        .args(["rev-parse", "HEAD"])
         .output()
         .expect("Could not determine git hash");
     let git_hash = String::from_utf8(output.stdout).expect("Could not parse the git hash");

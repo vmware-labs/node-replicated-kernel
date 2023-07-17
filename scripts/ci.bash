@@ -7,6 +7,7 @@ set -ex
 cd kernel
 rm -f redis_benchmark.csv
 rm -f memcached_benchmark.csv
+rm -f memcached_benchmark_internal.csv
 rm -f vmops_benchmark.csv
 rm -f vmops_benchmark_latency.csv
 rm -f fxmark_benchmark.csv
@@ -15,6 +16,7 @@ rm -f leveldb_benchmark.csv
 rm -f rackscale_shmem_vmops_benchmark.csv
 rm -f rackscale_shmem_vmops_latency_benchmark.csv
 rm -f rackscale_shmem_fxmark_benchmark.csv
+rm -f rackscale_shmem_memcached_benchmark.csv
 
 # For vmops: --features prealloc can improve performance further (at the expense of test duration)
 RUST_TEST_THREADS=1 cargo test --test s10* -- s10_vmops_benchmark --nocapture
@@ -130,7 +132,7 @@ if [ -d "${DEPLOY_DIR}" ]; then
     DEPLOY_DIR=${DEPLOY_DIR}${DATE_PREFIX}
 fi
 mkdir -p ${DEPLOY_DIR}
-mv rackscale_shmem_memcached_benchmark.csv.csv ${DEPLOY_DIR}
+mv rackscale_shmem_memcached_benchmark.csv ${DEPLOY_DIR}
 gzip ${DEPLOY_DIR}/rackscale_shmem_memcached_benchmark.csv
 
 # Update CI history plots

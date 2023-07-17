@@ -21,7 +21,7 @@ use testutils::helpers::{
 };
 use testutils::runner_args::{
     check_for_successful_exit, check_for_successful_exit_no_log, log_qemu_out_with_name,
-    wait_for_sigterm_or_successful_exit_no_log, RunnerArgs,
+    wait_for_sigterm_or_successful_exit_no_log, RackscaleMode, RunnerArgs,
 };
 
 #[cfg(not(feature = "baremetal"))]
@@ -85,13 +85,14 @@ fn rackscale_userspace_smoke_test(is_shmem: bool) {
         .name("Controller".to_string())
         .spawn(move || {
             let controller_cmd = if is_shmem {
-                "mode=controller transport=shmem"
+                "transport=shmem"
             } else {
-                "mode=controller transport=ethernet"
+                "transport=ethernet"
             };
             let cmdline_controller = RunnerArgs::new_with_build("userspace-smp", &build1)
                 .timeout(timeout)
                 .cmd(controller_cmd)
+                .mode(RackscaleMode::Controller)
                 .shmem_size(vec![SHMEM_SIZE as usize; 2])
                 .shmem_path(shmem_sockets)
                 .tap("tap0")
@@ -133,12 +134,13 @@ fn rackscale_userspace_smoke_test(is_shmem: bool) {
         .spawn(move || {
             sleep(Duration::from_millis(CLIENT_BUILD_DELAY));
             let client_cmd = if is_shmem {
-                "mode=client transport=shmem"
+                "transport=shmem"
             } else {
-                "mode=client transport=ethernet"
+                "transport=ethernet"
             };
             let cmdline_client = RunnerArgs::new_with_build("userspace-smp", &build2)
                 .timeout(timeout)
+                .mode(RackscaleMode::Client)
                 .cmd(client_cmd)
                 .shmem_size(vec![SHMEM_SIZE as usize; 2])
                 .shmem_path(shmem_sockets)
@@ -234,7 +236,7 @@ fn s06_rackscale_phys_alloc_test() {
         .spawn(move || {
             let cmdline_controller = RunnerArgs::new_with_build("userspace-smp", &build1)
                 .timeout(timeout)
-                .cmd("mode=controller")
+                .mode(RackscaleMode::Controller)
                 .shmem_size(vec![SHMEM_SIZE as usize; 2])
                 .shmem_path(shmem_sockets)
                 .workers(2)
@@ -275,7 +277,7 @@ fn s06_rackscale_phys_alloc_test() {
             sleep(Duration::from_millis(CLIENT_BUILD_DELAY));
             let cmdline_client = RunnerArgs::new_with_build("userspace-smp", &build2)
                 .timeout(180_000)
-                .cmd("mode=client")
+                .mode(RackscaleMode::Client)
                 .shmem_size(vec![SHMEM_SIZE as usize; 2])
                 .shmem_path(shmem_sockets)
                 .tap("tap2")
@@ -377,13 +379,14 @@ fn rackscale_fs_test(is_shmem: bool) {
         .name("Controller".to_string())
         .spawn(move || {
             let controller_cmd = if is_shmem {
-                "mode=controller transport=shmem"
+                "transport=shmem"
             } else {
-                "mode=controller transport=ethernet"
+                "transport=ethernet"
             };
             let cmdline_controller = RunnerArgs::new_with_build("userspace-smp", &build1)
                 .timeout(timeout)
                 .cmd(controller_cmd)
+                .mode(RackscaleMode::Controller)
                 .shmem_size(vec![SHMEM_SIZE as usize; 2])
                 .shmem_path(shmem_sockets)
                 .tap("tap0")
@@ -424,13 +427,14 @@ fn rackscale_fs_test(is_shmem: bool) {
         .spawn(move || {
             sleep(Duration::from_millis(CLIENT_BUILD_DELAY));
             let client_cmd = if is_shmem {
-                "mode=client transport=shmem"
+                "transport=shmem"
             } else {
-                "mode=client transport=ethernet"
+                "transport=ethernet"
             };
             let cmdline_client = RunnerArgs::new_with_build("userspace-smp", &build2)
                 .timeout(timeout)
                 .cmd(client_cmd)
+                .mode(RackscaleMode::Client)
                 .shmem_size(vec![SHMEM_SIZE as usize; 2])
                 .shmem_path(shmem_sockets)
                 .tap("tap2")
@@ -519,7 +523,7 @@ fn s06_rackscale_shmem_fs_prop_test() {
         .spawn(move || {
             let cmdline_controller = RunnerArgs::new_with_build("userspace-smp", &build1)
                 .timeout(timeout)
-                .cmd("mode=controller")
+                .mode(RackscaleMode::Controller)
                 .shmem_size(vec![shmem_size as usize; 2])
                 .shmem_path(shmem_sockets)
                 .tap("tap0")
@@ -560,7 +564,7 @@ fn s06_rackscale_shmem_fs_prop_test() {
             sleep(Duration::from_millis(CLIENT_BUILD_DELAY));
             let cmdline_client = RunnerArgs::new_with_build("userspace-smp", &build2)
                 .timeout(timeout)
-                .cmd("mode=client")
+                .mode(RackscaleMode::Client)
                 .shmem_size(vec![shmem_size as usize; 2])
                 .shmem_path(shmem_sockets)
                 .tap("tap2")
@@ -658,7 +662,8 @@ fn s06_rackscale_shmem_shootdown_test() {
         .spawn(move || {
             let cmdline_controller = RunnerArgs::new_with_build("userspace-smp", &controller_build)
                 .timeout(timeout)
-                .cmd("mode=controller transport=shmem")
+                .cmd("transport=shmem")
+                .mode(RackscaleMode::Controller)
                 .shmem_size(vec![SHMEM_SIZE as usize; clients + 1])
                 .shmem_path(my_shmem_sockets)
                 .tap("tap0")
@@ -706,7 +711,8 @@ fn s06_rackscale_shmem_shootdown_test() {
                 sleep(Duration::from_millis((i + 1) as u64 * CLIENT_BUILD_DELAY));
                 let cmdline_client = RunnerArgs::new_with_build("userspace-smp", &client_build)
                     .timeout(timeout)
-                    .cmd("mode=client transport=shmem")
+                    .cmd("transport=shmem")
+                    .mode(RackscaleMode::Client)
                     .shmem_size(vec![SHMEM_SIZE as usize; clients + 1])
                     .shmem_path(my_shmem_sockets)
                     .tap(&tap)
@@ -829,13 +835,14 @@ fn rackscale_userspace_multicore_test(is_shmem: bool) {
         .name("Controller".to_string())
         .spawn(move || {
             let controller_cmd = if is_shmem {
-                "mode=controller transport=shmem"
+                "transport=shmem"
             } else {
-                "mode=controller transport=ethernet"
+                "transport=ethernet"
             };
             let cmdline_controller = RunnerArgs::new_with_build("userspace-smp", &build1)
                 .timeout(timeout)
                 .cmd(controller_cmd)
+                .mode(RackscaleMode::Controller)
                 .shmem_size(vec![SHMEM_SIZE as usize; 2])
                 .shmem_path(shmem_sockets)
                 .tap("tap0")
@@ -876,13 +883,14 @@ fn rackscale_userspace_multicore_test(is_shmem: bool) {
         .spawn(move || {
             sleep(Duration::from_millis(CLIENT_BUILD_DELAY));
             let client_cmd = if is_shmem {
-                "mode=client transport=shmem"
+                "transport=shmem"
             } else {
-                "mode=client transport=ethernet"
+                "transport=ethernet"
             };
             let cmdline_client = RunnerArgs::new_with_build("userspace-smp", &build2)
                 .timeout(timeout)
                 .cmd(client_cmd)
+                .mode(RackscaleMode::Client)
                 .shmem_size(vec![SHMEM_SIZE as usize; 2])
                 .shmem_path(shmem_sockets)
                 .tap("tap2")
@@ -1005,13 +1013,14 @@ fn rackscale_userspace_multicore_multiclient(is_shmem: bool) {
         .name("Controller".to_string())
         .spawn(move || {
             let controller_cmd = if is_shmem {
-                "mode=controller transport=shmem"
+                "transport=shmem"
             } else {
-                "mode=controller transport=ethernet"
+                "transport=ethernet"
             };
             let cmdline_controller = RunnerArgs::new_with_build("userspace-smp", &controller_build)
                 .timeout(timeout)
                 .cmd(controller_cmd)
+                .mode(RackscaleMode::Controller)
                 .shmem_size(vec![SHMEM_SIZE as usize; 3])
                 .shmem_path(shmem_sockets)
                 .tap("tap0")
@@ -1064,14 +1073,15 @@ fn rackscale_userspace_multicore_multiclient(is_shmem: bool) {
         .name("Client1".to_string())
         .spawn(move || {
             let client_cmd = if is_shmem {
-                "mode=client transport=shmem"
+                "transport=shmem"
             } else {
-                "mode=client transport=ethernet"
+                "transport=ethernet"
             };
             sleep(Duration::from_millis(CLIENT_BUILD_DELAY));
             let cmdline_client = RunnerArgs::new_with_build("userspace-smp", &client1_build)
                 .timeout(timeout)
                 .cmd(client_cmd)
+                .mode(RackscaleMode::Client)
                 .shmem_size(vec![SHMEM_SIZE as usize; 3])
                 .shmem_path(shmem_sockets)
                 .tap("tap2")
@@ -1125,14 +1135,15 @@ fn rackscale_userspace_multicore_multiclient(is_shmem: bool) {
         .name("Client2".to_string())
         .spawn(move || {
             let client_cmd = if is_shmem {
-                "mode=client transport=shmem"
+                "transport=shmem"
             } else {
-                "mode=client transport=ethernet"
+                "transport=ethernet"
             };
             sleep(Duration::from_millis(CLIENT_BUILD_DELAY * 2));
             let cmdline_client = RunnerArgs::new_with_build("userspace-smp", &client2_build)
                 .timeout(timeout)
                 .cmd(client_cmd)
+                .mode(RackscaleMode::Client)
                 .shmem_size(vec![SHMEM_SIZE as usize; 3])
                 .shmem_path(shmem_sockets)
                 .tap("tap4")
@@ -1251,13 +1262,14 @@ fn rackscale_userspace_rumprt_fs(is_shmem: bool) {
         .name("Controller".to_string())
         .spawn(move || {
             let controller_cmd = if is_shmem {
-                "mode=controller transport=shmem"
+                "transport=shmem"
             } else {
-                "mode=controller transport=ethernet"
+                "transport=ethernet"
             };
             let cmdline_controller = RunnerArgs::new_with_build("userspace", &build1)
                 .timeout(timeout)
                 .cmd(controller_cmd)
+                .mode(RackscaleMode::Controller)
                 .shmem_size(vec![SHMEM_SIZE as usize; 2])
                 .shmem_path(shmem_sockets)
                 .tap("tap0")
@@ -1298,13 +1310,14 @@ fn rackscale_userspace_rumprt_fs(is_shmem: bool) {
         .spawn(move || {
             sleep(Duration::from_millis(CLIENT_BUILD_DELAY));
             let client_cmd = if is_shmem {
-                "mode=client transport=shmem"
+                "transport=shmem"
             } else {
-                "mode=client transport=ethernet"
+                "transport=ethernet"
             };
             let cmdline_client = RunnerArgs::new_with_build("userspace-smp", &build2)
                 .timeout(timeout)
                 .cmd(client_cmd)
+                .mode(RackscaleMode::Client)
                 .shmem_size(vec![SHMEM_SIZE as usize; 2])
                 .shmem_path(shmem_sockets)
                 .tap("tap2")
@@ -1398,7 +1411,8 @@ fn s06_rackscale_controller_shmem_alloc() {
         .spawn(move || {
             let cmdline_controller = RunnerArgs::new_with_build("userspace-smp", &controller_build)
                 .timeout(timeout)
-                .cmd("mode=controller transport=shmem")
+                .cmd("transport=shmem")
+                .mode(RackscaleMode::Controller)
                 .shmem_size(vec![SHMEM_SIZE as usize; clients + 1])
                 .shmem_path(my_shmem_sockets)
                 .tap("tap0")
@@ -1434,7 +1448,8 @@ fn s06_rackscale_controller_shmem_alloc() {
                 sleep(Duration::from_millis((i + 1) as u64 * CLIENT_BUILD_DELAY));
                 let cmdline_client = RunnerArgs::new_with_build("userspace-smp", &client_build)
                     .timeout(timeout)
-                    .cmd("mode=client transport=shmem")
+                    .cmd("transport=shmem")
+                    .mode(RackscaleMode::Client)
                     .shmem_size(vec![SHMEM_SIZE as usize; clients + 1])
                     .shmem_path(my_shmem_sockets)
                     .tap(&tap)

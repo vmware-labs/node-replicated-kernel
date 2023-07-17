@@ -25,7 +25,7 @@ use testutils::helpers::{
 };
 use testutils::runner_args::{
     check_for_successful_exit, log_qemu_out_with_name, wait_for_sigterm_or_successful_exit_no_log,
-    RunnerArgs,
+    RackscaleMode, RunnerArgs,
 };
 
 #[test]
@@ -277,10 +277,8 @@ fn rackscale_fxmark_benchmark(is_shmem: bool) {
 
             let mut dcm = spawn_dcm(1).expect("Failed to start DCM");
 
-            let controller_cmdline = format!(
-                "mode=controller transport={}",
-                if is_shmem { "shmem" } else { "ethernet" }
-            );
+            let controller_cmdline =
+                format!("transport={}", if is_shmem { "shmem" } else { "ethernet" });
 
             // Create controller
             let build1 = build.clone();
@@ -291,6 +289,7 @@ fn rackscale_fxmark_benchmark(is_shmem: bool) {
                 let mut cmdline_controller = RunnerArgs::new_with_build("userspace-smp", &build1)
                     .timeout(timeout)
                     .cmd(&controller_cmdline)
+                    .mode(RackscaleMode::Controller)
                     .shmem_size(vec![shmem_size as usize; num_clients + 1])
                     .shmem_path(my_shmem_sockets)
                     .nodes(1)
@@ -376,7 +375,7 @@ fn rackscale_fxmark_benchmark(is_shmem: bool) {
             let mut clients = Vec::new();
             for nclient in 1..(num_clients + 1) {
                 let kernel_cmdline = format!(
-                    "mode=client transport={} initargs={}X{}X{}",
+                    "transport={} initargs={}X{}X{}",
                     if is_shmem { "shmem" } else { "ethernet" },
                     total_cores,
                     open_files,
@@ -395,6 +394,7 @@ fn rackscale_fxmark_benchmark(is_shmem: bool) {
                     ));
                     let mut cmdline_client = RunnerArgs::new_with_build("userspace-smp", &build2)
                         .timeout(timeout)
+                        .mode(RackscaleMode::Client)
                         .shmem_size(vec![shmem_size as usize; num_clients + 1])
                         .shmem_path(my_shmem_sockets)
                         .tap(&tap)
@@ -774,10 +774,8 @@ fn rackscale_vmops_benchmark(is_shmem: bool, benchtype: VMOpsBench) {
 
         let mut dcm = spawn_dcm(1).expect("Failed to start DCM");
 
-        let controller_cmdline = format!(
-            "mode=controller transport={}",
-            if is_shmem { "shmem" } else { "ethernet" }
-        );
+        let controller_cmdline =
+            format!("transport={}", if is_shmem { "shmem" } else { "ethernet" });
 
         // Create controller
         let build1 = build.clone();
@@ -789,6 +787,7 @@ fn rackscale_vmops_benchmark(is_shmem: bool, benchtype: VMOpsBench) {
             let mut cmdline_controller = RunnerArgs::new_with_build("userspace-smp", &build1)
                 .timeout(timeout)
                 .cmd(&controller_cmdline)
+                .mode(RackscaleMode::Controller)
                 .shmem_size(vec![shmem_size as usize; num_clients + 1])
                 .shmem_path(my_shmem_sockets)
                 .tap("tap0")
@@ -886,7 +885,7 @@ fn rackscale_vmops_benchmark(is_shmem: bool, benchtype: VMOpsBench) {
         let mut clients = Vec::new();
         for nclient in 1..(num_clients + 1) {
             let kernel_cmdline = format!(
-                "mode=client transport={} initargs={}",
+                "transport={} initargs={}",
                 if is_shmem { "shmem" } else { "ethernet" },
                 total_cores,
             );
@@ -903,6 +902,7 @@ fn rackscale_vmops_benchmark(is_shmem: bool, benchtype: VMOpsBench) {
                 ));
                 let mut cmdline_client = RunnerArgs::new_with_build("userspace-smp", &build2)
                     .timeout(timeout)
+                    .mode(RackscaleMode::Client)
                     .shmem_size(vec![shmem_size as usize; num_clients + 1])
                     .shmem_path(my_shmem_sockets)
                     .tap(&tap)

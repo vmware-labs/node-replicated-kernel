@@ -8,6 +8,13 @@ use rexpect::process::wait::WaitStatus;
 use crate::builder::{BuildArgs, Built, Machine};
 use crate::ExitStatus;
 
+/// Different build modes for rackscale
+#[derive(Eq, PartialEq, Debug, Clone)]
+pub enum RackscaleMode {
+    Controller,
+    Client,
+}
+
 /// Arguments passed to the run.py script to configure a test.
 #[derive(Clone)]
 pub struct RunnerArgs<'a> {
@@ -59,6 +66,8 @@ pub struct RunnerArgs<'a> {
     network_only: bool,
     /// Do not configure the network
     no_network_setup: bool,
+    /// Mode (For rackscale, None otherwise)
+    mode: Option<RackscaleMode>,
 }
 
 #[allow(unused)]
@@ -89,6 +98,7 @@ impl<'a> RunnerArgs<'a> {
             workers: None,
             network_only: false,
             no_network_setup: false,
+            mode: None,
         };
 
         if cfg!(feature = "prealloc") {
@@ -124,6 +134,7 @@ impl<'a> RunnerArgs<'a> {
             workers: None,
             network_only: false,
             no_network_setup: false,
+            mode: None,
         };
 
         if cfg!(feature = "prealloc") {
@@ -281,6 +292,11 @@ impl<'a> RunnerArgs<'a> {
         self
     }
 
+    pub fn mode(mut self, mode: RackscaleMode) -> RunnerArgs<'a> {
+        self.mode = Some(mode);
+        self
+    }
+
     /// Converts the RunnerArgs to a run.py command line invocation.
     pub fn as_cmd(&'a self) -> Vec<String> {
         // Figure out log-level
@@ -300,11 +316,18 @@ impl<'a> RunnerArgs<'a> {
         let mut net_cmd = Vec::<String>::new();
         net_cmd.push(String::from("net"));
 
+        let mode_str = match self.mode {
+            None => "",
+            Some(RackscaleMode::Client) => "mode=client ",
+            Some(RackscaleMode::Controller) => "mode=controller ",
+        };
+
         cmd.push(String::from("--cmd"));
         cmd.push(format!(
-            "log={} test={} {}",
+            "log={} test={} {}{}",
             log_level,
             self.kernel_test,
+            mode_str,
             self.cmd.unwrap_or("")
         ));
         cmd.push(String::from("--nic"));

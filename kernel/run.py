@@ -423,12 +423,11 @@ def run_qemu(args):
             ]
 
     # Enable networking:
-    if not ('no_network_setup' in args and args.no_network_setup):
-        mac, tap = NETWORK_CONFIG[args.tap]['mac'], args.tap
-        qemu_default_args += ['-device',
-                            '{},netdev=n1,mac={}'.format(args.nic, mac)]
-        qemu_default_args += ['-netdev',
-                            'tap,id=n1,script=no,ifname={}'.format(tap)]
+    mac, tap = NETWORK_CONFIG[args.tap]['mac'], args.tap
+    qemu_default_args += ['-device',
+                        '{},netdev=n1,mac={}'.format(args.nic, mac)]
+    qemu_default_args += ['-netdev',
+                        'tap,id=n1,script=no,ifname={}'.format(tap)]
 
     def numa_nodes_to_list(file):
         nodes = []

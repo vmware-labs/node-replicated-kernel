@@ -75,6 +75,7 @@ impl Pager {
 
         // Return out-of-memory error if the vaddr goes beyond the permissible limit.
         if self.sbrk >= self.limit {
+            error!("OOM: sbrk {:#x} limit {:#x}", self.sbrk, self.limit);
             return Err(SystemCallError::OutOfMemory);
         }
 

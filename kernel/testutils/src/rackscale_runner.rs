@@ -45,6 +45,7 @@ pub type RackscaleMatchFunction = fn(
     cores_per_client: usize,
     num_clients: usize,
     file_name: &str,
+    arg: usize,
 ) -> Result<()>;
 
 pub struct RackscaleRunState {
@@ -82,6 +83,8 @@ pub struct RackscaleRunState {
     pub file_name: String,
     /// The commandline to use on the clients
     pub cmd: String,
+    /// Argument passed to a matching function
+    pub arg: usize,
 }
 
 impl RackscaleRunState {
@@ -92,6 +95,7 @@ impl RackscaleRunState {
             _cores_per_client: usize,
             _num_clients: usize,
             _file_name: &str,
+            _arg: usize,
         ) -> Result<()> {
             // Do nothing
             Ok(())
@@ -115,6 +119,7 @@ impl RackscaleRunState {
             setup_network: true,
             file_name: "".to_string(),
             cmd: "".to_string(),
+            arg: 0,
         }
     }
 }
@@ -206,6 +211,7 @@ pub fn rackscale_runner<'a>(run: RackscaleRunState) {
                     run.cores_per_client,
                     run.num_clients,
                     &controller_file_name,
+                    run.arg,
                 )?;
 
                 for _ in 0..run.num_clients {
@@ -289,6 +295,7 @@ pub fn rackscale_runner<'a>(run: RackscaleRunState) {
                         run.cores_per_client,
                         run.num_clients,
                         &client_file_name,
+                        run.arg,
                     )?;
 
                     // Wait for controller to terminate

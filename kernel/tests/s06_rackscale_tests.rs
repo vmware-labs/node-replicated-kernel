@@ -50,6 +50,7 @@ fn rackscale_userspace_smoke_test(transport: RackscaleTransport) {
         _cores_per_client: usize,
         _num_clients: usize,
         _file_name: &str,
+        _arg: usize,
     ) -> Result<()> {
         *output += proc.exp_string("print_test OK")?.as_str();
         *output += proc.exp_string("upcall_test OK")?.as_str();
@@ -83,6 +84,7 @@ fn s06_rackscale_phys_alloc_test() {
         _cores_per_client: usize,
         _num_clients: usize,
         _file_name: &str,
+        _arg: usize,
     ) -> Result<()> {
         *output += proc.exp_string("phys_alloc_test OK")?.as_str();
         Ok(())
@@ -120,6 +122,7 @@ fn rackscale_fs_test(transport: RackscaleTransport) {
         _cores_per_client: usize,
         _num_clients: usize,
         _file_name: &str,
+        _arg: usize,
     ) -> Result<()> {
         *output += proc.exp_string("fs_test OK")?.as_str();
         Ok(())
@@ -149,6 +152,7 @@ fn s06_rackscale_shmem_fs_prop_test() {
         _cores_per_client: usize,
         _num_clients: usize,
         _file_name: &str,
+        _arg: usize,
     ) -> Result<()> {
         *output += proc.exp_string("fs_prop_test OK")?.as_str();
         Ok(())
@@ -180,6 +184,7 @@ fn s06_rackscale_shmem_shootdown_test() {
         _cores_per_client: usize,
         _num_clients: usize,
         _file_name: &str,
+        _arg: usize,
     ) -> Result<()> {
         *output += proc.exp_string("rackscale_shootdown_test OK")?.as_str();
         Ok(())
@@ -222,6 +227,7 @@ fn rackscale_userspace_multicore_test(transport: RackscaleTransport) {
         cores_per_client: usize,
         _num_clients: usize,
         _file_name: &str,
+        _arg: usize,
     ) -> Result<()> {
         for _i in 0..cores_per_client {
             let r = proc.exp_regex(r#"init: Hello from core (\d+)"#)?;
@@ -268,6 +274,7 @@ fn rackscale_userspace_multicore_multiclient(transport: RackscaleTransport) {
         cores_per_client: usize,
         num_clients: usize,
         _file_name: &str,
+        _arg: usize,
     ) -> Result<()> {
         for _i in 0..(cores_per_client * num_clients) {
             let r = proc.exp_regex(r#"init: Hello from core (\d+)"#)?;
@@ -283,6 +290,7 @@ fn rackscale_userspace_multicore_multiclient(transport: RackscaleTransport) {
         cores_per_client: usize,
         _num_clients: usize,
         _file_name: &str,
+        _arg: usize,
     ) -> Result<()> {
         for _i in 0..cores_per_client {
             let r = proc.exp_regex(r#"init: Hello from core (\d+)"#)?;
@@ -332,6 +340,7 @@ fn rackscale_userspace_rumprt_fs(transport: RackscaleTransport) {
         _cores_per_client: usize,
         _num_clients: usize,
         _file_name: &str,
+        _arg: usize,
     ) -> Result<()> {
         *output += proc.exp_string("bytes_written: 12")?.as_str();
         *output += proc.exp_string("bytes_read: 12")?.as_str();
@@ -364,6 +373,7 @@ fn s06_rackscale_controller_shmem_alloc() {
         _cores_per_client: usize,
         _num_clients: usize,
         _file_name: &str,
+        _arg: usize,
     ) -> Result<()> {
         *output += proc.exp_string("controller_shmem_alloc OK")?.as_str();
         Ok(())

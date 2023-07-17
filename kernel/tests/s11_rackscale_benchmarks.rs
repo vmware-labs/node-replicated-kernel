@@ -8,28 +8,21 @@
 //! The naming scheme of the tests ensures a somewhat useful order of test
 //! execution taking into account the dependency chain:
 //! * `s11_*`: Rackscale (distributed) benchmarks
-
+use std::convert::{TryFrom, TryInto};
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::Path;
-use std::sync::{mpsc::channel, Mutex};
 
 use rexpect::errors::*;
-use rexpect::process::signal::{SIGKILL, SIGTERM};
 use rexpect::process::wait::WaitStatus;
 use rexpect::session::PtySession;
 
 use testutils::builder::{BuildArgs, Machine};
 use testutils::helpers::{
-    get_shmem_names, setup_network, spawn_dcm, spawn_nrk, spawn_shmem_server, CLIENT_BUILD_DELAY,
-    SHMEM_SIZE,
+    get_shmem_names, setup_network, spawn_nrk, spawn_shmem_server, SHMEM_SIZE,
 };
-use testutils::runner_args::{
-    check_for_successful_exit, log_qemu_out_with_name, wait_for_sigterm_or_successful_exit_no_log,
-    RackscaleMode, RackscaleTransport, RunnerArgs,
-};
+use testutils::runner_args::{check_for_successful_exit, RackscaleTransport, RunnerArgs};
 
-use testutils::rackscale_runner::{notify_of_termination, wait_for_termination};
 use testutils::rackscale_runner::{rackscale_runner, RackscaleRunState};
 
 #[test]
@@ -48,8 +41,6 @@ fn s11_rackscale_ethernet_fxmark_benchmark() {
 #[cfg(not(feature = "baremetal"))]
 fn rackscale_fxmark_benchmark(transport: RackscaleTransport) {
     use std::sync::Arc;
-    use std::thread::sleep;
-    use std::time::Duration;
 
     // benchmark naming convention = nameXwrite - mixX10 is - mix benchmark for 10% writes.
     let benchmarks = if cfg!(feature = "smoke") {
@@ -67,7 +58,7 @@ fn rackscale_fxmark_benchmark(transport: RackscaleTransport) {
     };
     let _ignore = std::fs::remove_file(file_name);
 
-    let (build, build_baseline) = {
+    let build_baseline = {
         let mut build = BuildArgs::default()
             .module("init")
             .user_feature("fxmark")
@@ -77,14 +68,11 @@ fn rackscale_fxmark_benchmark(transport: RackscaleTransport) {
         if cfg!(feature = "smoke") {
             build = build.user_feature("smoke");
         }
-        let baseline_build = build.clone();
-        build = build.kernel_feature("rackscale");
-        (Arc::new(build.build()), Arc::new(baseline_build.build()))
+        Arc::new(build.build())
     };
 
     let open_files = 1;
     let machine = Machine::determine();
-    let shmem_size = SHMEM_SIZE;
 
     let max_cores = if cfg!(feature = "smoke") {
         2
@@ -137,13 +125,13 @@ fn rackscale_fxmark_benchmark(transport: RackscaleTransport) {
                     None
                 };
                 let mut shmem_server =
-                    spawn_shmem_server(&shmem_socket, &shmem_file, shmem_size, shmem_affinity)
+                    spawn_shmem_server(&shmem_socket, &shmem_file, SHMEM_SIZE, shmem_affinity)
                         .expect("Failed to start shmem server");
 
                 let mut cmdline_baseline =
                     RunnerArgs::new_with_build("userspace-smp", &build_baseline)
                         .timeout(timeout)
-                        .shmem_size(vec![shmem_size as usize])
+                        .shmem_size(vec![SHMEM_SIZE as usize])
                         .shmem_path(vec![shmem_socket])
                         .tap("tap0")
                         .workers(1)
@@ -264,6 +252,7 @@ fn rackscale_fxmark_benchmark(transport: RackscaleTransport) {
                 cores_per_client: usize,
                 num_clients: usize,
                 file_name: &str,
+                _arg: usize,
             ) -> Result<()> {
                 // Parse lines like
                 // `init::fxmark: 1,fxmark,2,2048,10000,4000,1863272`
@@ -345,9 +334,22 @@ fn rackscale_fxmark_benchmark(transport: RackscaleTransport) {
 
 #[derive(Clone, Copy, PartialEq)]
 enum VMOpsBench {
-    MapLatency,
-    MapThroughput,
-    UnmapLatency,
+    MapLatency = 0,
+    MapThroughput = 1,
+    UnmapLatency = 2,
+}
+
+impl TryFrom<usize> for VMOpsBench {
+    type Error = ();
+
+    fn try_from(v: usize) -> std::result::Result<Self, Self::Error> {
+        match v {
+            x if x == VMOpsBench::MapLatency as usize => Ok(VMOpsBench::MapLatency),
+            x if x == VMOpsBench::MapThroughput as usize => Ok(VMOpsBench::MapThroughput),
+            x if x == VMOpsBench::UnmapLatency as usize => Ok(VMOpsBench::UnmapLatency),
+            _ => Err(()),
+        }
+    }
 }
 
 #[test]
@@ -371,8 +373,6 @@ fn s11_rackscale_shmem_vmops_unmaplat_benchmark() {
 #[cfg(not(feature = "baremetal"))]
 fn rackscale_vmops_benchmark(transport: RackscaleTransport, benchtype: VMOpsBench) {
     use std::sync::Arc;
-    use std::thread::sleep;
-    use std::time::Duration;
 
     let testname_str = match benchtype {
         VMOpsBench::MapThroughput => "vmops",
@@ -385,28 +385,6 @@ fn rackscale_vmops_benchmark(transport: RackscaleTransport, benchtype: VMOpsBenc
         testname_str
     ));
     let _ignore = std::fs::remove_file(file_name.as_ref());
-
-    let build = Arc::new({
-        let mut build = BuildArgs::default().module("init");
-
-        if benchtype == VMOpsBench::UnmapLatency {
-            build = build.user_feature("bench-vmops-unmaplat");
-        } else {
-            build = build.user_feature("bench-vmops");
-        }
-        if benchtype == VMOpsBench::MapLatency || benchtype == VMOpsBench::UnmapLatency {
-            build = build.user_feature("latency");
-        }
-        build = build
-            .kernel_feature("shmem")
-            .kernel_feature("ethernet")
-            .kernel_feature("rackscale")
-            .release();
-        if cfg!(feature = "smoke") {
-            build = build.user_feature("smoke");
-        }
-        build.build()
-    });
 
     let build_baseline = Arc::new({
         let mut build = BuildArgs::default().module("init");
@@ -431,16 +409,10 @@ fn rackscale_vmops_benchmark(transport: RackscaleTransport, benchtype: VMOpsBenc
 
     let machine = Machine::determine();
     let max_cores = if cfg!(feature = "smoke") {
-        1
+        2
     } else {
         machine.max_cores()
     };
-    let baseline_shmem_size = if max_cores <= 32 {
-        SHMEM_SIZE * 2
-    } else {
-        SHMEM_SIZE * 4
-    };
-    let shmem_size = SHMEM_SIZE;
 
     let max_numa = machine.max_numa_nodes();
     let cores_per_node = core::cmp::max(1, max_cores / max_numa);
@@ -475,13 +447,9 @@ fn rackscale_vmops_benchmark(transport: RackscaleTransport, benchtype: VMOpsBenc
             } else {
                 None
             };
-            let mut shmem_server = spawn_shmem_server(
-                &shmem_socket,
-                &shmem_file,
-                baseline_shmem_size,
-                shmem_affinity,
-            )
-            .expect("Failed to start shmem server");
+            let mut shmem_server =
+                spawn_shmem_server(&shmem_socket, &shmem_file, SHMEM_SIZE, shmem_affinity)
+                    .expect("Failed to start shmem server");
 
             let baseline_cmdline = format!("initargs={}", cores);
             let baseline_file_name = file_name.clone();
@@ -496,7 +464,7 @@ fn rackscale_vmops_benchmark(transport: RackscaleTransport, benchtype: VMOpsBenc
 
             let mut cmdline_baseline = RunnerArgs::new_with_build("userspace-smp", &build_baseline)
                 .timeout(timeout)
-                .shmem_size(vec![baseline_shmem_size as usize])
+                .shmem_size(vec![SHMEM_SIZE as usize])
                 .shmem_path(vec![shmem_socket])
                 .tap("tap0")
                 .workers(1)
@@ -606,237 +574,122 @@ fn rackscale_vmops_benchmark(transport: RackscaleTransport, benchtype: VMOpsBenc
             // ensure total cores is divisible by num clients
             total_cores = total_cores - (total_cores % num_clients);
         }
-        let cores = total_cores / num_clients;
+        let cores_per_client = total_cores / num_clients;
 
         eprintln!(
             "\tRunning vmops test with {:?} total core(s), {:?} client(s) (cores_per_client={:?})",
-            total_cores, num_clients, cores
+            total_cores, num_clients, cores_per_client
         );
         let timeout = 120_000 + 800000 * total_cores as u64;
-        let all_outputs = Arc::new(Mutex::new(Vec::new()));
 
-        let mut vm_cores = vec![cores; num_clients + 1];
-        vm_cores[0] = 1; // controller vm only has 1 core
-        let placement_cores = machine.rackscale_core_affinity(vm_cores);
+        let built = {
+            let mut build = BuildArgs::default()
+                .module("init")
+                .kernel_feature("rackscale")
+                .release();
 
-        let (tx, rx) = channel();
-        let rx_mut = Arc::new(Mutex::new(rx));
-
-        let mut shmem_sockets = Vec::new();
-        let mut shmem_servers = Vec::new();
-        for i in 0..(num_clients + 1) {
-            let shmem_affinity = if cfg!(feature = "affinity-shmem") {
-                Some(placement_cores[i].0)
+            if benchtype == VMOpsBench::UnmapLatency {
+                build = build.user_feature("bench-vmops-unmaplat");
             } else {
-                None
-            };
-            let (shmem_socket, shmem_file) =
-                get_shmem_names(Some(i), cfg!(feature = "affinity-shmem"));
-            let shmem_server =
-                spawn_shmem_server(&shmem_socket, &shmem_file, shmem_size, shmem_affinity)
-                    .expect("Failed to start shmem server");
-            shmem_sockets.push(shmem_socket);
-            shmem_servers.push(shmem_server);
-        }
-
-        let mut dcm = spawn_dcm(1).expect("Failed to start DCM");
-
-        // Create controller
-        let build1 = build.clone();
-        let controller_output_array = all_outputs.clone();
-        let controller_file_name = file_name.clone();
-        let controller_placement_cores = placement_cores.clone();
-        let my_shmem_sockets = shmem_sockets.clone();
-        let controller = std::thread::spawn(move || {
-            let mut cmdline_controller = RunnerArgs::new_with_build("userspace-smp", &build1)
-                .timeout(timeout)
-                .transport(transport)
-                .mode(RackscaleMode::Controller)
-                .shmem_size(vec![shmem_size as usize; num_clients + 1])
-                .shmem_path(my_shmem_sockets)
-                .tap("tap0")
-                .nodes(1)
-                .node_offset(controller_placement_cores[0].0)
-                .no_network_setup()
-                .workers(num_clients + 1)
-                .setaffinity(controller_placement_cores[0].1.clone())
-                .use_vmxnet3();
-
+                build = build.user_feature("bench-vmops");
+            }
+            if benchtype == VMOpsBench::MapLatency || benchtype == VMOpsBench::UnmapLatency {
+                build = build.user_feature("latency");
+            }
             if cfg!(feature = "smoke") {
-                cmdline_controller = cmdline_controller.memory(10 * 1024);
+                build = build.user_feature("smoke");
+            }
+            build.build()
+        };
+
+        fn controller_match_function(
+            proc: &mut PtySession,
+            output: &mut String,
+            cores_per_client: usize,
+            num_clients: usize,
+            file_name: &str,
+            arg: usize,
+        ) -> Result<()> {
+            let benchtype = arg.try_into().expect("Invalid vmops benchtype value");
+            let expected_lines = if cfg!(feature = "smoke") {
+                1
+            } else if benchtype == VMOpsBench::MapThroughput {
+                cores_per_client * num_clients * 11
             } else {
-                cmdline_controller = cmdline_controller.memory(48 * 1024);
-            }
-
-            let mut output = String::new();
-            let mut qemu_run = |controller_clients, application_cores| -> Result<WaitStatus> {
-                let mut p = spawn_nrk(&cmdline_controller)?;
-                let expected_lines = if cfg!(feature = "smoke") {
-                    1
-                } else if benchtype == VMOpsBench::MapThroughput {
-                    application_cores * 11
-                } else {
-                    1
-                };
-
-                for _i in 0..expected_lines {
-                    let (prev, matched) = match benchtype {
-                        VMOpsBench::MapThroughput => p.exp_regex(r#"init::vmops: (\d+),(.*),(\d+),(\d+),(\d+),(\d+),(\d+)"#)?,
-                        VMOpsBench::MapLatency => p.exp_regex(r#"init::vmops: Latency percentiles: (.*),(\d+),(\d+),(\d+),(\d+),(\d+),(\d+),(\d+),(\d+),(\d+)"#)?,
-                        VMOpsBench::UnmapLatency => p.exp_regex(r#"init::vmops::unmaplat: Latency percentiles: (.*),(\d+),(\d+),(\d+),(\d+),(\d+),(\d+),(\d+),(\d+),(\d+)"#)?,
-                    };
-                    output += prev.as_str();
-                    output += matched.as_str();
-
-                    // Append parsed results to a CSV file
-                    let write_headers = !Path::new(controller_file_name.as_ref()).exists();
-                    let mut csv_file = OpenOptions::new()
-                        .append(true)
-                        .create(true)
-                        .open(controller_file_name.as_ref())
-                        .expect("Can't open file");
-                    if write_headers {
-                        let row = match benchtype {
-                            VMOpsBench::MapThroughput => "git_rev,nclients,nreplicas,thread_id,benchmark,ncores,memsize,duration_total,duration,operations\n",
-                            _ => "git_rev,nclients,nreplicas,benchmark,ncores,memsize,p1,p25,p50,p75,p99,p999,p100\n",
-                        };
-                        let r = csv_file.write(row.as_bytes());
-                        assert!(r.is_ok());
-                    }
-
-                    let parts: Vec<&str> = match benchtype {
-                        VMOpsBench::MapThroughput => matched.split("init::vmops: ").collect(),
-                        VMOpsBench::MapLatency => matched
-                            .split("init::vmops: Latency percentiles: ")
-                            .collect(),
-                        VMOpsBench::UnmapLatency => matched
-                            .split("init::vmops::unmaplat: Latency percentiles: ")
-                            .collect(),
-                    };
-
-                    assert!(parts.len() >= 2);
-                    let r = csv_file.write(format!("{},", env!("GIT_HASH")).as_bytes());
-                    assert!(r.is_ok());
-                    let r = csv_file.write(format!("{},", controller_clients).as_bytes());
-                    assert!(r.is_ok());
-                    let r = csv_file.write(format!("{},", controller_clients).as_bytes());
-                    assert!(r.is_ok());
-                    let r = csv_file.write(parts[1].as_bytes());
-                    assert!(r.is_ok());
-                    let r = csv_file.write("\n".as_bytes());
-                    assert!(r.is_ok());
-                }
-
-                for _i in 0..num_clients {
-                    notify_of_termination(&tx);
-                }
-                p.process.kill(SIGTERM)
+                1
             };
-            let ret = qemu_run(num_clients, total_cores);
-            controller_output_array
-                .lock()
-                .expect("Failed to get output lock")
-                .push((String::from("Controller"), output));
 
-            // This will only find sigterm, that's okay
-            wait_for_sigterm_or_successful_exit_no_log(
-                &cmdline_controller,
-                ret,
-                String::from("Controller"),
-            );
-        });
-
-        let mut clients = Vec::new();
-        for nclient in 1..(num_clients + 1) {
-            let kernel_cmdline = format!("initargs={}", total_cores);
-
-            let tap = format!("tap{}", 2 * nclient);
-            let my_rx_mut = rx_mut.clone();
-            let my_output_array = all_outputs.clone();
-            let my_placement_cores = placement_cores.clone();
-            let build2 = build.clone();
-            let my_shmem_sockets = shmem_sockets.clone();
-            let client = std::thread::spawn(move || {
-                sleep(Duration::from_millis(
-                    CLIENT_BUILD_DELAY * (nclient as u64 + 1),
-                ));
-                let mut cmdline_client = RunnerArgs::new_with_build("userspace-smp", &build2)
-                    .timeout(timeout)
-                    .transport(transport)
-                    .mode(RackscaleMode::Client)
-                    .shmem_size(vec![shmem_size as usize; num_clients + 1])
-                    .shmem_path(my_shmem_sockets)
-                    .tap(&tap)
-                    .no_network_setup()
-                    .workers(num_clients + 1)
-                    .cores(cores)
-                    .nodes(1)
-                    .node_offset(my_placement_cores[nclient].0)
-                    .setaffinity(my_placement_cores[nclient].1.clone())
-                    .use_vmxnet3()
-                    .nobuild()
-                    .cmd(kernel_cmdline.as_str());
-
-                if cfg!(feature = "smoke") {
-                    cmdline_client = cmdline_client.memory(10 * 1024);
-                } else {
-                    cmdline_client = cmdline_client.memory(48 * 1024);
-                }
-
-                let mut output = String::new();
-                let mut qemu_run = || -> Result<WaitStatus> {
-                    let mut p = spawn_nrk(&cmdline_client)?;
-                    let rx = my_rx_mut.lock().expect("Failed to get rx lock");
-                    let _ = wait_for_termination::<()>(&rx);
-                    let ret = p.process.kill(SIGTERM);
-                    output += p.exp_eof()?.as_str();
-                    ret
+            for _i in 0..expected_lines {
+                let (prev, matched) = match benchtype {
+                    VMOpsBench::MapThroughput => proc.exp_regex(r#"init::vmops: (\d+),(.*),(\d+),(\d+),(\d+),(\d+),(\d+)"#)?,
+                    VMOpsBench::MapLatency => proc.exp_regex(r#"init::vmops: Latency percentiles: (.*),(\d+),(\d+),(\d+),(\d+),(\d+),(\d+),(\d+),(\d+),(\d+)"#)?,
+                    VMOpsBench::UnmapLatency => proc.exp_regex(r#"init::vmops::unmaplat: Latency percentiles: (.*),(\d+),(\d+),(\d+),(\d+),(\d+),(\d+),(\d+),(\d+),(\d+)"#)?,
                 };
-                // Could exit with 'success' or from sigterm, depending on number of clients.
-                let ret = qemu_run();
-                my_output_array
-                    .lock()
-                    .expect("Failed to get output lock")
-                    .push((format!("Client{}", nclient), output));
-                wait_for_sigterm_or_successful_exit_no_log(
-                    &cmdline_client,
-                    ret,
-                    format!("Client{}", nclient),
-                );
-            });
-            clients.push(client)
-        }
+                *output += prev.as_str();
+                *output += matched.as_str();
 
-        let controller_ret = controller.join();
-        let mut client_rets = Vec::new();
-        for client in clients {
-            client_rets.push(client.join());
-        }
-        for shmem_server in shmem_servers.iter_mut() {
-            let _ignore = shmem_server.send_control('c');
-        }
-        let _ignore = dcm.process.kill(SIGKILL);
-
-        // If there's been an error, print everything
-        if controller_ret.is_err() || (&client_rets).into_iter().any(|ret| ret.is_err()) {
-            let outputs = all_outputs.lock().expect("Failed to get output lock");
-            for (name, output) in outputs.iter() {
-                log_qemu_out_with_name(None, name.to_string(), output.to_string());
-            }
-            if controller_ret.is_err() {
-                let dcm_log = dcm.exp_eof();
-                if dcm_log.is_ok() {
-                    log_qemu_out_with_name(None, "DCM".to_string(), dcm_log.unwrap());
-                } else {
-                    eprintln!("Failed to print DCM log.");
+                // Append parsed results to a CSV file
+                let write_headers = !Path::new(file_name).exists();
+                let mut csv_file = OpenOptions::new()
+                    .append(true)
+                    .create(true)
+                    .open(file_name)
+                    .expect("Can't open file");
+                if write_headers {
+                    let row = match benchtype {
+                        VMOpsBench::MapThroughput => "git_rev,nclients,nreplicas,thread_id,benchmark,ncores,memsize,duration_total,duration,operations\n",
+                        _ => "git_rev,nclients,nreplicas,benchmark,ncores,memsize,p1,p25,p50,p75,p99,p999,p100\n",
+                    };
+                    let r = csv_file.write(row.as_bytes());
+                    assert!(r.is_ok());
                 }
+
+                let parts: Vec<&str> = match benchtype {
+                    VMOpsBench::MapThroughput => matched.split("init::vmops: ").collect(),
+                    VMOpsBench::MapLatency => matched
+                        .split("init::vmops: Latency percentiles: ")
+                        .collect(),
+                    VMOpsBench::UnmapLatency => matched
+                        .split("init::vmops::unmaplat: Latency percentiles: ")
+                        .collect(),
+                };
+
+                assert!(parts.len() >= 2);
+                let r = csv_file.write(format!("{},", env!("GIT_HASH")).as_bytes());
+                assert!(r.is_ok());
+                let r = csv_file.write(format!("{},", num_clients).as_bytes());
+                assert!(r.is_ok());
+                let r = csv_file.write(format!("{},", num_clients).as_bytes());
+                assert!(r.is_ok());
+                let r = csv_file.write(parts[1].as_bytes());
+                assert!(r.is_ok());
+                let r = csv_file.write("\n".as_bytes());
+                assert!(r.is_ok());
             }
+            Ok(())
         }
 
-        for client_ret in client_rets {
-            client_ret.unwrap();
-        }
-        controller_ret.unwrap();
+        let mut test_run = RackscaleRunState::new("userspace-smp".to_string(), built);
+        test_run.controller_match_function = controller_match_function;
+        test_run.transport = transport;
+        test_run.client_timeout = timeout;
+        test_run.controller_timeout = timeout;
+        test_run.cores_per_client = cores_per_client;
+        test_run.num_clients = num_clients;
+        test_run.setup_network = false;
+        test_run.use_affinity = cfg!(feature = "affinity-shmem");
+        test_run.file_name = file_name.to_string();
+        test_run.cmd = format!("initargs={}", total_cores);
+        test_run.arg = benchtype as usize;
+
+        test_run.client_memory = if cfg!(feature = "smoke") {
+            8192
+        } else {
+            core::cmp::max(73728, total_cores * 2048)
+        };
+        test_run.controller_memory = test_run.client_memory;
+
+        rackscale_runner(test_run);
 
         if total_cores == 1 {
             total_cores = 0;

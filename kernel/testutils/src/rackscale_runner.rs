@@ -14,8 +14,8 @@ use crate::helpers::{
     SHMEM_SIZE,
 };
 use crate::runner_args::{
-    log_qemu_out_with_name, wait_for_sigterm_or_successful_exit_no_log, RackscaleMode,
-    RackscaleTransport, RunnerArgs,
+    check_for_successful_exit, log_qemu_out_with_name, wait_for_sigterm_or_successful_exit_no_log,
+    RackscaleMode, RackscaleTransport, RunnerArgs,
 };
 
 // TODO: change visibility?
@@ -124,7 +124,7 @@ impl RackscaleRunState {
     }
 }
 
-pub fn rackscale_runner<'a>(run: RackscaleRunState) {
+pub fn rackscale_runner(run: RackscaleRunState) {
     // Do not allow over provisioning
     let machine = Machine::determine();
     assert!(run.cores_per_client * run.num_clients + 1 <= machine.max_cores());
@@ -134,7 +134,7 @@ pub fn rackscale_runner<'a>(run: RackscaleRunState) {
     vm_cores[0] = 1; // controller vm only has 1 core
     let placement_cores = machine.rackscale_core_affinity(vm_cores);
 
-    // Set up network, start DCM, and then create shmem servers
+    // Set up network
     if run.setup_network {
         setup_network(run.num_clients + 1);
     }
@@ -358,4 +358,57 @@ pub fn rackscale_runner<'a>(run: RackscaleRunState) {
         client_ret.unwrap();
     }
     controller_ret.unwrap();
+}
+
+pub fn rackscale_baseline_runner(run: RackscaleRunState) {
+    // Here we assume run.num_clients == run.num_replicas (num nodes)
+    // And the controller match function, timeout, memory will be used
+
+    let machine = Machine::determine();
+    assert!(run.cores_per_client * run.num_clients + 1 <= machine.max_cores());
+
+    // This is really only necessary is is_affinity is set, but does no harm to calculate always
+    let vm_cores = vec![run.cores_per_client; run.num_clients];
+    let placement_cores = machine.rackscale_core_affinity(vm_cores);
+    let mut all_placement_cores = Vec::new();
+    let placement_offset = placement_cores[0].0;
+    for placement in placement_cores {
+        all_placement_cores.extend(placement.1);
+    }
+
+    // Set up network
+    if run.setup_network {
+        setup_network(run.num_clients + 1);
+    }
+
+    let mut cmdline_baseline = RunnerArgs::new_with_build(&run.kernel_test, &run.built)
+        .timeout(run.controller_timeout)
+        .memory(run.controller_memory)
+        .workers(1)
+        .cores(run.cores_per_client * run.num_clients)
+        .cmd(&run.cmd)
+        .no_network_setup();
+
+    if run.use_affinity {
+        cmdline_baseline = cmdline_baseline
+            .nodes(run.num_clients)
+            .node_offset(placement_offset)
+            .setaffinity(all_placement_cores)
+    }
+
+    let mut output = String::new();
+    let mut qemu_run = || -> Result<WaitStatus> {
+        let mut p = spawn_nrk(&cmdline_baseline)?;
+        (run.controller_match_function)(
+            &mut p,
+            &mut output,
+            run.cores_per_client,
+            run.num_clients,
+            &run.file_name,
+            run.arg,
+        )?;
+        output += p.exp_eof()?.as_str();
+        p.process.exit()
+    };
+    check_for_successful_exit(&cmdline_baseline, qemu_run(), output);
 }

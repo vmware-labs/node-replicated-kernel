@@ -21,9 +21,8 @@ use testutils::builder::{BuildArgs, Machine};
 use testutils::helpers::{
     get_shmem_names, setup_network, spawn_nrk, spawn_shmem_server, SHMEM_SIZE,
 };
+use testutils::rackscale_runner::{rackscale_baseline_runner, rackscale_runner, RackscaleRunState};
 use testutils::runner_args::{check_for_successful_exit, RackscaleTransport, RunnerArgs};
-
-use testutils::rackscale_runner::{rackscale_runner, RackscaleRunState};
 
 #[test]
 #[cfg(not(feature = "baremetal"))]
@@ -40,8 +39,6 @@ fn s11_rackscale_ethernet_fxmark_benchmark() {
 
 #[cfg(not(feature = "baremetal"))]
 fn rackscale_fxmark_benchmark(transport: RackscaleTransport) {
-    use std::sync::Arc;
-
     // benchmark naming convention = nameXwrite - mixX10 is - mix benchmark for 10% writes.
     let benchmarks = if cfg!(feature = "smoke") {
         vec!["mixX0"]
@@ -57,20 +54,6 @@ fn rackscale_fxmark_benchmark(transport: RackscaleTransport) {
         "rackscale_ethernet_fxmark_benchmark.csv"
     };
     let _ignore = std::fs::remove_file(file_name);
-
-    let build_baseline = {
-        let mut build = BuildArgs::default()
-            .module("init")
-            .user_feature("fxmark")
-            .kernel_feature("shmem")
-            .kernel_feature("ethernet")
-            .release();
-        if cfg!(feature = "smoke") {
-            build = build.user_feature("smoke");
-        }
-        Arc::new(build.build())
-    };
-
     let open_files = 1;
     let machine = Machine::determine();
 
@@ -81,6 +64,70 @@ fn rackscale_fxmark_benchmark(transport: RackscaleTransport) {
     };
     let max_numa = machine.max_numa_nodes();
     let cores_per_node = core::cmp::max(1, max_cores / max_numa);
+
+    let (baseline_build, rackscale_build) = {
+        let mut build = BuildArgs::default()
+            .module("init")
+            .user_feature("fxmark")
+            .release();
+        if cfg!(feature = "smoke") {
+            build = build.user_feature("smoke");
+        }
+        let baseline_build = build.clone();
+        let rackscale_build = build.kernel_feature("rackscale");
+        (baseline_build, rackscale_build)
+    };
+
+    fn controller_match_function(
+        proc: &mut PtySession,
+        output: &mut String,
+        cores_per_client: usize,
+        num_clients: usize,
+        file_name: &str,
+        _arg: usize,
+    ) -> Result<()> {
+        // Parse lines like
+        // `init::fxmark: 1,fxmark,2,2048,10000,4000,1863272`
+        // write them to a CSV file
+        let expected_lines = if cfg!(feature = "smoke") {
+            1
+        } else {
+            cores_per_client * num_clients * 10
+        };
+
+        for _i in 0..expected_lines {
+            let (prev, matched) =
+                proc.exp_regex(r#"init::fxmark: (\d+),(.*),(\d+),(\d+),(\d+),(\d+),(\d+),(\d+)"#)?;
+            *output += prev.as_str();
+            *output += matched.as_str();
+
+            // Append parsed results to a CSV file
+            let write_headers = !Path::new(file_name).exists();
+            let mut csv_file = OpenOptions::new()
+                .append(true)
+                .create(true)
+                .open(file_name)
+                .expect("Can't open file");
+            if write_headers {
+                let row = "git_rev,nclients,nreplicas,thread_id,benchmark,ncores,write_ratio,open_files,duration_total,duration,operations\n";
+                let r = csv_file.write(row.as_bytes());
+                assert!(r.is_ok());
+            }
+
+            let parts: Vec<&str> = matched.split("init::fxmark: ").collect();
+            let r = csv_file.write(format!("{},", env!("GIT_HASH")).as_bytes());
+            assert!(r.is_ok());
+            let r = csv_file.write(format!("{},", num_clients).as_bytes());
+            assert!(r.is_ok());
+            let r = csv_file.write(format!("{},", num_clients).as_bytes());
+            assert!(r.is_ok());
+            let r = csv_file.write(parts[1].as_bytes());
+            assert!(r.is_ok());
+            let r = csv_file.write("\n".as_bytes());
+            assert!(r.is_ok());
+        }
+        Ok(())
+    }
 
     for benchmark in benchmarks {
         // Run the baseline test
@@ -107,98 +154,27 @@ fn rackscale_fxmark_benchmark(transport: RackscaleTransport) {
                         benchmark, cores, num_nodes, open_files
                     );
 
-                let vm_cores = vec![cores / num_nodes; num_nodes]; // replicas
-                let placement_cores = machine.rackscale_core_affinity(vm_cores);
-                let mut all_placement_cores = Vec::new();
-                let placement_offset = placement_cores[0].0;
-                for placement in placement_cores {
-                    all_placement_cores.extend(placement.1);
-                }
+                let baseline_built = baseline_build.clone().build();
+                let mut test_run =
+                    RackscaleRunState::new("userspace-smp".to_string(), baseline_built);
+                test_run.controller_match_function = controller_match_function;
+                test_run.transport = transport;
+                test_run.client_timeout = timeout;
+                test_run.controller_timeout = timeout;
+                test_run.cores_per_client = cores / num_nodes;
+                test_run.num_clients = num_nodes;
+                test_run.setup_network = false;
+                test_run.use_affinity = cfg!(feature = "affinity-shmem");
+                test_run.file_name = file_name.to_string();
+                test_run.cmd = format!("initargs={}X{}X{}", cores, open_files, benchmark);
 
-                let baseline_cmdline = format!("initargs={}X{}X{}", cores, open_files, benchmark);
-
-                let (shmem_socket, shmem_file) =
-                    get_shmem_names(None, cfg!(feature = "affinity-shmem"));
-                let shmem_affinity = if cfg!(feature = "affinity-shmem") {
-                    Some(0)
+                test_run.client_memory = if cfg!(feature = "smoke") {
+                    8192
                 } else {
-                    None
+                    core::cmp::max(73728, cores * 2048)
                 };
-                let mut shmem_server =
-                    spawn_shmem_server(&shmem_socket, &shmem_file, SHMEM_SIZE, shmem_affinity)
-                        .expect("Failed to start shmem server");
-
-                let mut cmdline_baseline =
-                    RunnerArgs::new_with_build("userspace-smp", &build_baseline)
-                        .timeout(timeout)
-                        .shmem_size(vec![SHMEM_SIZE as usize])
-                        .shmem_path(vec![shmem_socket])
-                        .tap("tap0")
-                        .workers(1)
-                        .cores(cores)
-                        .nodes(num_nodes)
-                        .node_offset(placement_offset)
-                        .setaffinity(all_placement_cores)
-                        .use_vmxnet3()
-                        .cmd(baseline_cmdline.as_str());
-
-                if cfg!(feature = "smoke") {
-                    cmdline_baseline = cmdline_baseline.memory(8192);
-                } else {
-                    cmdline_baseline = cmdline_baseline.memory(core::cmp::max(73728, cores * 2048));
-                }
-
-                let mut output = String::new();
-                let mut qemu_run = |baseline_cores| -> Result<WaitStatus> {
-                    let mut p = spawn_nrk(&cmdline_baseline)?;
-
-                    // Parse lines like
-                    // `init::fxmark: 1,fxmark,2,2048,10000,4000,1863272`
-                    // write them to a CSV file
-                    let expected_lines = if cfg!(feature = "smoke") {
-                        1
-                    } else {
-                        baseline_cores * 10
-                    };
-
-                    for _i in 0..expected_lines {
-                        let (prev, matched) = p.exp_regex(
-                            r#"init::fxmark: (\d+),(.*),(\d+),(\d+),(\d+),(\d+),(\d+),(\d+)"#,
-                        )?;
-                        output += prev.as_str();
-                        output += matched.as_str();
-
-                        // Append parsed results to a CSV file
-                        let write_headers = !Path::new(file_name).exists();
-                        let mut csv_file = OpenOptions::new()
-                            .append(true)
-                            .create(true)
-                            .open(file_name)
-                            .expect("Can't open file");
-                        if write_headers {
-                            let row = "git_rev,nclients,nreplicas,thread_id,benchmark,ncores,write_ratio,open_files,duration_total,duration,operations\n";
-                            let r = csv_file.write(row.as_bytes());
-                            assert!(r.is_ok());
-                        }
-
-                        let parts: Vec<&str> = matched.split("init::fxmark: ").collect();
-                        let r = csv_file.write(format!("{},", env!("GIT_HASH")).as_bytes());
-                        assert!(r.is_ok());
-                        let r = csv_file.write(format!("{},", 0).as_bytes());
-                        assert!(r.is_ok());
-                        let r = csv_file.write(format!("{},", num_nodes).as_bytes());
-                        assert!(r.is_ok());
-                        let r = csv_file.write(parts[1].as_bytes());
-                        assert!(r.is_ok());
-                        let r = csv_file.write("\n".as_bytes());
-                        assert!(r.is_ok());
-                    }
-
-                    output += p.exp_eof()?.as_str();
-                    p.process.exit()
-                };
-                check_for_successful_exit(&cmdline_baseline, qemu_run(cores), output);
-                let _ignore = shmem_server.send_control('c');
+                test_run.controller_memory = test_run.client_memory;
+                rackscale_baseline_runner(test_run);
 
                 if cores == 1 {
                     cores = 0;
@@ -236,69 +212,8 @@ fn rackscale_fxmark_benchmark(transport: RackscaleTransport) {
                 benchmark, total_cores, num_clients, cores_per_client, open_files
             );
 
-            let mut build = BuildArgs::default()
-                .module("init")
-                .user_feature("fxmark")
-                .kernel_feature("rackscale") // TODO: toggle this with use of baseline
-                .release();
-            if cfg!(feature = "smoke") {
-                build = build.user_feature("smoke");
-            }
-            let built = build.build();
-
-            fn controller_match_function(
-                proc: &mut PtySession,
-                output: &mut String,
-                cores_per_client: usize,
-                num_clients: usize,
-                file_name: &str,
-                _arg: usize,
-            ) -> Result<()> {
-                // Parse lines like
-                // `init::fxmark: 1,fxmark,2,2048,10000,4000,1863272`
-                // write them to a CSV file
-                let expected_lines = if cfg!(feature = "smoke") {
-                    1
-                } else {
-                    cores_per_client * num_clients * 10
-                };
-
-                for _i in 0..expected_lines {
-                    let (prev, matched) = proc.exp_regex(
-                        r#"init::fxmark: (\d+),(.*),(\d+),(\d+),(\d+),(\d+),(\d+),(\d+)"#,
-                    )?;
-                    *output += prev.as_str();
-                    *output += matched.as_str();
-
-                    // Append parsed results to a CSV file
-                    let write_headers = !Path::new(file_name).exists();
-                    let mut csv_file = OpenOptions::new()
-                        .append(true)
-                        .create(true)
-                        .open(file_name)
-                        .expect("Can't open file");
-                    if write_headers {
-                        let row = "git_rev,nclients,nreplicas,thread_id,benchmark,ncores,write_ratio,open_files,duration_total,duration,operations\n";
-                        let r = csv_file.write(row.as_bytes());
-                        assert!(r.is_ok());
-                    }
-
-                    let parts: Vec<&str> = matched.split("init::fxmark: ").collect();
-                    let r = csv_file.write(format!("{},", env!("GIT_HASH")).as_bytes());
-                    assert!(r.is_ok());
-                    let r = csv_file.write(format!("{},", num_clients).as_bytes());
-                    assert!(r.is_ok());
-                    let r = csv_file.write(format!("{},", num_clients).as_bytes());
-                    assert!(r.is_ok());
-                    let r = csv_file.write(parts[1].as_bytes());
-                    assert!(r.is_ok());
-                    let r = csv_file.write("\n".as_bytes());
-                    assert!(r.is_ok());
-                }
-                Ok(())
-            }
-
-            let mut test_run = RackscaleRunState::new("userspace-smp".to_string(), built);
+            let rackscale_built = rackscale_build.clone().build();
+            let mut test_run = RackscaleRunState::new("userspace-smp".to_string(), rackscale_built);
             test_run.controller_match_function = controller_match_function;
             test_run.transport = transport;
             test_run.client_timeout = timeout;

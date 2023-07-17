@@ -53,8 +53,6 @@ fn rackscale_userspace_smoke_test(transport: RackscaleTransport) {
             "test-scheduler",
             "test-syscalls",
         ])
-        .kernel_feature("shmem")
-        .kernel_feature("ethernet")
         .kernel_feature("rackscale")
         .release()
         .build();
@@ -120,267 +118,59 @@ fn s06_rackscale_ethernet_fs_test() {
 
 #[cfg(not(feature = "baremetal"))]
 fn rackscale_fs_test(transport: RackscaleTransport) {
-    use std::sync::Arc;
-    use std::thread::sleep;
-    use std::time::Duration;
+    let built = BuildArgs::default()
+        .module("init")
+        .user_feature("test-fs")
+        .kernel_feature("rackscale")
+        .release()
+        .build();
 
-    let timeout = 60_000;
-
-    let (tx, rx) = channel();
-    let all_outputs = Arc::new(Mutex::new(Vec::new()));
-
-    setup_network(2);
-
-    let (shmem_socket0, shmem_file0) = get_shmem_names(Some(0), false);
-    let (shmem_socket1, shmem_file1) = get_shmem_names(Some(1), false);
-    let mut shmem_server0 = spawn_shmem_server(&shmem_socket0, &shmem_file0, SHMEM_SIZE, None)
-        .expect("Failed to start shmem server 0");
-    let mut shmem_server1 = spawn_shmem_server(&shmem_socket1, &shmem_file1, SHMEM_SIZE, None)
-        .expect("Failed to start shmem server 1");
-
-    let mut dcm = spawn_dcm(1).expect("Failed to start DCM");
-
-    // Create build for both controller and client
-    let build = Arc::new(
-        BuildArgs::default()
-            .module("init")
-            .user_feature("test-fs")
-            .kernel_feature("shmem")
-            .kernel_feature("ethernet")
-            .kernel_feature("rackscale")
-            .release()
-            .build(),
-    );
-
-    // Run DCM and controller in separate thread
-    let controller_output_array = all_outputs.clone();
-    let shmem_sockets = vec![shmem_socket0.clone(), shmem_socket1.clone()];
-    let build1 = build.clone();
-    let controller = std::thread::Builder::new()
-        .name("Controller".to_string())
-        .spawn(move || {
-            let cmdline_controller = RunnerArgs::new_with_build("userspace-smp", &build1)
-                .timeout(timeout)
-                .transport(transport)
-                .mode(RackscaleMode::Controller)
-                .shmem_size(vec![SHMEM_SIZE as usize; 2])
-                .shmem_path(shmem_sockets)
-                .tap("tap0")
-                .no_network_setup()
-                .workers(2)
-                .use_vmxnet3();
-
-            let mut output = String::new();
-            let mut qemu_run = || -> Result<WaitStatus> {
-                let mut p = spawn_nrk(&cmdline_controller)?;
-
-                let _ = wait_for_termination::<()>(&rx);
-                let ret = p.process.kill(SIGTERM);
-                output += p.exp_eof()?.as_str();
-                ret
-            };
-            let ret = qemu_run();
-            controller_output_array
-                .lock()
-                .expect("Failed to get mutex to output array")
-                .push((String::from("Controller"), output));
-
-            // This will only find sigterm, that's okay
-            wait_for_sigterm_or_successful_exit_no_log(
-                &cmdline_controller,
-                ret,
-                String::from("Controller"),
-            );
-        })
-        .expect("Controller thread failed to spawn");
-
-    // Run client in separate thead. Wait a bit to make sure controller started
-    let client_output_array = all_outputs.clone();
-    let build2 = build.clone();
-    let shmem_sockets = vec![shmem_socket0.clone(), shmem_socket1.clone()];
-    let client = std::thread::Builder::new()
-        .name("Client".to_string())
-        .spawn(move || {
-            sleep(Duration::from_millis(CLIENT_BUILD_DELAY));
-            let cmdline_client = RunnerArgs::new_with_build("userspace-smp", &build2)
-                .timeout(timeout)
-                .transport(transport)
-                .mode(RackscaleMode::Client)
-                .shmem_size(vec![SHMEM_SIZE as usize; 2])
-                .shmem_path(shmem_sockets)
-                .tap("tap2")
-                .no_network_setup()
-                .workers(2)
-                .nobuild()
-                .use_vmxnet3();
-
-            let mut output = String::new();
-            let mut qemu_run = || -> Result<WaitStatus> {
-                let mut p = spawn_nrk(&cmdline_client)?;
-                output += p.exp_string("fs_test OK")?.as_str();
-                output += p.exp_eof()?.as_str();
-                notify_of_termination(&tx);
-                p.process.exit()
-            };
-            let ret = qemu_run();
-            client_output_array
-                .lock()
-                .expect("Failed to get mutex to output array")
-                .push((String::from("Client"), output.clone()));
-            check_for_successful_exit_no_log(&cmdline_client, ret, String::from("Client"));
-        })
-        .expect("Client thread failed to spawn");
-
-    let client_ret = client.join();
-    let controller_ret = controller.join();
-
-    let _ignore = shmem_server0.send_control('c');
-    let _ignore = shmem_server1.send_control('c');
-    let _ignore = dcm.process.kill(SIGKILL);
-
-    // If there's been an error, print everything
-    let outputs = all_outputs
-        .lock()
-        .expect("Failed to get mutex to output array");
-    assert!(outputs.len() == 2);
-    if controller_ret.is_err() || client_ret.is_err() {
-        for (name, output) in outputs.iter() {
-            log_qemu_out_with_name(None, name.to_string(), output.to_string());
-        }
+    fn client_match_function(
+        proc: &mut PtySession,
+        output: &mut String,
+        _cores_per_client: usize,
+        _num_clients: usize,
+    ) -> Result<()> {
+        *output += proc.exp_string("fs_test OK")?.as_str();
+        Ok(())
     }
 
-    client_ret.unwrap();
-    controller_ret.unwrap();
+    let mut test_run = RackscaleRunState::new("userspace-smp".to_string(), built);
+    test_run.client_match_function = client_match_function;
+    test_run.transport = transport;
+    test_run.wait_for_client = true;
+
+    rackscale_runner(test_run);
 }
 
 #[cfg(not(feature = "baremetal"))]
 #[test]
 fn s06_rackscale_shmem_fs_prop_test() {
-    use std::sync::Arc;
-    use std::thread::sleep;
-    use std::time::Duration;
+    let built = BuildArgs::default()
+        .module("init")
+        .user_feature("test-fs-prop")
+        .kernel_feature("rackscale")
+        .release()
+        .build();
 
-    let timeout = 300_000;
-    let shmem_size = SHMEM_SIZE * 2;
-
-    setup_network(2);
-
-    let (shmem_socket0, shmem_file0) = get_shmem_names(Some(0), false);
-    let (shmem_socket1, shmem_file1) = get_shmem_names(Some(1), false);
-    let mut shmem_server0 = spawn_shmem_server(&shmem_socket0, &shmem_file0, shmem_size, None)
-        .expect("Failed to start shmem server 0");
-    let mut shmem_server1 = spawn_shmem_server(&shmem_socket1, &shmem_file1, shmem_size, None)
-        .expect("Failed to start shmem server 1");
-
-    let mut dcm = spawn_dcm(1).expect("Failed to start DCM");
-
-    let (tx, rx) = channel();
-    let all_outputs = Arc::new(Mutex::new(Vec::new()));
-
-    let build = Arc::new(
-        BuildArgs::default()
-            .module("init")
-            .user_feature("test-fs-prop")
-            .kernel_feature("rackscale")
-            .release()
-            .build(),
-    );
-
-    let controller_output_array = all_outputs.clone();
-    let shmem_sockets = vec![shmem_socket0.clone(), shmem_socket1.clone()];
-    let build1 = build.clone();
-    let controller = std::thread::Builder::new()
-        .name("Controller".to_string())
-        .spawn(move || {
-            let cmdline_controller = RunnerArgs::new_with_build("userspace-smp", &build1)
-                .timeout(timeout)
-                .mode(RackscaleMode::Controller)
-                .shmem_size(vec![shmem_size as usize; 2])
-                .shmem_path(shmem_sockets)
-                .tap("tap0")
-                .no_network_setup()
-                .workers(2)
-                .use_vmxnet3();
-
-            let mut output = String::new();
-            let mut qemu_run = || -> Result<WaitStatus> {
-                let mut p = spawn_nrk(&cmdline_controller)?;
-
-                let _ = wait_for_termination::<()>(&rx);
-                let ret = p.process.kill(SIGTERM);
-                output += p.exp_eof()?.as_str();
-                ret
-            };
-            let ret = qemu_run();
-            controller_output_array
-                .lock()
-                .expect("Failed to get mutex to output array")
-                .push((String::from("Controller"), output));
-
-            // This will only find sigterm, that's okay
-            wait_for_sigterm_or_successful_exit_no_log(
-                &cmdline_controller,
-                ret,
-                String::from("Controller"),
-            );
-        })
-        .expect("Controller thread failed to spawn");
-
-    let client_output_array = all_outputs.clone();
-    let shmem_sockets = vec![shmem_socket0.clone(), shmem_socket1.clone()];
-    let build2 = build.clone();
-    let client = std::thread::Builder::new()
-        .name("Client".to_string())
-        .spawn(move || {
-            sleep(Duration::from_millis(CLIENT_BUILD_DELAY));
-            let cmdline_client = RunnerArgs::new_with_build("userspace-smp", &build2)
-                .timeout(timeout)
-                .mode(RackscaleMode::Client)
-                .shmem_size(vec![shmem_size as usize; 2])
-                .shmem_path(shmem_sockets)
-                .tap("tap2")
-                .no_network_setup()
-                .workers(2)
-                .nobuild()
-                .use_vmxnet3();
-
-            let mut output = String::new();
-            let mut qemu_run = || -> Result<WaitStatus> {
-                let mut p = spawn_nrk(&cmdline_client)?;
-                output += p.exp_string("fs_prop_test OK")?.as_str();
-                output += p.exp_eof()?.as_str();
-                notify_of_termination(&tx);
-                p.process.exit()
-            };
-            let ret = qemu_run();
-            client_output_array
-                .lock()
-                .expect("Failed to get mutex to output array")
-                .push((String::from("Client"), output.clone()));
-            check_for_successful_exit_no_log(&cmdline_client, ret, String::from("Client"));
-        })
-        .expect("Client thread failed to spawn");
-
-    let client_ret = client.join();
-    let controller_ret = controller.join();
-
-    let _ignore = shmem_server0.send_control('c');
-    let _ignore = shmem_server1.send_control('c');
-    let _ignore = dcm.process.kill(SIGKILL);
-
-    // If there's been an error, print everything
-    let outputs = all_outputs
-        .lock()
-        .expect("Failed to get mutex to output array");
-    assert!(outputs.len() == 2);
-    if controller_ret.is_err() || client_ret.is_err() {
-        for (name, output) in outputs.iter() {
-            log_qemu_out_with_name(None, name.to_string(), output.to_string());
-        }
+    fn client_match_function(
+        proc: &mut PtySession,
+        output: &mut String,
+        _cores_per_client: usize,
+        _num_clients: usize,
+    ) -> Result<()> {
+        *output += proc.exp_string("fs_prop_test OK")?.as_str();
+        Ok(())
     }
 
-    client_ret.unwrap();
-    controller_ret.unwrap();
+    let mut test_run = RackscaleRunState::new("userspace-smp".to_string(), built);
+    test_run.client_match_function = client_match_function;
+    test_run.wait_for_client = true;
+    test_run.client_timeout = 300_000;
+    test_run.controller_timeout = 300_000;
+    test_run.shmem_size = test_run.shmem_size * 2;
+
+    rackscale_runner(test_run);
 }
 
 #[cfg(not(feature = "baremetal"))]

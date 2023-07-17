@@ -1,5 +1,6 @@
 // Copyright © 2021 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
+use std::fmt;
 
 use rexpect::errors::*;
 use rexpect::process::signal::SIGTERM;
@@ -13,6 +14,22 @@ use crate::ExitStatus;
 pub enum RackscaleMode {
     Controller,
     Client,
+}
+
+/// Transports for rackscale RPCs
+#[derive(Eq, PartialEq, Debug, Clone, Copy)]
+pub enum RackscaleTransport {
+    Ethernet,
+    Shmem,
+}
+
+impl fmt::Display for RackscaleTransport {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            RackscaleTransport::Shmem => write!(f, "shmem"),
+            RackscaleTransport::Ethernet => write!(f, "ethernet"),
+        }
+    }
 }
 
 /// Arguments passed to the run.py script to configure a test.
@@ -68,6 +85,8 @@ pub struct RunnerArgs<'a> {
     no_network_setup: bool,
     /// Mode (For rackscale, None otherwise)
     mode: Option<RackscaleMode>,
+    /// Transport for rackscale RPCs (None, otherwise)
+    transport: Option<RackscaleTransport>,
 }
 
 #[allow(unused)]
@@ -99,6 +118,7 @@ impl<'a> RunnerArgs<'a> {
             network_only: false,
             no_network_setup: false,
             mode: None,
+            transport: None,
         };
 
         if cfg!(feature = "prealloc") {
@@ -135,6 +155,7 @@ impl<'a> RunnerArgs<'a> {
             network_only: false,
             no_network_setup: false,
             mode: None,
+            transport: None,
         };
 
         if cfg!(feature = "prealloc") {
@@ -297,6 +318,11 @@ impl<'a> RunnerArgs<'a> {
         self
     }
 
+    pub fn transport(mut self, transport: RackscaleTransport) -> RunnerArgs<'a> {
+        self.transport = Some(transport);
+        self
+    }
+
     /// Converts the RunnerArgs to a run.py command line invocation.
     pub fn as_cmd(&'a self) -> Vec<String> {
         // Figure out log-level
@@ -322,12 +348,18 @@ impl<'a> RunnerArgs<'a> {
             Some(RackscaleMode::Controller) => "mode=controller ",
         };
 
+        let transport_str = match self.transport {
+            None => "".to_string(),
+            Some(t) => format!("transport={} ", t.to_string()),
+        };
+
         cmd.push(String::from("--cmd"));
         cmd.push(format!(
-            "log={} test={} {}{}",
+            "log={} test={} {}{}{}",
             log_level,
             self.kernel_test,
             mode_str,
+            transport_str,
             self.cmd.unwrap_or("")
         ));
         cmd.push(String::from("--nic"));

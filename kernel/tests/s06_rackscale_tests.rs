@@ -21,23 +21,23 @@ use testutils::helpers::{
 };
 use testutils::runner_args::{
     check_for_successful_exit, check_for_successful_exit_no_log, log_qemu_out_with_name,
-    wait_for_sigterm_or_successful_exit_no_log, RackscaleMode, RunnerArgs,
+    wait_for_sigterm_or_successful_exit_no_log, RackscaleMode, RackscaleTransport, RunnerArgs,
 };
 
 #[cfg(not(feature = "baremetal"))]
 #[test]
 fn s06_rackscale_shmem_userspace_smoke_test() {
-    rackscale_userspace_smoke_test(true);
+    rackscale_userspace_smoke_test(RackscaleTransport::Shmem);
 }
 
 #[cfg(not(feature = "baremetal"))]
 #[test]
 fn s06_rackscale_ethernet_userspace_smoke_test() {
-    rackscale_userspace_smoke_test(false);
+    rackscale_userspace_smoke_test(RackscaleTransport::Ethernet);
 }
 
 #[cfg(not(feature = "baremetal"))]
-fn rackscale_userspace_smoke_test(is_shmem: bool) {
+fn rackscale_userspace_smoke_test(transport: RackscaleTransport) {
     use std::sync::Arc;
     use std::thread::sleep;
     use std::time::Duration;
@@ -84,14 +84,9 @@ fn rackscale_userspace_smoke_test(is_shmem: bool) {
     let controller = std::thread::Builder::new()
         .name("Controller".to_string())
         .spawn(move || {
-            let controller_cmd = if is_shmem {
-                "transport=shmem"
-            } else {
-                "transport=ethernet"
-            };
             let cmdline_controller = RunnerArgs::new_with_build("userspace-smp", &build1)
                 .timeout(timeout)
-                .cmd(controller_cmd)
+                .transport(transport)
                 .mode(RackscaleMode::Controller)
                 .shmem_size(vec![SHMEM_SIZE as usize; 2])
                 .shmem_path(shmem_sockets)
@@ -133,15 +128,10 @@ fn rackscale_userspace_smoke_test(is_shmem: bool) {
         .name("Client".to_string())
         .spawn(move || {
             sleep(Duration::from_millis(CLIENT_BUILD_DELAY));
-            let client_cmd = if is_shmem {
-                "transport=shmem"
-            } else {
-                "transport=ethernet"
-            };
             let cmdline_client = RunnerArgs::new_with_build("userspace-smp", &build2)
                 .timeout(timeout)
+                .transport(transport)
                 .mode(RackscaleMode::Client)
-                .cmd(client_cmd)
                 .shmem_size(vec![SHMEM_SIZE as usize; 2])
                 .shmem_path(shmem_sockets)
                 .tap("tap2")
@@ -328,17 +318,17 @@ fn s06_rackscale_phys_alloc_test() {
 #[cfg(not(feature = "baremetal"))]
 #[test]
 fn s06_rackscale_shmem_fs_test() {
-    rackscale_fs_test(true);
+    rackscale_fs_test(RackscaleTransport::Shmem);
 }
 
 #[cfg(not(feature = "baremetal"))]
 #[test]
 fn s06_rackscale_ethernet_fs_test() {
-    rackscale_fs_test(false);
+    rackscale_fs_test(RackscaleTransport::Ethernet);
 }
 
 #[cfg(not(feature = "baremetal"))]
-fn rackscale_fs_test(is_shmem: bool) {
+fn rackscale_fs_test(transport: RackscaleTransport) {
     use std::sync::Arc;
     use std::thread::sleep;
     use std::time::Duration;
@@ -378,14 +368,9 @@ fn rackscale_fs_test(is_shmem: bool) {
     let controller = std::thread::Builder::new()
         .name("Controller".to_string())
         .spawn(move || {
-            let controller_cmd = if is_shmem {
-                "transport=shmem"
-            } else {
-                "transport=ethernet"
-            };
             let cmdline_controller = RunnerArgs::new_with_build("userspace-smp", &build1)
                 .timeout(timeout)
-                .cmd(controller_cmd)
+                .transport(transport)
                 .mode(RackscaleMode::Controller)
                 .shmem_size(vec![SHMEM_SIZE as usize; 2])
                 .shmem_path(shmem_sockets)
@@ -426,14 +411,9 @@ fn rackscale_fs_test(is_shmem: bool) {
         .name("Client".to_string())
         .spawn(move || {
             sleep(Duration::from_millis(CLIENT_BUILD_DELAY));
-            let client_cmd = if is_shmem {
-                "transport=shmem"
-            } else {
-                "transport=ethernet"
-            };
             let cmdline_client = RunnerArgs::new_with_build("userspace-smp", &build2)
                 .timeout(timeout)
-                .cmd(client_cmd)
+                .transport(transport)
                 .mode(RackscaleMode::Client)
                 .shmem_size(vec![SHMEM_SIZE as usize; 2])
                 .shmem_path(shmem_sockets)
@@ -662,7 +642,7 @@ fn s06_rackscale_shmem_shootdown_test() {
         .spawn(move || {
             let cmdline_controller = RunnerArgs::new_with_build("userspace-smp", &controller_build)
                 .timeout(timeout)
-                .cmd("transport=shmem")
+                .transport(RackscaleTransport::Shmem)
                 .mode(RackscaleMode::Controller)
                 .shmem_size(vec![SHMEM_SIZE as usize; clients + 1])
                 .shmem_path(my_shmem_sockets)
@@ -711,7 +691,7 @@ fn s06_rackscale_shmem_shootdown_test() {
                 sleep(Duration::from_millis((i + 1) as u64 * CLIENT_BUILD_DELAY));
                 let cmdline_client = RunnerArgs::new_with_build("userspace-smp", &client_build)
                     .timeout(timeout)
-                    .cmd("transport=shmem")
+                    .transport(RackscaleTransport::Shmem)
                     .mode(RackscaleMode::Client)
                     .shmem_size(vec![SHMEM_SIZE as usize; clients + 1])
                     .shmem_path(my_shmem_sockets)
@@ -780,17 +760,17 @@ fn s06_rackscale_shmem_shootdown_test() {
 #[cfg(not(feature = "baremetal"))]
 #[test]
 fn s06_rackscale_shmem_userspace_multicore_test() {
-    rackscale_userspace_multicore_test(true);
+    rackscale_userspace_multicore_test(RackscaleTransport::Shmem);
 }
 
 #[cfg(not(feature = "baremetal"))]
 #[test]
 fn s06_rackscale_ethernet_userspace_multicore_test() {
-    rackscale_userspace_multicore_test(false);
+    rackscale_userspace_multicore_test(RackscaleTransport::Ethernet);
 }
 
 #[cfg(not(feature = "baremetal"))]
-fn rackscale_userspace_multicore_test(is_shmem: bool) {
+fn rackscale_userspace_multicore_test(transport: RackscaleTransport) {
     use std::sync::Arc;
     use std::thread::sleep;
     use std::time::Duration;
@@ -834,14 +814,9 @@ fn rackscale_userspace_multicore_test(is_shmem: bool) {
     let controller = std::thread::Builder::new()
         .name("Controller".to_string())
         .spawn(move || {
-            let controller_cmd = if is_shmem {
-                "transport=shmem"
-            } else {
-                "transport=ethernet"
-            };
             let cmdline_controller = RunnerArgs::new_with_build("userspace-smp", &build1)
                 .timeout(timeout)
-                .cmd(controller_cmd)
+                .transport(transport)
                 .mode(RackscaleMode::Controller)
                 .shmem_size(vec![SHMEM_SIZE as usize; 2])
                 .shmem_path(shmem_sockets)
@@ -882,14 +857,9 @@ fn rackscale_userspace_multicore_test(is_shmem: bool) {
         .name("Client".to_string())
         .spawn(move || {
             sleep(Duration::from_millis(CLIENT_BUILD_DELAY));
-            let client_cmd = if is_shmem {
-                "transport=shmem"
-            } else {
-                "transport=ethernet"
-            };
             let cmdline_client = RunnerArgs::new_with_build("userspace-smp", &build2)
                 .timeout(timeout)
-                .cmd(client_cmd)
+                .transport(transport)
                 .mode(RackscaleMode::Client)
                 .shmem_size(vec![SHMEM_SIZE as usize; 2])
                 .shmem_path(shmem_sockets)
@@ -953,17 +923,17 @@ fn rackscale_userspace_multicore_test(is_shmem: bool) {
 #[cfg(not(feature = "baremetal"))]
 #[test]
 fn s06_rackscale_ethernet_userspace_multicore_multiclient() {
-    rackscale_userspace_multicore_multiclient(false);
+    rackscale_userspace_multicore_multiclient(RackscaleTransport::Ethernet);
 }
 
 #[cfg(not(feature = "baremetal"))]
 #[test]
 fn s06_rackscale_shmem_userspace_multicore_multiclient() {
-    rackscale_userspace_multicore_multiclient(true);
+    rackscale_userspace_multicore_multiclient(RackscaleTransport::Shmem);
 }
 
 #[cfg(not(feature = "baremetal"))]
-fn rackscale_userspace_multicore_multiclient(is_shmem: bool) {
+fn rackscale_userspace_multicore_multiclient(transport: RackscaleTransport) {
     use std::sync::Arc;
     use std::thread::sleep;
     use std::time::Duration;
@@ -1012,14 +982,9 @@ fn rackscale_userspace_multicore_multiclient(is_shmem: bool) {
     let controller = std::thread::Builder::new()
         .name("Controller".to_string())
         .spawn(move || {
-            let controller_cmd = if is_shmem {
-                "transport=shmem"
-            } else {
-                "transport=ethernet"
-            };
             let cmdline_controller = RunnerArgs::new_with_build("userspace-smp", &controller_build)
                 .timeout(timeout)
-                .cmd(controller_cmd)
+                .transport(transport)
                 .mode(RackscaleMode::Controller)
                 .shmem_size(vec![SHMEM_SIZE as usize; 3])
                 .shmem_path(shmem_sockets)
@@ -1072,15 +1037,10 @@ fn rackscale_userspace_multicore_multiclient(is_shmem: bool) {
     let client = std::thread::Builder::new()
         .name("Client1".to_string())
         .spawn(move || {
-            let client_cmd = if is_shmem {
-                "transport=shmem"
-            } else {
-                "transport=ethernet"
-            };
             sleep(Duration::from_millis(CLIENT_BUILD_DELAY));
             let cmdline_client = RunnerArgs::new_with_build("userspace-smp", &client1_build)
                 .timeout(timeout)
-                .cmd(client_cmd)
+                .transport(transport)
                 .mode(RackscaleMode::Client)
                 .shmem_size(vec![SHMEM_SIZE as usize; 3])
                 .shmem_path(shmem_sockets)
@@ -1134,15 +1094,10 @@ fn rackscale_userspace_multicore_multiclient(is_shmem: bool) {
     let client2 = std::thread::Builder::new()
         .name("Client2".to_string())
         .spawn(move || {
-            let client_cmd = if is_shmem {
-                "transport=shmem"
-            } else {
-                "transport=ethernet"
-            };
             sleep(Duration::from_millis(CLIENT_BUILD_DELAY * 2));
             let cmdline_client = RunnerArgs::new_with_build("userspace-smp", &client2_build)
                 .timeout(timeout)
-                .cmd(client_cmd)
+                .transport(transport)
                 .mode(RackscaleMode::Client)
                 .shmem_size(vec![SHMEM_SIZE as usize; 3])
                 .shmem_path(shmem_sockets)
@@ -1211,7 +1166,7 @@ fn rackscale_userspace_multicore_multiclient(is_shmem: bool) {
 #[cfg(not(feature = "baremetal"))]
 #[test]
 fn s06_rackscale_shmem_userspace_rumprt_fs() {
-    rackscale_userspace_rumprt_fs(true);
+    rackscale_userspace_rumprt_fs(RackscaleTransport::Shmem);
 }
 
 /// Tests the rump FS.
@@ -1220,7 +1175,7 @@ fn s06_rackscale_shmem_userspace_rumprt_fs() {
 /// This implicitly tests many components such as the scheduler, memory
 /// management, IO and device interrupts.
 #[cfg(not(feature = "baremetal"))]
-fn rackscale_userspace_rumprt_fs(is_shmem: bool) {
+fn rackscale_userspace_rumprt_fs(transport: RackscaleTransport) {
     use std::sync::Arc;
     use std::thread::sleep;
     use std::time::Duration;
@@ -1261,14 +1216,9 @@ fn rackscale_userspace_rumprt_fs(is_shmem: bool) {
     let controller = std::thread::Builder::new()
         .name("Controller".to_string())
         .spawn(move || {
-            let controller_cmd = if is_shmem {
-                "transport=shmem"
-            } else {
-                "transport=ethernet"
-            };
             let cmdline_controller = RunnerArgs::new_with_build("userspace", &build1)
                 .timeout(timeout)
-                .cmd(controller_cmd)
+                .transport(transport)
                 .mode(RackscaleMode::Controller)
                 .shmem_size(vec![SHMEM_SIZE as usize; 2])
                 .shmem_path(shmem_sockets)
@@ -1309,14 +1259,9 @@ fn rackscale_userspace_rumprt_fs(is_shmem: bool) {
         .name("Client".to_string())
         .spawn(move || {
             sleep(Duration::from_millis(CLIENT_BUILD_DELAY));
-            let client_cmd = if is_shmem {
-                "transport=shmem"
-            } else {
-                "transport=ethernet"
-            };
             let cmdline_client = RunnerArgs::new_with_build("userspace-smp", &build2)
                 .timeout(timeout)
-                .cmd(client_cmd)
+                .transport(transport)
                 .mode(RackscaleMode::Client)
                 .shmem_size(vec![SHMEM_SIZE as usize; 2])
                 .shmem_path(shmem_sockets)
@@ -1411,7 +1356,7 @@ fn s06_rackscale_controller_shmem_alloc() {
         .spawn(move || {
             let cmdline_controller = RunnerArgs::new_with_build("userspace-smp", &controller_build)
                 .timeout(timeout)
-                .cmd("transport=shmem")
+                .transport(RackscaleTransport::Shmem)
                 .mode(RackscaleMode::Controller)
                 .shmem_size(vec![SHMEM_SIZE as usize; clients + 1])
                 .shmem_path(my_shmem_sockets)
@@ -1448,7 +1393,7 @@ fn s06_rackscale_controller_shmem_alloc() {
                 sleep(Duration::from_millis((i + 1) as u64 * CLIENT_BUILD_DELAY));
                 let cmdline_client = RunnerArgs::new_with_build("userspace-smp", &client_build)
                     .timeout(timeout)
-                    .cmd("transport=shmem")
+                    .transport(RackscaleTransport::Shmem)
                     .mode(RackscaleMode::Client)
                     .shmem_size(vec![SHMEM_SIZE as usize; clients + 1])
                     .shmem_path(my_shmem_sockets)

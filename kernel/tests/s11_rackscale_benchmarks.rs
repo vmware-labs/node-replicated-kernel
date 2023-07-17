@@ -25,24 +25,24 @@ use testutils::helpers::{
 };
 use testutils::runner_args::{
     check_for_successful_exit, log_qemu_out_with_name, wait_for_sigterm_or_successful_exit_no_log,
-    RackscaleMode, RunnerArgs,
+    RackscaleMode, RackscaleTransport, RunnerArgs,
 };
 
 #[test]
 #[cfg(not(feature = "baremetal"))]
 fn s11_rackscale_shmem_fxmark_benchmark() {
-    rackscale_fxmark_benchmark(true);
+    rackscale_fxmark_benchmark(RackscaleTransport::Shmem);
 }
 
 #[test]
 #[ignore]
 #[cfg(not(feature = "baremetal"))]
 fn s11_rackscale_ethernet_fxmark_benchmark() {
-    rackscale_fxmark_benchmark(false);
+    rackscale_fxmark_benchmark(RackscaleTransport::Ethernet);
 }
 
 #[cfg(not(feature = "baremetal"))]
-fn rackscale_fxmark_benchmark(is_shmem: bool) {
+fn rackscale_fxmark_benchmark(transport: RackscaleTransport) {
     use std::sync::Arc;
     use std::thread::sleep;
     use std::time::Duration;
@@ -56,7 +56,7 @@ fn rackscale_fxmark_benchmark(is_shmem: bool) {
         //vec!["mixX0", "mixX10", "mixX100"]
     };
 
-    let file_name = if is_shmem {
+    let file_name = if transport == RackscaleTransport::Shmem {
         "rackscale_shmem_fxmark_benchmark.csv"
     } else {
         "rackscale_ethernet_fxmark_benchmark.csv"
@@ -123,13 +123,7 @@ fn rackscale_fxmark_benchmark(is_shmem: bool) {
                     all_placement_cores.extend(placement.1);
                 }
 
-                let baseline_cmdline = format!(
-                    "transport={} initargs={}X{}X{}",
-                    if is_shmem { "shmem" } else { "ethernet" },
-                    cores,
-                    open_files,
-                    benchmark
-                );
+                let baseline_cmdline = format!("initargs={}X{}X{}", cores, open_files, benchmark);
 
                 let (shmem_socket, shmem_file) =
                     get_shmem_names(None, cfg!(feature = "affinity-shmem"));
@@ -277,9 +271,6 @@ fn rackscale_fxmark_benchmark(is_shmem: bool) {
 
             let mut dcm = spawn_dcm(1).expect("Failed to start DCM");
 
-            let controller_cmdline =
-                format!("transport={}", if is_shmem { "shmem" } else { "ethernet" });
-
             // Create controller
             let build1 = build.clone();
             let controller_output_array = all_outputs.clone();
@@ -288,7 +279,7 @@ fn rackscale_fxmark_benchmark(is_shmem: bool) {
             let controller = std::thread::spawn(move || {
                 let mut cmdline_controller = RunnerArgs::new_with_build("userspace-smp", &build1)
                     .timeout(timeout)
-                    .cmd(&controller_cmdline)
+                    .transport(transport)
                     .mode(RackscaleMode::Controller)
                     .shmem_size(vec![shmem_size as usize; num_clients + 1])
                     .shmem_path(my_shmem_sockets)
@@ -374,13 +365,8 @@ fn rackscale_fxmark_benchmark(is_shmem: bool) {
 
             let mut clients = Vec::new();
             for nclient in 1..(num_clients + 1) {
-                let kernel_cmdline = format!(
-                    "transport={} initargs={}X{}X{}",
-                    if is_shmem { "shmem" } else { "ethernet" },
-                    total_cores,
-                    open_files,
-                    benchmark
-                );
+                let kernel_cmdline =
+                    format!("initargs={}X{}X{}", total_cores, open_files, benchmark);
 
                 let tap = format!("tap{}", 2 * nclient);
                 let my_rx_mut = rx_mut.clone();
@@ -394,6 +380,7 @@ fn rackscale_fxmark_benchmark(is_shmem: bool) {
                     ));
                     let mut cmdline_client = RunnerArgs::new_with_build("userspace-smp", &build2)
                         .timeout(timeout)
+                        .transport(transport)
                         .mode(RackscaleMode::Client)
                         .shmem_size(vec![shmem_size as usize; num_clients + 1])
                         .shmem_path(my_shmem_sockets)
@@ -486,28 +473,27 @@ enum VMOpsBench {
 #[test]
 #[cfg(not(feature = "baremetal"))]
 fn s11_rackscale_shmem_vmops_maptput_benchmark() {
-    rackscale_vmops_benchmark(true, VMOpsBench::MapThroughput);
+    rackscale_vmops_benchmark(RackscaleTransport::Shmem, VMOpsBench::MapThroughput);
 }
 
 #[test]
 #[cfg(not(feature = "baremetal"))]
 fn s11_rackscale_shmem_vmops_maplat_benchmark() {
-    rackscale_vmops_benchmark(true, VMOpsBench::MapLatency);
+    rackscale_vmops_benchmark(RackscaleTransport::Shmem, VMOpsBench::MapLatency);
 }
 
 #[test]
 #[cfg(not(feature = "baremetal"))]
 fn s11_rackscale_shmem_vmops_unmaplat_benchmark() {
-    rackscale_vmops_benchmark(true, VMOpsBench::UnmapLatency);
+    rackscale_vmops_benchmark(RackscaleTransport::Shmem, VMOpsBench::UnmapLatency);
 }
 
 #[cfg(not(feature = "baremetal"))]
-fn rackscale_vmops_benchmark(is_shmem: bool, benchtype: VMOpsBench) {
+fn rackscale_vmops_benchmark(transport: RackscaleTransport, benchtype: VMOpsBench) {
     use std::sync::Arc;
     use std::thread::sleep;
     use std::time::Duration;
 
-    let transport_str = if is_shmem { "shmem" } else { "ethernet" };
     let testname_str = match benchtype {
         VMOpsBench::MapThroughput => "vmops",
         VMOpsBench::MapLatency => "vmops_latency",
@@ -515,7 +501,8 @@ fn rackscale_vmops_benchmark(is_shmem: bool, benchtype: VMOpsBench) {
     };
     let file_name = Arc::new(format!(
         "rackscale_{}_{}_benchmark.csv",
-        transport_str, testname_str
+        transport.to_string(),
+        testname_str
     ));
     let _ignore = std::fs::remove_file(file_name.as_ref());
 
@@ -774,9 +761,6 @@ fn rackscale_vmops_benchmark(is_shmem: bool, benchtype: VMOpsBench) {
 
         let mut dcm = spawn_dcm(1).expect("Failed to start DCM");
 
-        let controller_cmdline =
-            format!("transport={}", if is_shmem { "shmem" } else { "ethernet" });
-
         // Create controller
         let build1 = build.clone();
         let controller_output_array = all_outputs.clone();
@@ -786,7 +770,7 @@ fn rackscale_vmops_benchmark(is_shmem: bool, benchtype: VMOpsBench) {
         let controller = std::thread::spawn(move || {
             let mut cmdline_controller = RunnerArgs::new_with_build("userspace-smp", &build1)
                 .timeout(timeout)
-                .cmd(&controller_cmdline)
+                .transport(transport)
                 .mode(RackscaleMode::Controller)
                 .shmem_size(vec![shmem_size as usize; num_clients + 1])
                 .shmem_path(my_shmem_sockets)
@@ -884,11 +868,7 @@ fn rackscale_vmops_benchmark(is_shmem: bool, benchtype: VMOpsBench) {
 
         let mut clients = Vec::new();
         for nclient in 1..(num_clients + 1) {
-            let kernel_cmdline = format!(
-                "transport={} initargs={}",
-                if is_shmem { "shmem" } else { "ethernet" },
-                total_cores,
-            );
+            let kernel_cmdline = format!("initargs={}", total_cores);
 
             let tap = format!("tap{}", 2 * nclient);
             let my_rx_mut = rx_mut.clone();
@@ -902,6 +882,7 @@ fn rackscale_vmops_benchmark(is_shmem: bool, benchtype: VMOpsBench) {
                 ));
                 let mut cmdline_client = RunnerArgs::new_with_build("userspace-smp", &build2)
                     .timeout(timeout)
+                    .transport(transport)
                     .mode(RackscaleMode::Client)
                     .shmem_size(vec![shmem_size as usize; num_clients + 1])
                     .shmem_path(my_shmem_sockets)

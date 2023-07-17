@@ -11,6 +11,7 @@ use rexpect::session::PtySession;
 use crate::builder::{Built, Machine};
 use crate::helpers::{
     get_shmem_names, setup_network, spawn_dcm, spawn_nrk, spawn_shmem_server, CLIENT_BUILD_DELAY,
+    SHMEM_SIZE,
 };
 use crate::runner_args::{
     log_qemu_out_with_name, wait_for_sigterm_or_successful_exit_no_log, RackscaleMode,
@@ -58,7 +59,39 @@ pub struct RackscaleRunState {
     pub cores_per_client: usize,
     pub shmem_size: usize,
     pub use_affinity: bool,
+    pub wait_for_client: bool,
     pub transport: RackscaleTransport,
+}
+
+impl RackscaleRunState {
+    pub fn new(kernel_test: String, built: Built<'static>) -> RackscaleRunState {
+        fn blank_match_function(
+            _proc: &mut PtySession,
+            _output: &mut String,
+            _cores_per_client: usize,
+            _num_clients: usize,
+        ) -> Result<()> {
+            // Do nothing
+            Ok(())
+        }
+
+        RackscaleRunState {
+            controller_timeout: 60_000,
+            controller_memory: 1024,
+            controller_match_function: blank_match_function,
+            client_timeout: 60_000,
+            client_memory: 1024,
+            client_match_function: blank_match_function,
+            kernel_test,
+            built,
+            num_clients: 1,
+            cores_per_client: 1,
+            shmem_size: SHMEM_SIZE,
+            use_affinity: false,
+            wait_for_client: false,
+            transport: RackscaleTransport::Shmem,
+        }
+    }
 }
 
 pub fn rackscale_runner<'a>(run: RackscaleRunState) {
@@ -91,6 +124,7 @@ pub fn rackscale_runner<'a>(run: RackscaleRunState) {
 
     let (tx, rx) = channel();
     let rx_mut = Arc::new(Mutex::new(rx));
+    let tx_mut = Arc::new(Mutex::new(tx));
     let built = Arc::new(run.built);
 
     // Run controller in separate thread
@@ -98,6 +132,8 @@ pub fn rackscale_runner<'a>(run: RackscaleRunState) {
     let controller_build = built.clone();
     let controller_shmem_sockets = shmem_sockets.clone();
     let controller_kernel_test = run.kernel_test.clone();
+    let controller_rx = rx_mut.clone();
+    let controller_tx = tx_mut.clone();
     let controller = std::thread::Builder::new()
         .name("Controller".to_string())
         .spawn(move || {
@@ -126,9 +162,16 @@ pub fn rackscale_runner<'a>(run: RackscaleRunState) {
                     run.num_clients,
                 )?;
 
-                // Notify each client it's okay to shutdown
                 for _ in 0..run.num_clients {
-                    notify_of_termination(&tx);
+                    if run.wait_for_client {
+                        // Wait for signal from each client that it is done
+                        let rx = controller_rx.lock().expect("Failed to get rx lock");
+                        let _ = wait_for_termination::<()>(&rx);
+                    } else {
+                        // Notify each client it's okay to shutdown
+                        let tx = controller_tx.lock().expect("Failed to get tx lock");
+                        notify_of_termination(&tx);
+                    }
                 }
 
                 let ret = p.process.kill(SIGTERM)?;
@@ -157,6 +200,7 @@ pub fn rackscale_runner<'a>(run: RackscaleRunState) {
         let client_build = built.clone();
         let client_shmem_sockets = shmem_sockets.clone();
         let client_rx = rx_mut.clone();
+        let client_tx = tx_mut.clone();
         let client_kernel_test = run.kernel_test.clone();
         let client = std::thread::Builder::new()
             .name(format!("Client{}", i + 1))
@@ -189,8 +233,13 @@ pub fn rackscale_runner<'a>(run: RackscaleRunState) {
                     )?;
 
                     // Wait for controller to terminate
-                    let rx = client_rx.lock().expect("Failed to get rx lock");
-                    let _ = wait_for_termination::<()>(&rx);
+                    if run.wait_for_client {
+                        let tx = client_tx.lock().expect("Failed to get rx lock");
+                        notify_of_termination(&tx);
+                    } else {
+                        let rx = client_rx.lock().expect("Failed to get rx lock");
+                        let _ = wait_for_termination::<()>(&rx);
+                    }
 
                     let ret = p.process.kill(SIGTERM);
                     output += p.exp_eof()?.as_str();

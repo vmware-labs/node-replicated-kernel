@@ -806,7 +806,7 @@ if __name__ == '__main__':
         sys.exit(0)
 
     kvm_members = getent['group', 'kvm']().strip().split(":")[-1].split(',')
-    if not user in kvm_members and not args.norun:
+    if not user in kvm_members and not args.norun and os.geteuid() != 0:
         print("Your user ({}) is not in the kvm group.".format(user))
         print("Add yourself to the group with `sudo adduser {} kvm`".format(user))
         print("You'll likely have to restart for changes to take effect,")

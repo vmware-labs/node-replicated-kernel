@@ -392,7 +392,6 @@ pub fn rackscale_baseline_runner(run: RackscaleRunState) {
     if run.use_affinity {
         cmdline_baseline = cmdline_baseline
             .nodes(run.num_clients)
-            .node_offset(placement_offset)
             .setaffinity(all_placement_cores)
     }
 

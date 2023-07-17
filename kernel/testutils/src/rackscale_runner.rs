@@ -47,19 +47,33 @@ pub type RackscaleMatchFunction = fn(
 ) -> Result<()>;
 
 pub struct RackscaleRunState {
+    /// Timeout for the controller process
     pub controller_timeout: u64,
+    /// Amount of non-shmem QEMU memory given to the controller
     pub controller_memory: usize,
+    /// Function that is called after the controller is spawned to match output of the controller process
     pub controller_match_function: RackscaleMatchFunction,
+    /// Timeout for each client process
     pub client_timeout: u64,
+    /// Amount of non-shmem QEMU memory given to each client
     pub client_memory: usize,
+    /// Function that is called after each client is spawned to match output of the client process
     pub client_match_function: RackscaleMatchFunction,
+    /// Kernel test string
     pub kernel_test: String,
+    /// Used for generating the command of both the clients and the controller
     pub built: Built<'static>,
+    /// Number of client machines to spawn
     pub num_clients: usize,
+    /// Number of QEMU cores given to each client
     pub cores_per_client: usize,
+    /// Size fo the shmem for each shmem server (1 for controller, and 1 per client)
     pub shmem_size: usize,
+    /// Use affinity shmem and cores, that is, try to colocate resources of each qemu instance on a NUMA node
     pub use_affinity: bool,
+    /// Wait to close the controller until after the clients signal they are done. Default: false, the clients wait for the controller
     pub wait_for_client: bool,
+    /// The RPC transport to use (shmem or ethernet)
     pub transport: RackscaleTransport,
 }
 

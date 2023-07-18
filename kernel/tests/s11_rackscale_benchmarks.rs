@@ -18,7 +18,7 @@ use rexpect::session::PtySession;
 
 use testutils::builder::{BuildArgs, Machine};
 use testutils::helpers::setup_network;
-use testutils::rackscale_runner::RackscaleRunState;
+use testutils::rackscale_runner::RackscaleRun;
 use testutils::runner_args::RackscaleTransport;
 
 #[test]
@@ -157,8 +157,7 @@ fn rackscale_fxmark_benchmark(transport: RackscaleTransport) {
                     );
 
                 let baseline_built = baseline_build.clone().build();
-                let mut test_run =
-                    RackscaleRunState::new("userspace-smp".to_string(), baseline_built);
+                let mut test_run = RackscaleRun::new("userspace-smp".to_string(), baseline_built);
                 test_run.controller_match_fn = controller_match_fn;
                 test_run.transport = transport;
                 test_run.client_timeout = timeout;
@@ -215,7 +214,7 @@ fn rackscale_fxmark_benchmark(transport: RackscaleTransport) {
             );
 
             let rackscale_built = rackscale_build.clone().build();
-            let mut test_run = RackscaleRunState::new("userspace-smp".to_string(), rackscale_built);
+            let mut test_run = RackscaleRun::new("userspace-smp".to_string(), rackscale_built);
             test_run.controller_match_fn = controller_match_fn;
             test_run.transport = transport;
             test_run.client_timeout = timeout;
@@ -427,7 +426,7 @@ fn rackscale_vmops_benchmark(transport: RackscaleTransport, benchtype: VMOpsBenc
                 cores, num_nodes
             );
             let baseline_built = baseline_build.clone().build();
-            let mut test_run = RackscaleRunState::new("userspace-smp".to_string(), baseline_built);
+            let mut test_run = RackscaleRun::new("userspace-smp".to_string(), baseline_built);
             test_run.controller_match_fn = controller_match_fn;
             test_run.transport = transport;
             test_run.controller_timeout = timeout;
@@ -483,7 +482,7 @@ fn rackscale_vmops_benchmark(transport: RackscaleTransport, benchtype: VMOpsBenc
         let timeout = 120_000 + 800000 * total_cores as u64;
 
         let rackscale_built = rackscale_build.clone().build();
-        let mut test_run = RackscaleRunState::new("userspace-smp".to_string(), rackscale_built);
+        let mut test_run = RackscaleRun::new("userspace-smp".to_string(), rackscale_built);
         test_run.controller_match_fn = controller_match_fn;
         test_run.transport = transport;
         test_run.client_timeout = timeout;

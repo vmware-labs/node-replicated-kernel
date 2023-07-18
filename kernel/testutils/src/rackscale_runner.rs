@@ -48,7 +48,7 @@ type RackscaleMatchFn = fn(
 ) -> Result<()>;
 
 #[derive(Clone)]
-pub struct RackscaleRunState {
+pub struct RackscaleRun {
     /// Kernel test string
     kernel_test: String,
     /// Used for generating the command of both the clients and the controller
@@ -87,8 +87,8 @@ pub struct RackscaleRunState {
     pub arg: usize,
 }
 
-impl RackscaleRunState {
-    pub fn new(kernel_test: String, built: Built<'static>) -> RackscaleRunState {
+impl RackscaleRun {
+    pub fn new(kernel_test: String, built: Built<'static>) -> RackscaleRun {
         fn blank_match_fn(
             _proc: &mut PtySession,
             _output: &mut String,
@@ -102,7 +102,7 @@ impl RackscaleRunState {
             Ok(())
         }
 
-        RackscaleRunState {
+        RackscaleRun {
             controller_timeout: 60_000,
             controller_memory: 1024,
             controller_match_fn: blank_match_fn,
@@ -401,7 +401,7 @@ impl RackscaleRunState {
     }
 }
 
-pub struct RackscaleBenchState {
+pub struct RackscaleBench {
     // Function to calculate the command. Takes as argument number of application cores
     cmd_func: fn(usize) -> String,
     // Function to calculate the command. Takes as argument number of application cores
@@ -412,10 +412,10 @@ pub struct RackscaleBenchState {
     client_mem_func: fn(usize, bool) -> usize,
 }
 
-impl RackscaleBenchState {
+impl RackscaleBench {
     pub fn run_bench(
         &self,
-        mut test_run: RackscaleRunState,
+        mut test_run: RackscaleRun,
         is_baseline: bool,
         remove_file: bool,
         is_smoke: bool,

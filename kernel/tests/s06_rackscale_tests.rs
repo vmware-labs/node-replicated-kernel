@@ -12,7 +12,7 @@ use rexpect::errors::*;
 use rexpect::session::PtySession;
 
 use testutils::builder::{BuildArgs, Machine};
-use testutils::rackscale_runner::RackscaleRunState;
+use testutils::rackscale_runner::RackscaleRun;
 use testutils::runner_args::RackscaleTransport;
 
 #[cfg(not(feature = "baremetal"))]
@@ -60,7 +60,7 @@ fn rackscale_userspace_smoke_test(transport: RackscaleTransport) {
         Ok(())
     }
 
-    let mut test_run = RackscaleRunState::new("userspace-smp".to_string(), built);
+    let mut test_run = RackscaleRun::new("userspace-smp".to_string(), built);
     test_run.client_match_fn = client_match_fn;
     test_run.transport = transport;
     test_run.wait_for_client = true;
@@ -90,7 +90,7 @@ fn s06_rackscale_phys_alloc_test() {
         Ok(())
     }
 
-    let mut test_run = RackscaleRunState::new("userspace-smp".to_string(), built);
+    let mut test_run = RackscaleRun::new("userspace-smp".to_string(), built);
     test_run.client_match_fn = client_match_fn;
     test_run.wait_for_client = true;
 }
@@ -129,7 +129,7 @@ fn rackscale_fs_test(transport: RackscaleTransport) {
         Ok(())
     }
 
-    let mut test_run = RackscaleRunState::new("userspace-smp".to_string(), built);
+    let mut test_run = RackscaleRun::new("userspace-smp".to_string(), built);
     test_run.client_match_fn = client_match_fn;
     test_run.transport = transport;
     test_run.wait_for_client = true;
@@ -159,7 +159,7 @@ fn s06_rackscale_shmem_fs_prop_test() {
         Ok(())
     }
 
-    let mut test_run = RackscaleRunState::new("userspace-smp".to_string(), built);
+    let mut test_run = RackscaleRun::new("userspace-smp".to_string(), built);
     test_run.client_match_fn = client_match_fn;
     test_run.wait_for_client = true;
     test_run.client_timeout = 300_000;
@@ -191,7 +191,7 @@ fn s06_rackscale_shmem_shootdown_test() {
         Ok(())
     }
 
-    let mut test_run = RackscaleRunState::new("userspace-smp".to_string(), built);
+    let mut test_run = RackscaleRun::new("userspace-smp".to_string(), built);
     test_run.controller_match_fn = controller_match_fn;
     test_run.client_timeout = 120_000;
     test_run.controller_timeout = 120_000;
@@ -238,7 +238,7 @@ fn rackscale_userspace_multicore_test(transport: RackscaleTransport) {
         Ok(())
     }
 
-    let mut test_run = RackscaleRunState::new("userspace-smp".to_string(), built);
+    let mut test_run = RackscaleRun::new("userspace-smp".to_string(), built);
     test_run.client_match_fn = client_match_fn;
     test_run.transport = transport;
     let machine = Machine::determine();
@@ -302,7 +302,7 @@ fn rackscale_userspace_multicore_multiclient(transport: RackscaleTransport) {
         Ok(())
     }
 
-    let mut test_run = RackscaleRunState::new("userspace-smp".to_string(), built);
+    let mut test_run = RackscaleRun::new("userspace-smp".to_string(), built);
     test_run.controller_match_fn = controller_match_fn;
     test_run.client_match_fn = client_match_fn;
     test_run.transport = transport;
@@ -349,7 +349,7 @@ fn rackscale_userspace_rumprt_fs(transport: RackscaleTransport) {
         Ok(())
     }
 
-    let mut test_run = RackscaleRunState::new("userspace".to_string(), built);
+    let mut test_run = RackscaleRun::new("userspace".to_string(), built);
     test_run.client_match_fn = client_match_fn;
     test_run.wait_for_client = true;
     test_run.transport = transport;
@@ -381,7 +381,7 @@ fn s06_rackscale_controller_shmem_alloc() {
         Ok(())
     }
 
-    let mut test_run = RackscaleRunState::new("userspace-smp".to_string(), built);
+    let mut test_run = RackscaleRun::new("userspace-smp".to_string(), built);
     test_run.controller_match_fn = controller_match_fn;
     test_run.num_clients = 2;
     test_run.cores_per_client = 2;

@@ -12,9 +12,8 @@ use rexpect::errors::*;
 use rexpect::session::PtySession;
 
 use testutils::builder::{BuildArgs, Machine};
+use testutils::rackscale_runner::RackscaleRunState;
 use testutils::runner_args::RackscaleTransport;
-
-use testutils::rackscale_runner::{rackscale_runner, RackscaleRunState};
 
 #[cfg(not(feature = "baremetal"))]
 #[test]
@@ -40,11 +39,11 @@ fn rackscale_userspace_smoke_test(transport: RackscaleTransport) {
             "test-scheduler",
             "test-syscalls",
         ])
-        .kernel_feature("rackscale")
+        .set_rackscale(true)
         .release()
         .build();
 
-    fn client_match_function(
+    fn client_match_fn(
         proc: &mut PtySession,
         output: &mut String,
         _cores_per_client: usize,
@@ -62,11 +61,10 @@ fn rackscale_userspace_smoke_test(transport: RackscaleTransport) {
     }
 
     let mut test_run = RackscaleRunState::new("userspace-smp".to_string(), built);
-    test_run.client_match_function = client_match_function;
+    test_run.client_match_fn = client_match_fn;
     test_run.transport = transport;
     test_run.wait_for_client = true;
-
-    rackscale_runner(test_run);
+    test_run.run_rackscale();
 }
 
 #[cfg(not(feature = "baremetal"))]
@@ -75,11 +73,11 @@ fn s06_rackscale_phys_alloc_test() {
     let built = BuildArgs::default()
         .module("init")
         .user_feature("test-phys-alloc")
-        .kernel_feature("rackscale")
+        .set_rackscale(true)
         .release()
         .build();
 
-    fn client_match_function(
+    fn client_match_fn(
         proc: &mut PtySession,
         output: &mut String,
         _cores_per_client: usize,
@@ -93,7 +91,7 @@ fn s06_rackscale_phys_alloc_test() {
     }
 
     let mut test_run = RackscaleRunState::new("userspace-smp".to_string(), built);
-    test_run.client_match_function = client_match_function;
+    test_run.client_match_fn = client_match_fn;
     test_run.wait_for_client = true;
 }
 
@@ -114,11 +112,11 @@ fn rackscale_fs_test(transport: RackscaleTransport) {
     let built = BuildArgs::default()
         .module("init")
         .user_feature("test-fs")
-        .kernel_feature("rackscale")
         .release()
+        .set_rackscale(true)
         .build();
 
-    fn client_match_function(
+    fn client_match_fn(
         proc: &mut PtySession,
         output: &mut String,
         _cores_per_client: usize,
@@ -132,11 +130,10 @@ fn rackscale_fs_test(transport: RackscaleTransport) {
     }
 
     let mut test_run = RackscaleRunState::new("userspace-smp".to_string(), built);
-    test_run.client_match_function = client_match_function;
+    test_run.client_match_fn = client_match_fn;
     test_run.transport = transport;
     test_run.wait_for_client = true;
-
-    rackscale_runner(test_run);
+    test_run.run_rackscale();
 }
 
 #[cfg(not(feature = "baremetal"))]
@@ -145,11 +142,11 @@ fn s06_rackscale_shmem_fs_prop_test() {
     let built = BuildArgs::default()
         .module("init")
         .user_feature("test-fs-prop")
-        .kernel_feature("rackscale")
+        .set_rackscale(true)
         .release()
         .build();
 
-    fn client_match_function(
+    fn client_match_fn(
         proc: &mut PtySession,
         output: &mut String,
         _cores_per_client: usize,
@@ -163,13 +160,12 @@ fn s06_rackscale_shmem_fs_prop_test() {
     }
 
     let mut test_run = RackscaleRunState::new("userspace-smp".to_string(), built);
-    test_run.client_match_function = client_match_function;
+    test_run.client_match_fn = client_match_fn;
     test_run.wait_for_client = true;
     test_run.client_timeout = 300_000;
     test_run.controller_timeout = 300_000;
     test_run.shmem_size = test_run.shmem_size * 2;
-
-    rackscale_runner(test_run);
+    test_run.run_rackscale();
 }
 
 #[cfg(not(feature = "baremetal"))]
@@ -178,11 +174,11 @@ fn s06_rackscale_shmem_shootdown_test() {
     let built = BuildArgs::default()
         .module("init")
         .user_feature("test-rackscale-shootdown")
-        .kernel_feature("rackscale")
+        .set_rackscale(true)
         .release()
         .build();
 
-    fn controller_match_function(
+    fn controller_match_fn(
         proc: &mut PtySession,
         output: &mut String,
         _cores_per_client: usize,
@@ -196,13 +192,12 @@ fn s06_rackscale_shmem_shootdown_test() {
     }
 
     let mut test_run = RackscaleRunState::new("userspace-smp".to_string(), built);
-    test_run.controller_match_function = controller_match_function;
+    test_run.controller_match_fn = controller_match_fn;
     test_run.client_timeout = 120_000;
     test_run.controller_timeout = 120_000;
     test_run.num_clients = 2;
     test_run.cores_per_client = 2;
-
-    rackscale_runner(test_run);
+    test_run.run_rackscale();
 }
 
 #[cfg(not(feature = "baremetal"))]
@@ -222,11 +217,11 @@ fn rackscale_userspace_multicore_test(transport: RackscaleTransport) {
     let built = BuildArgs::default()
         .module("init")
         .user_feature("test-scheduler-smp")
-        .kernel_feature("rackscale")
+        .set_rackscale(true)
         .release()
         .build();
 
-    fn client_match_function(
+    fn client_match_fn(
         proc: &mut PtySession,
         output: &mut String,
         cores_per_client: usize,
@@ -244,13 +239,12 @@ fn rackscale_userspace_multicore_test(transport: RackscaleTransport) {
     }
 
     let mut test_run = RackscaleRunState::new("userspace-smp".to_string(), built);
-    test_run.client_match_function = client_match_function;
+    test_run.client_match_fn = client_match_fn;
     test_run.transport = transport;
     let machine = Machine::determine();
     test_run.cores_per_client = core::cmp::min(4, (machine.max_cores() - 1) / 2);
     test_run.wait_for_client = true;
-
-    rackscale_runner(test_run);
+    test_run.run_rackscale();
 }
 
 #[cfg(not(feature = "baremetal"))]
@@ -270,11 +264,11 @@ fn rackscale_userspace_multicore_multiclient(transport: RackscaleTransport) {
     let built = BuildArgs::default()
         .module("init")
         .user_feature("test-scheduler-smp")
-        .kernel_feature("rackscale")
+        .set_rackscale(true)
         .release()
         .build();
 
-    fn controller_match_function(
+    fn controller_match_fn(
         proc: &mut PtySession,
         output: &mut String,
         cores_per_client: usize,
@@ -291,7 +285,7 @@ fn rackscale_userspace_multicore_multiclient(transport: RackscaleTransport) {
         Ok(())
     }
 
-    fn client_match_function(
+    fn client_match_fn(
         proc: &mut PtySession,
         output: &mut String,
         cores_per_client: usize,
@@ -309,16 +303,15 @@ fn rackscale_userspace_multicore_multiclient(transport: RackscaleTransport) {
     }
 
     let mut test_run = RackscaleRunState::new("userspace-smp".to_string(), built);
-    test_run.controller_match_function = controller_match_function;
-    test_run.client_match_function = client_match_function;
+    test_run.controller_match_fn = controller_match_fn;
+    test_run.client_match_fn = client_match_fn;
     test_run.transport = transport;
     test_run.client_timeout = 120_000;
     test_run.controller_timeout = 120_000;
     let machine = Machine::determine();
     test_run.cores_per_client = core::cmp::min(4, (machine.max_cores() - 1) / 2);
     test_run.num_clients = 2;
-
-    rackscale_runner(test_run);
+    test_run.run_rackscale();
 }
 
 #[cfg(not(feature = "baremetal"))]
@@ -338,11 +331,11 @@ fn rackscale_userspace_rumprt_fs(transport: RackscaleTransport) {
         .module("init")
         .user_feature("test-rump-tmpfs")
         .user_feature("rumprt")
-        .kernel_feature("rackscale")
+        .set_rackscale(true)
         .release()
         .build();
 
-    fn client_match_function(
+    fn client_match_fn(
         proc: &mut PtySession,
         output: &mut String,
         _cores_per_client: usize,
@@ -357,13 +350,12 @@ fn rackscale_userspace_rumprt_fs(transport: RackscaleTransport) {
     }
 
     let mut test_run = RackscaleRunState::new("userspace".to_string(), built);
-    test_run.client_match_function = client_match_function;
+    test_run.client_match_fn = client_match_fn;
     test_run.wait_for_client = true;
     test_run.transport = transport;
     test_run.client_timeout = 120_000;
     test_run.controller_timeout = 120_000;
-
-    rackscale_runner(test_run);
+    test_run.run_rackscale();
 }
 
 #[cfg(not(feature = "baremetal"))]
@@ -371,12 +363,12 @@ fn rackscale_userspace_rumprt_fs(transport: RackscaleTransport) {
 fn s06_rackscale_controller_shmem_alloc() {
     let built = BuildArgs::default()
         .module("init")
-        .kernel_feature("rackscale")
+        .set_rackscale(true)
         .kernel_feature("test-controller-shmem-alloc")
         .release()
         .build();
 
-    fn controller_match_function(
+    fn controller_match_fn(
         proc: &mut PtySession,
         output: &mut String,
         _cores_per_client: usize,
@@ -390,11 +382,10 @@ fn s06_rackscale_controller_shmem_alloc() {
     }
 
     let mut test_run = RackscaleRunState::new("userspace-smp".to_string(), built);
-    test_run.controller_match_function = controller_match_function;
+    test_run.controller_match_fn = controller_match_fn;
     test_run.num_clients = 2;
     test_run.cores_per_client = 2;
     test_run.client_timeout = 120_000;
     test_run.controller_timeout = 120_000;
-
-    rackscale_runner(test_run);
+    test_run.run_rackscale();
 }

@@ -235,6 +235,7 @@ lazy_static! {
 /// built with the given BuildArgs.
 ///
 /// Use `BuildArgs::build` to construct (by providing a BuildEnvironment).
+#[derive(Clone)]
 pub struct Built<'a> {
     pub with_args: BuildArgs<'a>,
 }
@@ -250,6 +251,8 @@ pub struct BuildArgs<'a> {
     mods: Vec<&'a str>,
     /// Should we compile in release mode?
     pub release: bool,
+    /// Should we compile with rackscale kernel features?
+    pub rackscale: bool,
 }
 
 impl<'a> Default for BuildArgs<'a> {
@@ -259,6 +262,7 @@ impl<'a> Default for BuildArgs<'a> {
             user_features: Vec::new(),
             mods: Vec::new(),
             release: false,
+            rackscale: false,
         }
     }
 }
@@ -308,8 +312,16 @@ impl<'a> BuildArgs<'a> {
 
     /// Converts the RunnerArgs to a run.py command line invocation.
     pub fn as_cmd(&'a self) -> Vec<String> {
+        let kfeatures = if self.rackscale {
+            let mut kfeatures = self.kernel_features.clone();
+            kfeatures.push("rackscale");
+            kfeatures
+        } else {
+            self.kernel_features.clone()
+        };
+
         // Add features for build
-        let kernel_features = String::from(self.kernel_features.join(","));
+        let kernel_features = String::from(kfeatures.join(","));
         let user_features = String::from(self.user_features.join(","));
 
         let mut cmd = vec![
@@ -317,7 +329,7 @@ impl<'a> BuildArgs<'a> {
             //"--norun".to_string(),
         ];
 
-        if !self.kernel_features.is_empty() {
+        if !self.kernel_features.is_empty() || self.rackscale {
             cmd.push("--kfeatures".to_string());
             cmd.push(kernel_features);
         }
@@ -366,6 +378,12 @@ impl<'a> BuildArgs<'a> {
     /// Do a release build.
     pub fn release(mut self) -> BuildArgs<'a> {
         self.release = true;
+        self
+    }
+
+    /// Build with rackscale features
+    pub fn set_rackscale(mut self, is_rackscale: bool) -> BuildArgs<'a> {
+        self.rackscale = is_rackscale;
         self
     }
 }

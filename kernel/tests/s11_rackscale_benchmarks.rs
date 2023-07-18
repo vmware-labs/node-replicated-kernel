@@ -18,7 +18,7 @@ use rexpect::session::PtySession;
 
 use testutils::builder::{BuildArgs, Machine};
 use testutils::helpers::setup_network;
-use testutils::rackscale_runner::{rackscale_baseline_runner, rackscale_runner, RackscaleRunState};
+use testutils::rackscale_runner::RackscaleRunState;
 use testutils::runner_args::RackscaleTransport;
 
 #[test]
@@ -71,11 +71,11 @@ fn rackscale_fxmark_benchmark(transport: RackscaleTransport) {
             build = build.user_feature("smoke");
         }
         let baseline_build = build.clone();
-        let rackscale_build = build.kernel_feature("rackscale");
+        let rackscale_build = build.set_rackscale(true);
         (baseline_build, rackscale_build)
     };
 
-    fn controller_match_function(
+    fn controller_match_fn(
         proc: &mut PtySession,
         output: &mut String,
         cores_per_client: usize,
@@ -159,7 +159,7 @@ fn rackscale_fxmark_benchmark(transport: RackscaleTransport) {
                 let baseline_built = baseline_build.clone().build();
                 let mut test_run =
                     RackscaleRunState::new("userspace-smp".to_string(), baseline_built);
-                test_run.controller_match_function = controller_match_function;
+                test_run.controller_match_fn = controller_match_fn;
                 test_run.transport = transport;
                 test_run.client_timeout = timeout;
                 test_run.controller_timeout = timeout;
@@ -176,7 +176,7 @@ fn rackscale_fxmark_benchmark(transport: RackscaleTransport) {
                     core::cmp::max(73728, cores * 2048)
                 };
                 test_run.controller_memory = test_run.client_memory;
-                rackscale_baseline_runner(test_run);
+                test_run.run_baseline();
 
                 if cores == 1 {
                     cores = 0;
@@ -216,7 +216,7 @@ fn rackscale_fxmark_benchmark(transport: RackscaleTransport) {
 
             let rackscale_built = rackscale_build.clone().build();
             let mut test_run = RackscaleRunState::new("userspace-smp".to_string(), rackscale_built);
-            test_run.controller_match_function = controller_match_function;
+            test_run.controller_match_fn = controller_match_fn;
             test_run.transport = transport;
             test_run.client_timeout = timeout;
             test_run.controller_timeout = timeout;
@@ -234,7 +234,7 @@ fn rackscale_fxmark_benchmark(transport: RackscaleTransport) {
             };
             test_run.controller_memory = test_run.client_memory;
 
-            rackscale_runner(test_run);
+            test_run.run_rackscale();
 
             if total_cores == 1 {
                 total_cores = 0;
@@ -318,7 +318,7 @@ fn rackscale_vmops_benchmark(transport: RackscaleTransport, benchtype: VMOpsBenc
             build = build.user_feature("smoke");
         }
         let baseline_build = build.clone();
-        let rackscale_build = build.kernel_feature("rackscale");
+        let rackscale_build = build.set_rackscale(true);
         (baseline_build, rackscale_build)
     };
 
@@ -332,7 +332,7 @@ fn rackscale_vmops_benchmark(transport: RackscaleTransport, benchtype: VMOpsBenc
     let max_numa = machine.max_numa_nodes();
     let cores_per_node = core::cmp::max(1, max_cores / max_numa);
 
-    fn controller_match_function(
+    fn controller_match_fn(
         proc: &mut PtySession,
         output: &mut String,
         cores_per_client: usize,
@@ -428,7 +428,7 @@ fn rackscale_vmops_benchmark(transport: RackscaleTransport, benchtype: VMOpsBenc
             );
             let baseline_built = baseline_build.clone().build();
             let mut test_run = RackscaleRunState::new("userspace-smp".to_string(), baseline_built);
-            test_run.controller_match_function = controller_match_function;
+            test_run.controller_match_fn = controller_match_fn;
             test_run.transport = transport;
             test_run.controller_timeout = timeout;
             test_run.cores_per_client = cores / num_nodes;
@@ -444,8 +444,7 @@ fn rackscale_vmops_benchmark(transport: RackscaleTransport, benchtype: VMOpsBenc
             } else {
                 core::cmp::max(73728, cores * 2048)
             };
-
-            rackscale_baseline_runner(test_run);
+            test_run.run_baseline();
 
             if cores == 1 {
                 cores = 0;
@@ -485,7 +484,7 @@ fn rackscale_vmops_benchmark(transport: RackscaleTransport, benchtype: VMOpsBenc
 
         let rackscale_built = rackscale_build.clone().build();
         let mut test_run = RackscaleRunState::new("userspace-smp".to_string(), rackscale_built);
-        test_run.controller_match_function = controller_match_function;
+        test_run.controller_match_fn = controller_match_fn;
         test_run.transport = transport;
         test_run.client_timeout = timeout;
         test_run.controller_timeout = timeout;
@@ -504,7 +503,7 @@ fn rackscale_vmops_benchmark(transport: RackscaleTransport, benchtype: VMOpsBenc
         };
         test_run.controller_memory = test_run.client_memory;
 
-        rackscale_runner(test_run);
+        test_run.run_baseline();
 
         if total_cores == 1 {
             total_cores = 0;

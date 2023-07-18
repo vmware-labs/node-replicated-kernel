@@ -33,8 +33,9 @@ fn maponly_bencher(cores: usize) {
         PhysicalMemory::allocate_base_page().expect("Can't allocate a memory obj");
     info!("Got frame_id {:#?}", frame_id);
 
+    // see process.rs the heap split up by core from slots 1..128, so we start from there
     let vspace_offset = lineup::tls2::Environment::tid().0 + 1;
-    let mut base: u64 = (PML4_SLOT_SIZE + (PML4_SLOT_SIZE * vspace_offset)) as u64;
+    let mut base: u64 = (128*PML4_SLOT_SIZE + (PML4_SLOT_SIZE * vspace_offset)) as u64;
     info!("start mapping at {:#x}", base);
 
     #[cfg(feature = "latency")]

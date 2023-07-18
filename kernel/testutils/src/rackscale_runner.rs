@@ -45,6 +45,7 @@ pub type RackscaleMatchFunction = fn(
     cores_per_client: usize,
     num_clients: usize,
     file_name: &str,
+    is_baseline: bool,
     arg: usize,
 ) -> Result<()>;
 
@@ -71,8 +72,8 @@ pub struct RackscaleRunState {
     pub cores_per_client: usize,
     /// Size fo the shmem for each shmem server (1 for controller, and 1 per client)
     pub shmem_size: usize,
-    /// Use affinity shmem and cores, that is, try to colocate resources of each qemu instance on a NUMA node
-    pub use_affinity: bool,
+    /// Use affinity shmem (required huge pages enabled and configured on host)
+    pub use_affinity_shmem: bool,
     /// Wait to close the controller until after the clients signal they are done. Default: false, the clients wait for the controller
     pub wait_for_client: bool,
     /// The RPC transport to use (shmem or ethernet)
@@ -95,6 +96,7 @@ impl RackscaleRunState {
             _cores_per_client: usize,
             _num_clients: usize,
             _file_name: &str,
+            _is_baseline: bool,
             _arg: usize,
         ) -> Result<()> {
             // Do nothing
@@ -113,7 +115,7 @@ impl RackscaleRunState {
             num_clients: 1,
             cores_per_client: 1,
             shmem_size: SHMEM_SIZE,
-            use_affinity: false,
+            use_affinity_shmem: false,
             wait_for_client: false,
             transport: RackscaleTransport::Shmem,
             setup_network: true,
@@ -129,7 +131,6 @@ pub fn rackscale_runner(run: RackscaleRunState) {
     let machine = Machine::determine();
     assert!(run.cores_per_client * run.num_clients + 1 <= machine.max_cores());
 
-    // This is really only necessary is is_affinity is set, but does no harm to calculate always
     let mut vm_cores = vec![run.cores_per_client; run.num_clients + 1];
     vm_cores[0] = 1; // controller vm only has 1 core
     let placement_cores = machine.rackscale_core_affinity(vm_cores);
@@ -147,12 +148,12 @@ pub fn rackscale_runner(run: RackscaleRunState) {
     let mut shmem_sockets = Vec::new();
     let mut shmem_servers = Vec::new();
     for i in 0..(run.num_clients + 1) {
-        let shmem_affinity = if run.use_affinity {
+        let shmem_affinity = if run.use_affinity_shmem {
             Some(placement_cores[i].0)
         } else {
             None
         };
-        let (shmem_socket, shmem_file) = get_shmem_names(Some(i), run.use_affinity);
+        let (shmem_socket, shmem_file) = get_shmem_names(Some(i), run.use_affinity_shmem);
         let shmem_server =
             spawn_shmem_server(&shmem_socket, &shmem_file, run.shmem_size, shmem_affinity)
                 .expect("Failed to start shmem server 0");
@@ -180,7 +181,7 @@ pub fn rackscale_runner(run: RackscaleRunState) {
     let controller = std::thread::Builder::new()
         .name("Controller".to_string())
         .spawn(move || {
-            let mut cmdline_controller =
+            let cmdline_controller =
                 RunnerArgs::new_with_build(&controller_kernel_test, &controller_build)
                     .timeout(run.controller_timeout)
                     .transport(run.transport)
@@ -191,14 +192,10 @@ pub fn rackscale_runner(run: RackscaleRunState) {
                     .no_network_setup()
                     .workers(run.num_clients + 1)
                     .use_vmxnet3()
-                    .memory(run.controller_memory);
-
-            if run.use_affinity {
-                cmdline_controller = cmdline_controller
+                    .memory(run.controller_memory)
                     .nodes(1)
                     .node_offset(controller_placement_cores[0].0)
-                    .setaffinity(controller_placement_cores[0].1.clone())
-            }
+                    .setaffinity(controller_placement_cores[0].1.clone());
 
             let mut output = String::new();
             let mut qemu_run = || -> Result<WaitStatus> {
@@ -211,6 +208,7 @@ pub fn rackscale_runner(run: RackscaleRunState) {
                     run.cores_per_client,
                     run.num_clients,
                     &controller_file_name,
+                    false,
                     run.arg,
                 )?;
 
@@ -261,28 +259,23 @@ pub fn rackscale_runner(run: RackscaleRunState) {
             .name(format!("Client{}", i + 1))
             .spawn(move || {
                 sleep(Duration::from_millis(CLIENT_BUILD_DELAY * (i as u64 + 1)));
-                let mut cmdline_client =
-                    RunnerArgs::new_with_build(&client_kernel_test, &client_build)
-                        .timeout(run.client_timeout)
-                        .transport(run.transport)
-                        .mode(RackscaleMode::Client)
-                        .shmem_size(vec![run.shmem_size as usize; run.num_clients + 1])
-                        .shmem_path(client_shmem_sockets)
-                        .tap(&format!("tap{}", (i + 1) * 2))
-                        .no_network_setup()
-                        .workers(run.num_clients + 1)
-                        .cores(run.cores_per_client)
-                        .memory(run.client_memory)
-                        .nobuild() // Use single build for all for consistency
-                        .use_vmxnet3()
-                        .cmd(&client_cmd);
-
-                if run.use_affinity {
-                    cmdline_client = cmdline_client
-                        .nodes(1)
-                        .node_offset(client_placement_cores[i + 1].0)
-                        .setaffinity(client_placement_cores[i + 1].1.clone())
-                }
+                let cmdline_client = RunnerArgs::new_with_build(&client_kernel_test, &client_build)
+                    .timeout(run.client_timeout)
+                    .transport(run.transport)
+                    .mode(RackscaleMode::Client)
+                    .shmem_size(vec![run.shmem_size as usize; run.num_clients + 1])
+                    .shmem_path(client_shmem_sockets)
+                    .tap(&format!("tap{}", (i + 1) * 2))
+                    .no_network_setup()
+                    .workers(run.num_clients + 1)
+                    .cores(run.cores_per_client)
+                    .memory(run.client_memory)
+                    .nobuild() // Use single build for all for consistency
+                    .use_vmxnet3()
+                    .cmd(&client_cmd)
+                    .nodes(1)
+                    .node_offset(client_placement_cores[i + 1].0)
+                    .setaffinity(client_placement_cores[i + 1].1.clone());
 
                 let mut output = String::new();
                 let mut qemu_run = || -> Result<WaitStatus> {
@@ -295,6 +288,7 @@ pub fn rackscale_runner(run: RackscaleRunState) {
                         run.cores_per_client,
                         run.num_clients,
                         &client_file_name,
+                        false,
                         run.arg,
                     )?;
 
@@ -371,7 +365,6 @@ pub fn rackscale_baseline_runner(run: RackscaleRunState) {
     let vm_cores = vec![run.cores_per_client; run.num_clients];
     let placement_cores = machine.rackscale_core_affinity(vm_cores);
     let mut all_placement_cores = Vec::new();
-    let placement_offset = placement_cores[0].0;
     for placement in placement_cores {
         all_placement_cores.extend(placement.1);
     }
@@ -381,19 +374,15 @@ pub fn rackscale_baseline_runner(run: RackscaleRunState) {
         setup_network(run.num_clients + 1);
     }
 
-    let mut cmdline_baseline = RunnerArgs::new_with_build(&run.kernel_test, &run.built)
+    let cmdline_baseline = RunnerArgs::new_with_build(&run.kernel_test, &run.built)
         .timeout(run.controller_timeout)
         .memory(run.controller_memory)
         .workers(1)
         .cores(run.cores_per_client * run.num_clients)
         .cmd(&run.cmd)
-        .no_network_setup();
-
-    if run.use_affinity {
-        cmdline_baseline = cmdline_baseline
-            .nodes(run.num_clients)
-            .setaffinity(all_placement_cores)
-    }
+        .no_network_setup()
+        .nodes(run.num_clients)
+        .setaffinity(all_placement_cores);
 
     let mut output = String::new();
     let mut qemu_run = || -> Result<WaitStatus> {
@@ -404,6 +393,7 @@ pub fn rackscale_baseline_runner(run: RackscaleRunState) {
             run.cores_per_client,
             run.num_clients,
             &run.file_name,
+            true,
             run.arg,
         )?;
         output += p.exp_eof()?.as_str();

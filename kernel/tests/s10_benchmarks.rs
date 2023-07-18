@@ -834,6 +834,8 @@ fn s10_leveldb_benchmark() {
 
 #[test]
 fn s10_memcached_benchmark_internal() {
+    setup_network(1);
+
     let machine = Machine::determine();
     let build = BuildArgs::default()
         .module("rkapps")
@@ -865,12 +867,15 @@ fn s10_memcached_benchmark_internal() {
             r#"init=memcachedbench.bin initargs={} appcmd='--x-benchmark-mem={} --x-benchmark-queries={}'"#,
             *thread, memsize, queries
         );
+
         let mut cmdline = RunnerArgs::new_with_build("userspace-smp", &build)
             .timeout(1800_000)
             .cores(machine.max_cores())
             .nodes(2)
+            .use_virtio()
             .setaffinity(Vec::new())
-            .cmd(kernel_cmdline.as_str());
+            .cmd(kernel_cmdline.as_str())
+            .no_network_setup();
 
         if cfg!(feature = "smoke") {
             cmdline = cmdline.memory(4096);
@@ -880,7 +885,10 @@ fn s10_memcached_benchmark_internal() {
 
         let mut output = String::new();
         let mut qemu_run = || -> Result<WaitStatus> {
+            let mut dhcp_server = spawn_dhcpd()?;
             let mut p = spawn_nrk(&cmdline)?;
+
+            output += dhcp_server.exp_string(DHCP_ACK_MATCH)?.as_str();
 
             // match the title
             let (prev, matched) = p.exp_regex(r#"INTERNAL BENCHMARK CONFIGURE"#)?;
@@ -972,6 +980,7 @@ fn s10_memcached_benchmark_internal() {
             assert!(r.is_ok());
 
             // cleanup
+            dhcp_server.send_control('c')?;
             p.process.kill(SIGTERM)?;
             p.process.exit()
         };

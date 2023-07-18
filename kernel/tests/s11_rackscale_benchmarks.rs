@@ -623,7 +623,8 @@ fn rackscale_memcached_benchmark(is_shmem: bool) {
                 output += prev.as_str();
                 output += matched.as_str();
 
-                let (prev, matched) = p.exp_regex(r#"Executing (\d+) queries with (\d+) threads"#)?;
+                let (prev, matched) =
+                    p.exp_regex(r#"Executing (\d+) queries with (\d+) threads"#)?;
                 println!("> {}", matched);
 
                 output += prev.as_str();
@@ -809,7 +810,8 @@ fn rackscale_memcached_benchmark(is_shmem: bool) {
                 output += prev.as_str();
                 output += matched.as_str();
 
-                let (prev, matched) = p.exp_regex(r#"Executing (\d+) queries with (\d+) threads"#)?;
+                let (prev, matched) =
+                    p.exp_regex(r#"Executing (\d+) queries with (\d+) threads"#)?;
                 println!("> {}", matched);
 
                 output += prev.as_str();

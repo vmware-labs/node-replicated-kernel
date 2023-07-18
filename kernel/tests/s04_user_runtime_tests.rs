@@ -67,7 +67,8 @@ fn s04_userspace_rumprt_net() {
         .user_feature("rumprt")
         .build();
     let cmdline = RunnerArgs::new_with_build("userspace", &build)
-        .timeout(20_000);
+        .timeout(20_000)
+        .no_network_setup();
 
     let mut output = String::new();
     let mut qemu_run = || -> Result<WaitStatus> {

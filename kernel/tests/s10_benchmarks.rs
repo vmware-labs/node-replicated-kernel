@@ -853,35 +853,43 @@ fn s10_memcached_benchmark_internal() {
         .collect();
 
     // memcached arguments // currently not there.
-    let (memsize, queries) = if cfg!(feature = "smoke") {
-        (10 /* MB */, 2000000)
+    let (qemu_mem, memsize, queries, timeout) = if cfg!(feature = "smoke") {
+        (4096 /* MB */, 16 /* MB */, 2000000, 240_000)
     } else {
-        (32 * 1024 /* MB */, 50000000)
+        (
+            96000,     /* MB */
+            32 * 1024, /* MB */
+            50000000,
+            600_000,
+        )
     };
 
     let file_name = "s10_memcached_benchmark_internal.csv";
     let _r = std::fs::remove_file(file_name);
 
+    print!("threads: ");
     for thread in threads.iter() {
+        print!("{thread} ");
+    }
+    println!();
+
+    for thread in threads.iter() {
+        println!("Running memcached internal benchmark with {thread} threads, {queries} GETs and {memsize}MB memory. ");
+
         let kernel_cmdline = format!(
             r#"init=memcachedbench.bin initargs={} appcmd='--x-benchmark-mem={} --x-benchmark-queries={}'"#,
             *thread, memsize, queries
         );
 
         let mut cmdline = RunnerArgs::new_with_build("userspace-smp", &build)
-            .timeout(1800_000)
+            .timeout(timeout)
             .cores(machine.max_cores())
             .nodes(2)
             .use_virtio()
+            .memory(qemu_mem)
             .setaffinity(Vec::new())
             .cmd(kernel_cmdline.as_str())
             .no_network_setup();
-
-        if cfg!(feature = "smoke") {
-            cmdline = cmdline.memory(4096);
-        } else {
-            cmdline = cmdline.memory(100_000);
-        }
 
         let mut output = String::new();
         let mut qemu_run = || -> Result<WaitStatus> {

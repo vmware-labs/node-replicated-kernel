@@ -425,9 +425,9 @@ def run_qemu(args):
     # Enable networking:
     mac, tap = NETWORK_CONFIG[args.tap]['mac'], args.tap
     qemu_default_args += ['-device',
-                        '{},netdev=n1,mac={}'.format(args.nic, mac)]
+                          '{},netdev=n1,mac={}'.format(args.nic, mac)]
     qemu_default_args += ['-netdev',
-                        'tap,id=n1,script=no,ifname={}'.format(tap)]
+                          'tap,id=n1,script=no,ifname={}'.format(tap)]
 
     def numa_nodes_to_list(file):
         nodes = []
@@ -717,6 +717,8 @@ def configure_network(args):
     """
     from plumbum.cmd import sudo, tunctl, ifconfig, ip, brctl
 
+    print("configuring network...")
+
     user = (whoami)().strip()
     group = (local['id']['-gn'])().strip()
 
@@ -784,7 +786,7 @@ if __name__ == '__main__':
 
     user = whoami().strip()
 
-    # Setup network
+
     requires_net_setup = not ('no_network_setup' in args and args.no_network_setup)
     requires_core_setup = args.qemu_cores and args.qemu_affinity
     if requires_net_setup or requires_core_setup:
@@ -798,8 +800,8 @@ if __name__ == '__main__':
                 sys.exit(errno.EINVAL)
             else:
                 raise e
-
-    if not ('no_network_setup' in args and args.no_network_setup) :
+    # Setup network
+    if not ('no_network_setup' in args and args.no_network_setup):
         configure_network(args)
 
     if 'network_only' in args and args.network_only:

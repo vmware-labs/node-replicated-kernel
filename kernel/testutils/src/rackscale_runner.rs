@@ -402,31 +402,38 @@ impl RackscaleRun {
 }
 
 pub struct RackscaleBench {
+    // Test to run
+    pub test: RackscaleRun,
     // Function to calculate the command. Takes as argument number of application cores
-    cmd_func: fn(usize) -> String,
-    // Function to calculate the command. Takes as argument number of application cores
-    timeout_func: fn(usize) -> u64,
+    pub cmd_fn: fn(usize) -> String,
+    // Function to calculate the timeout. Takes as argument number of application cores
+    pub rackscale_timeout_fn: fn(usize) -> u64,
+    // Function to calculate the timeout. Takes as argument number of application cores
+    pub baseline_timeout_fn: fn(usize) -> u64,
     // Function to calculate controller (and baseline) memory. Takes as argument number of application cores and is_smoke
-    controller_mem_func: fn(usize, bool) -> usize,
+    pub controller_mem_fn: fn(usize, bool) -> usize,
     // Function to calculate client memory. Takes as argument number of application cores and is_smoke
-    client_mem_func: fn(usize, bool) -> usize,
+    pub client_mem_fn: fn(usize, bool) -> usize,
+    // Function to calculate baseline nros memory. Takes as argument number of application cores and is_smoke
+    pub baseline_mem_fn: fn(usize, bool) -> usize,
 }
 
 impl RackscaleBench {
-    pub fn run_bench(
-        &self,
-        mut test_run: RackscaleRun,
-        is_baseline: bool,
-        remove_file: bool,
-        is_smoke: bool,
-    ) {
-        let test_run = &mut test_run;
-        test_run.setup_network = false;
+    pub fn run_bench(&self, is_baseline: bool, is_smoke: bool) {
+        let test_run = &mut self.test.clone();
 
-        // Remove results file if desired
-        if remove_file {
-            let _ignore = std::fs::remove_file(test_run.file_name.clone());
+        // Set rackscale appropriately, rebuild if necessary.
+        if !is_baseline != test_run.built.with_args.rackscale {
+            eprintln!("\tRebuilding with rackscale={}", !is_baseline,);
+            test_run.built = test_run
+                .built
+                .with_args
+                .clone()
+                .set_rackscale(!is_baseline)
+                .build();
         }
+
+        test_run.setup_network = false;
 
         // Find max cores, max numa, and max cores per node
         let machine = Machine::determine();
@@ -466,25 +473,32 @@ impl RackscaleBench {
                 "rackscale"
             };
             eprintln!(
-            "\tRunning {} test with {:?} total core(s), {:?} (client|replica)(s) (cores_per_(client|replica)={:?})",
-            test_type, total_cores, num_clients, cores_per_client
-        );
+                "\tRunning {} test with {:?} total core(s), {:?} (client|replica)(s) (cores_per_(client|replica)={:?})",
+                test_type, total_cores, num_clients, cores_per_client
+            );
 
             // Calculate and set timeout for this test
-            test_run.client_timeout = (self.timeout_func)(total_cores);
-            test_run.controller_timeout = (self.timeout_func)(total_cores);
+            if is_baseline {
+                test_run.client_timeout = (self.baseline_timeout_fn)(total_cores);
+            } else {
+                test_run.client_timeout = (self.rackscale_timeout_fn)(total_cores);
+            }
+            test_run.controller_timeout = test_run.client_timeout;
 
             // Calculate resources for this tesst
             test_run.cores_per_client = cores_per_client;
             test_run.num_clients = num_clients;
 
             // Calculate command based on the number of cores
-            test_run.cmd = (self.cmd_func)(total_cores);
+            test_run.cmd = (self.cmd_fn)(total_cores);
 
-            // TODO: this should be a function based on number of cores and smoke
-            test_run.controller_memory = (self.controller_mem_func)(total_cores, is_smoke);
+            // Caclulate memory for each component
             if !is_baseline {
-                test_run.client_memory = (self.client_mem_func)(total_cores, is_smoke);
+                test_run.controller_memory = (self.controller_mem_fn)(total_cores, is_smoke);
+                test_run.client_memory = (self.client_mem_fn)(total_cores, is_smoke);
+            } else {
+                test_run.controller_memory = (self.baseline_mem_fn)(total_cores, is_smoke);
+                test_run.client_memory = test_run.controller_memory;
             }
 
             if is_baseline {

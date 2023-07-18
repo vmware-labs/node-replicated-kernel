@@ -16,9 +16,8 @@ use std::path::Path;
 use rexpect::errors::*;
 use rexpect::session::PtySession;
 
-use testutils::builder::{BuildArgs, Machine};
-use testutils::helpers::setup_network;
-use testutils::rackscale_runner::RackscaleRun;
+use testutils::builder::BuildArgs;
+use testutils::rackscale_runner::{RackscaleBench, RackscaleRun};
 use testutils::runner_args::RackscaleTransport;
 
 #[test]
@@ -36,44 +35,17 @@ fn s11_rackscale_ethernet_fxmark_benchmark() {
 
 #[cfg(not(feature = "baremetal"))]
 fn rackscale_fxmark_benchmark(transport: RackscaleTransport) {
-    // benchmark naming convention = nameXwrite - mixX10 is - mix benchmark for 10% writes.
-    let benchmarks = if cfg!(feature = "smoke") {
-        vec!["mixX0"]
-    } else {
-        // For rackscale, for now, just do 100% reads.
-        vec!["mixX0"]
-        //vec!["mixX0", "mixX10", "mixX100"]
-    };
+    let file_name = format!("rackscale_{}_fxmark_benchmark.csv", transport.to_string());
+    let _ignore = std::fs::remove_file(file_name.clone());
 
-    let file_name = if transport == RackscaleTransport::Shmem {
-        "rackscale_shmem_fxmark_benchmark.csv"
-    } else {
-        "rackscale_ethernet_fxmark_benchmark.csv"
-    };
-    let _ignore = std::fs::remove_file(file_name);
-    let open_files = 1;
-    let machine = Machine::determine();
-
-    let max_cores = if cfg!(feature = "smoke") {
-        2
-    } else {
-        machine.max_cores()
-    };
-    let max_numa = machine.max_numa_nodes();
-    let cores_per_node = core::cmp::max(1, max_cores / max_numa);
-
-    let (baseline_build, rackscale_build) = {
-        let mut build = BuildArgs::default()
-            .module("init")
-            .user_feature("fxmark")
-            .release();
-        if cfg!(feature = "smoke") {
-            build = build.user_feature("smoke");
-        }
-        let baseline_build = build.clone();
-        let rackscale_build = build.set_rackscale(true);
-        (baseline_build, rackscale_build)
-    };
+    let mut build = BuildArgs::default()
+        .module("init")
+        .user_feature("fxmark")
+        .release();
+    if cfg!(feature = "smoke") {
+        build = build.user_feature("smoke");
+    }
+    let built = build.build();
 
     fn controller_match_fn(
         proc: &mut PtySession,
@@ -131,121 +103,40 @@ fn rackscale_fxmark_benchmark(transport: RackscaleTransport) {
         Ok(())
     }
 
-    for benchmark in benchmarks {
-        // Run the baseline test
-        if cfg!(feature = "baseline") {
-            setup_network(1);
-            let mut num_nodes = 1;
-            let mut cores = 1;
-            while cores < max_cores {
-                // Round up to get the number of clients
-                let new_num_nodes = (cores + (cores_per_node - 1)) / cores_per_node;
+    let mut test = RackscaleRun::new("userspace-smp".to_string(), built);
+    test.controller_match_fn = controller_match_fn;
+    test.transport = transport;
+    test.use_affinity_shmem = cfg!(feature = "affinity-shmem");
+    test.file_name = file_name.clone();
 
-                // Make sure cores are divisible by num replicas (nodes) if num replicas changes.
-                if num_nodes != new_num_nodes {
-                    num_nodes = new_num_nodes;
-
-                    // ensure total cores is divisible by num nodes
-                    cores = cores - (cores % num_nodes);
-                }
-
-                let timeout = 120_000 + 20000 * cores as u64;
-
-                eprintln!(
-                        "\tRunning NrOS fxmark {} baseline with {} core(s) and {} node(s) and {} open files",
-                        benchmark, cores, num_nodes, open_files
-                    );
-
-                let baseline_built = baseline_build.clone().build();
-                let mut test_run = RackscaleRun::new("userspace-smp".to_string(), baseline_built);
-                test_run.controller_match_fn = controller_match_fn;
-                test_run.transport = transport;
-                test_run.client_timeout = timeout;
-                test_run.controller_timeout = timeout;
-                test_run.cores_per_client = cores / num_nodes;
-                test_run.num_clients = num_nodes;
-                test_run.setup_network = false;
-                test_run.use_affinity_shmem = cfg!(feature = "affinity-shmem");
-                test_run.file_name = file_name.to_string();
-                test_run.cmd = format!("initargs={}X{}X{}", cores, open_files, benchmark);
-
-                test_run.client_memory = if cfg!(feature = "smoke") {
-                    8192
-                } else {
-                    core::cmp::max(73728, cores * 2048)
-                };
-                test_run.controller_memory = test_run.client_memory;
-                test_run.run_baseline();
-
-                if cores == 1 {
-                    cores = 0;
-                }
-
-                if num_nodes == 3 {
-                    cores += 3;
-                } else {
-                    cores += 4;
-                }
-            }
-        }
-
-        // Run the rackscale test
-        let mut num_clients = 1;
-        setup_network(num_clients + 1);
-        let mut total_cores = 1;
-        while total_cores < max_cores {
-            // Round up to get the number of clients
-            let new_num_clients = (total_cores + (cores_per_node - 1)) / cores_per_node;
-
-            // Do network setup if number of clients has changed.
-            if num_clients != new_num_clients {
-                num_clients = new_num_clients;
-                setup_network(num_clients + 1);
-
-                // ensure total cores is divisible by num clients
-                total_cores = total_cores - (total_cores % num_clients);
-            }
-            let cores_per_client = total_cores / num_clients;
-            let timeout = 120_000 + 20000 * (cores_per_client + num_clients) as u64;
-
-            eprintln!(
-                "\tRunning fxmark test {} with {:?} total core(s), {:?} client(s) (cores_per_client={:?}) and {:?} open files",
-                benchmark, total_cores, num_clients, cores_per_client, open_files
-            );
-
-            let rackscale_built = rackscale_build.clone().build();
-            let mut test_run = RackscaleRun::new("userspace-smp".to_string(), rackscale_built);
-            test_run.controller_match_fn = controller_match_fn;
-            test_run.transport = transport;
-            test_run.client_timeout = timeout;
-            test_run.controller_timeout = timeout;
-            test_run.cores_per_client = cores_per_client;
-            test_run.num_clients = num_clients;
-            test_run.setup_network = false;
-            test_run.use_affinity_shmem = cfg!(feature = "affinity-shmem");
-            test_run.file_name = file_name.to_string();
-            test_run.cmd = format!("initargs={}X{}X{}", total_cores, open_files, benchmark);
-
-            test_run.client_memory = if cfg!(feature = "smoke") {
-                8192
-            } else {
-                core::cmp::max(73728, total_cores * 2048)
-            };
-            test_run.controller_memory = test_run.client_memory;
-
-            test_run.run_rackscale();
-
-            if total_cores == 1 {
-                total_cores = 0;
-            }
-
-            if num_clients == 3 {
-                total_cores += 3;
-            } else {
-                total_cores += 4;
-            }
+    fn cmd_fn(num_cores: usize) -> String {
+        //1XmixX0 is - mix benchmark for 0% writes with 1 open file
+        format!("initargs={}X1XmixX0", num_cores)
+    }
+    fn timeout_fn(num_cores: usize) -> u64 {
+        120_000 + 20000 * num_cores as u64
+    }
+    fn mem_fn(num_cores: usize, is_smoke: bool) -> usize {
+        if is_smoke {
+            8192
+        } else {
+            core::cmp::max(73728, num_cores * 2048)
         }
     }
+    let bench = RackscaleBench {
+        test,
+        cmd_fn,
+        baseline_timeout_fn: timeout_fn,
+        rackscale_timeout_fn: timeout_fn,
+        controller_mem_fn: mem_fn,
+        client_mem_fn: mem_fn,
+        baseline_mem_fn: mem_fn,
+    };
+
+    if cfg!(feature = "baseline") {
+        bench.run_bench(true, cfg!(feature = "smoke"));
+    }
+    bench.run_bench(false, cfg!(feature = "smoke"));
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -288,48 +179,31 @@ fn s11_rackscale_shmem_vmops_unmaplat_benchmark() {
 
 #[cfg(not(feature = "baremetal"))]
 fn rackscale_vmops_benchmark(transport: RackscaleTransport, benchtype: VMOpsBench) {
-    use std::sync::Arc;
-
     let testname_str = match benchtype {
         VMOpsBench::MapThroughput => "vmops",
         VMOpsBench::MapLatency => "vmops_latency",
         VMOpsBench::UnmapLatency => "vmops_unmaplat",
     };
-    let file_name = Arc::new(format!(
+    let file_name = format!(
         "rackscale_{}_{}_benchmark.csv",
         transport.to_string(),
         testname_str
-    ));
-    let _ignore = std::fs::remove_file(file_name.as_ref());
+    );
+    let _ignore = std::fs::remove_file(file_name.clone());
 
-    let (baseline_build, rackscale_build) = {
-        let mut build = BuildArgs::default().module("init").release();
-
-        if benchtype == VMOpsBench::UnmapLatency {
-            build = build.user_feature("bench-vmops-unmaplat");
-        } else {
-            build = build.user_feature("bench-vmops");
-        }
-        if benchtype == VMOpsBench::MapLatency || benchtype == VMOpsBench::UnmapLatency {
-            build = build.user_feature("latency");
-        }
-        if cfg!(feature = "smoke") {
-            build = build.user_feature("smoke");
-        }
-        let baseline_build = build.clone();
-        let rackscale_build = build.set_rackscale(true);
-        (baseline_build, rackscale_build)
-    };
-
-    let machine = Machine::determine();
-    let max_cores = if cfg!(feature = "smoke") {
-        2
+    let mut build = BuildArgs::default().module("init").release();
+    if benchtype == VMOpsBench::UnmapLatency {
+        build = build.user_feature("bench-vmops-unmaplat");
     } else {
-        machine.max_cores()
-    };
-
-    let max_numa = machine.max_numa_nodes();
-    let cores_per_node = core::cmp::max(1, max_cores / max_numa);
+        build = build.user_feature("bench-vmops");
+    }
+    if benchtype == VMOpsBench::MapLatency || benchtype == VMOpsBench::UnmapLatency {
+        build = build.user_feature("latency");
+    }
+    if cfg!(feature = "smoke") {
+        build = build.user_feature("smoke");
+    }
+    let built = build.build();
 
     fn controller_match_fn(
         proc: &mut PtySession,
@@ -403,117 +277,43 @@ fn rackscale_vmops_benchmark(transport: RackscaleTransport, benchtype: VMOpsBenc
         Ok(())
     }
 
+    let mut test = RackscaleRun::new("userspace-smp".to_string(), built);
+    test.controller_match_fn = controller_match_fn;
+    test.transport = transport;
+    test.use_affinity_shmem = cfg!(feature = "affinity-shmem");
+    test.file_name = file_name.clone();
+    test.arg = benchtype as usize;
+
+    fn cmd_fn(num_cores: usize) -> String {
+        format!("initargs={}", num_cores)
+    }
+    fn baseline_timeout_fn(num_cores: usize) -> u64 {
+        20_000 * (num_cores) as u64
+    }
+    fn rackscale_timeout_fn(num_cores: usize) -> u64 {
+        120_000 + 800000 * num_cores as u64
+    }
+    fn mem_fn(_num_cores: usize, is_smoke: bool) -> usize {
+        if is_smoke {
+            10 * 1024
+        } else {
+            48 * 1024
+        }
+    }
+    let bench = RackscaleBench {
+        test,
+        cmd_fn,
+        baseline_timeout_fn,
+        rackscale_timeout_fn,
+        controller_mem_fn: mem_fn,
+        client_mem_fn: mem_fn,
+        baseline_mem_fn: mem_fn,
+    };
+
     if cfg!(feature = "baseline") {
-        // Run the baseline test
-        setup_network(1);
-        let mut num_nodes = 1;
-        let mut cores = 1;
-        while cores < max_cores {
-            // Round up to get the number of clients
-            let new_num_nodes = (cores + (cores_per_node - 1)) / cores_per_node;
-
-            // Make sure cores are divisible by num replicas (nodes) if num replicas changes.
-            if num_nodes != new_num_nodes {
-                num_nodes = new_num_nodes;
-
-                // ensure total cores is divisible by num nodes
-                cores = cores - (cores % num_nodes);
-            }
-
-            let timeout = 20_000 * (cores) as u64;
-            eprintln!(
-                "\tRunning NrOS vmops baseline with {} core(s) and {} node(s)",
-                cores, num_nodes
-            );
-            let baseline_built = baseline_build.clone().build();
-            let mut test_run = RackscaleRun::new("userspace-smp".to_string(), baseline_built);
-            test_run.controller_match_fn = controller_match_fn;
-            test_run.transport = transport;
-            test_run.controller_timeout = timeout;
-            test_run.cores_per_client = cores / num_nodes;
-            test_run.num_clients = num_nodes;
-            test_run.setup_network = false;
-            test_run.use_affinity_shmem = cfg!(feature = "affinity-shmem");
-            test_run.file_name = file_name.to_string();
-            test_run.cmd = format!("initargs={}", cores);
-            test_run.arg = benchtype as usize;
-
-            test_run.controller_memory = if cfg!(feature = "smoke") {
-                8192
-            } else {
-                core::cmp::max(73728, cores * 2048)
-            };
-            test_run.run_baseline();
-
-            if cores == 1 {
-                cores = 0;
-            }
-
-            if num_nodes == 3 {
-                cores += 3;
-            } else {
-                cores += 4;
-            }
-        }
+        bench.run_bench(true, cfg!(feature = "smoke"));
     }
-
-    // Run the rackscale test
-    let mut num_clients = 1;
-    setup_network(num_clients + 1);
-    let mut total_cores = 1;
-    while total_cores < max_cores {
-        // Round up to get the number of clients
-        let new_num_clients = (total_cores + (cores_per_node - 1)) / cores_per_node;
-
-        // Do network setup if number of clients has changed.
-        if num_clients != new_num_clients {
-            num_clients = new_num_clients;
-            setup_network(num_clients + 1);
-
-            // ensure total cores is divisible by num clients
-            total_cores = total_cores - (total_cores % num_clients);
-        }
-        let cores_per_client = total_cores / num_clients;
-
-        eprintln!(
-            "\tRunning vmops test with {:?} total core(s), {:?} client(s) (cores_per_client={:?})",
-            total_cores, num_clients, cores_per_client
-        );
-        let timeout = 120_000 + 800000 * total_cores as u64;
-
-        let rackscale_built = rackscale_build.clone().build();
-        let mut test_run = RackscaleRun::new("userspace-smp".to_string(), rackscale_built);
-        test_run.controller_match_fn = controller_match_fn;
-        test_run.transport = transport;
-        test_run.client_timeout = timeout;
-        test_run.controller_timeout = timeout;
-        test_run.cores_per_client = cores_per_client;
-        test_run.num_clients = num_clients;
-        test_run.setup_network = false;
-        test_run.use_affinity_shmem = cfg!(feature = "affinity-shmem");
-        test_run.file_name = file_name.to_string();
-        test_run.cmd = format!("initargs={}", total_cores);
-        test_run.arg = benchtype as usize;
-
-        test_run.client_memory = if cfg!(feature = "smoke") {
-            8192
-        } else {
-            core::cmp::max(73728, total_cores * 2048)
-        };
-        test_run.controller_memory = test_run.client_memory;
-
-        test_run.run_baseline();
-
-        if total_cores == 1 {
-            total_cores = 0;
-        }
-
-        if num_clients == 3 {
-            total_cores += 3;
-        } else {
-            total_cores += 4;
-        }
-    }
+    bench.run_bench(false, cfg!(feature = "smoke"));
 }
 
 // Ignoring this test for now due to synchronization bugs. Seen bugs include

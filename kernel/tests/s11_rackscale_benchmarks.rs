@@ -8,7 +8,6 @@
 //! The naming scheme of the tests ensures a somewhat useful order of test
 //! execution taking into account the dependency chain:
 //! * `s11_*`: Rackscale (distributed) benchmarks
-use std::convert::{TryFrom, TryInto};
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::Path;
@@ -54,7 +53,7 @@ fn rackscale_fxmark_benchmark(transport: RackscaleTransport) {
         num_clients: usize,
         file_name: &str,
         is_baseline: bool,
-        _arg: usize,
+        _arg: Option<()>,
     ) -> Result<()> {
         // Parse lines like
         // `init::fxmark: 1,fxmark,2,2048,10000,4000,1863272`
@@ -146,19 +145,6 @@ enum VMOpsBench {
     UnmapLatency = 2,
 }
 
-impl TryFrom<usize> for VMOpsBench {
-    type Error = ();
-
-    fn try_from(v: usize) -> std::result::Result<Self, Self::Error> {
-        match v {
-            x if x == VMOpsBench::MapLatency as usize => Ok(VMOpsBench::MapLatency),
-            x if x == VMOpsBench::MapThroughput as usize => Ok(VMOpsBench::MapThroughput),
-            x if x == VMOpsBench::UnmapLatency as usize => Ok(VMOpsBench::UnmapLatency),
-            _ => Err(()),
-        }
-    }
-}
-
 #[test]
 #[cfg(not(feature = "baremetal"))]
 fn s11_rackscale_shmem_vmops_maptput_benchmark() {
@@ -212,9 +198,9 @@ fn rackscale_vmops_benchmark(transport: RackscaleTransport, benchtype: VMOpsBenc
         num_clients: usize,
         file_name: &str,
         is_baseline: bool,
-        arg: usize,
+        arg: Option<VMOpsBench>,
     ) -> Result<()> {
-        let benchtype = arg.try_into().expect("Invalid vmops benchtype value");
+        let benchtype = arg.expect("Expect a vmops type");
         let expected_lines = if cfg!(feature = "smoke") {
             1
         } else if benchtype == VMOpsBench::MapThroughput {
@@ -282,7 +268,7 @@ fn rackscale_vmops_benchmark(transport: RackscaleTransport, benchtype: VMOpsBenc
     test.transport = transport;
     test.use_affinity_shmem = cfg!(feature = "affinity-shmem");
     test.file_name = file_name.clone();
-    test.arg = benchtype as usize;
+    test.arg = Some(benchtype);
 
     fn cmd_fn(num_cores: usize) -> String {
         format!("initargs={}", num_cores)
@@ -678,5 +664,119 @@ fn rackscale_leveldb_benchmark(is_shmem: bool) {
             controller_ret.unwrap();
         }
     }
+}
+*/
+
+/*
+// Ignoring this test for now due to synchronization bugs. Seen bugs include
+// mutex locking against itself, _lwp_exit returning after a thread has blocked.
+//#[ignore]
+#[test]
+#[cfg(not(feature = "baremetal"))]
+fn s11_rackscale_shmem_leveldb_benchmark() {
+    let file_name = "rackscale_shmem_leveldb_benchmark.csv";
+    let _ignore = std::fs::remove_file(file_name);
+
+    let built = BuildArgs::default()
+        .module("rkapps")
+        .user_feature("rkapps:leveldb-bench")
+        .release()
+        .build();
+
+    // TODO: this logic is duplicated in client match function
+    let (reads, num, val_size) = if cfg!(feature = "smoke") {
+        (10_000, 5_000, 4096)
+    } else {
+        // TODO(rackscale): restore these values
+        //(100_000, 50_000, 65535)
+        (10_000, 5_000, 4096)
+    };
+
+    fn controller_match_fn(
+        proc: &mut PtySession,
+        output: &mut String,
+        cores_per_client: usize,
+        num_clients: usize,
+        file_name: &str,
+        is_baseline: bool,
+        arg: usize,
+    ) -> Result<()> {
+        let (prev, matched) = proc.exp_regex(r#"readrandom(.*)"#)?;
+        *output += prev.as_str();
+        *output += matched.as_str();
+
+        // Append parsed results to a CSV file
+        let write_headers = !Path::new(file_name).exists();
+        let mut csv_file = OpenOptions::new()
+            .append(true)
+            .create(true)
+            .open(file_name)
+            .expect("Can't open file");
+        if write_headers {
+            let row = "git_rev,benchmark,nclients,nreplicas,ncores,reads,num,val_size,operations\n";
+            let r = csv_file.write(row.as_bytes());
+            assert!(r.is_ok());
+        }
+
+        let num_replicas = if is_baseline { 0 } else { num_clients };
+
+        let parts: Vec<&str> = matched.split("ops/sec").collect();
+        let mut parts: Vec<&str> = parts[0].split(" ").collect();
+        parts.pop();
+        let r = csv_file.write(format!("{},", env!("GIT_HASH")).as_bytes());
+        assert!(r.is_ok());
+        let out = format!(
+            "readrandom,{},{},{},{},{},{}",
+            num_clients,
+            num_clients,
+            cores_per_client * num_clients,
+            reads,
+            num,
+            val_size,
+            parts.last().unwrap()
+        );
+        let r = csv_file.write(out.as_bytes());
+        assert!(r.is_ok());
+        let r = csv_file.write("\n".as_bytes());
+        assert!(r.is_ok());
+        Ok(())
+    }
+
+    let mut test = RackscaleRun::new("userspace-smp".to_string(), built);
+    test.controller_match_fn = controller_match_fn;
+    test.transport = RackscaleTransport::Shmem;
+    test.use_affinity_shmem = cfg!(feature = "affinity-shmem");
+    test.file_name = file_name.to_string();
+
+    fn cmd_fn(num_cores: usize) -> String {
+        format!("initargs={}", num_cores)
+    }
+    fn baseline_timeout_fn(num_cores: usize) -> u64 {
+        20_000 * (num_cores) as u64
+    }
+    fn rackscale_timeout_fn(num_cores: usize) -> u64 {
+        120_000 + 800000 * num_cores as u64
+    }
+    fn mem_fn(_num_cores: usize, is_smoke: bool) -> usize {
+        if is_smoke {
+            10 * 1024
+        } else {
+            48 * 1024
+        }
+    }
+    let bench = RackscaleBench {
+        test,
+        cmd_fn,
+        baseline_timeout_fn,
+        rackscale_timeout_fn,
+        controller_mem_fn: mem_fn,
+        client_mem_fn: mem_fn,
+        baseline_mem_fn: mem_fn,
+    };
+
+    if cfg!(feature = "baseline") {
+        bench.run_bench(true, cfg!(feature = "smoke"));
+    }
+    bench.run_bench(false, cfg!(feature = "smoke"));
 }
 */

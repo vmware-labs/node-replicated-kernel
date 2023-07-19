@@ -37,18 +37,21 @@ fn notify_of_termination(tx: &Sender<()>) {
 }
 
 /// RPC Client registration function
-type RackscaleMatchFn = fn(
+type RackscaleMatchFn<T> = fn(
     proc: &mut PtySession,
     output: &mut String,
     cores_per_client: usize,
     num_clients: usize,
     file_name: &str,
     is_baseline: bool,
-    arg: usize,
+    arg: Option<T>,
 ) -> Result<()>;
 
 #[derive(Clone)]
-pub struct RackscaleRun {
+pub struct RackscaleRun<T>
+where
+    T: Clone + Send + 'static,
+{
     /// Kernel test string
     kernel_test: String,
     /// Used for generating the command of both the clients and the controller
@@ -58,13 +61,13 @@ pub struct RackscaleRun {
     /// Amount of non-shmem QEMU memory given to the controller
     pub controller_memory: usize,
     /// Function that is called after the controller is spawned to match output of the controller process
-    pub controller_match_fn: RackscaleMatchFn,
+    pub controller_match_fn: RackscaleMatchFn<T>,
     /// Timeout for each client process
     pub client_timeout: u64,
     /// Amount of non-shmem QEMU memory given to each client
     pub client_memory: usize,
     /// Function that is called after each client is spawned to match output of the client process
-    pub client_match_fn: RackscaleMatchFn,
+    pub client_match_fn: RackscaleMatchFn<T>,
     /// Number of client machines to spawn
     pub num_clients: usize,
     /// Number of QEMU cores given to each client
@@ -84,19 +87,19 @@ pub struct RackscaleRun {
     /// The commandline to use on the clients
     pub cmd: String,
     /// Argument passed to a matching function
-    pub arg: usize,
+    pub arg: Option<T>,
 }
 
-impl RackscaleRun {
-    pub fn new(kernel_test: String, built: Built<'static>) -> RackscaleRun {
-        fn blank_match_fn(
+impl<T: Clone + Send + 'static> RackscaleRun<T> {
+    pub fn new(kernel_test: String, built: Built<'static>) -> RackscaleRun<T> {
+        fn blank_match_fn<T>(
             _proc: &mut PtySession,
             _output: &mut String,
             _cores_per_client: usize,
             _num_clients: usize,
             _file_name: &str,
             _is_baseline: bool,
-            _arg: usize,
+            _arg: Option<T>,
         ) -> Result<()> {
             // Do nothing
             Ok(())
@@ -120,7 +123,7 @@ impl RackscaleRun {
             setup_network: true,
             file_name: "".to_string(),
             cmd: "".to_string(),
-            arg: 0,
+            arg: None,
         }
     }
 
@@ -195,7 +198,7 @@ impl RackscaleRun {
                         .setaffinity(controller_placement_cores[0].1.clone());
 
                 let mut output = String::new();
-                let mut qemu_run = || -> Result<WaitStatus> {
+                let qemu_run = || -> Result<WaitStatus> {
                     let mut p = spawn_nrk(&cmdline_controller)?;
 
                     // User-supplied function to check output
@@ -276,7 +279,7 @@ impl RackscaleRun {
                             .setaffinity(client_placement_cores[i + 1].1.clone());
 
                     let mut output = String::new();
-                    let mut qemu_run = || -> Result<WaitStatus> {
+                    let qemu_run = || -> Result<WaitStatus> {
                         let mut p = spawn_nrk(&cmdline_client)?;
 
                         // User-supplied function to check output
@@ -392,7 +395,7 @@ impl RackscaleRun {
                 self.num_clients,
                 &self.file_name,
                 true,
-                self.arg,
+                self.arg.clone(),
             )?;
             output += p.exp_eof()?.as_str();
             p.process.exit()
@@ -401,9 +404,9 @@ impl RackscaleRun {
     }
 }
 
-pub struct RackscaleBench {
+pub struct RackscaleBench<T: Clone + Send + 'static> {
     // Test to run
-    pub test: RackscaleRun,
+    pub test: RackscaleRun<T>,
     // Function to calculate the command. Takes as argument number of application cores
     pub cmd_fn: fn(usize) -> String,
     // Function to calculate the timeout. Takes as argument number of application cores
@@ -418,7 +421,7 @@ pub struct RackscaleBench {
     pub baseline_mem_fn: fn(usize, bool) -> usize,
 }
 
-impl RackscaleBench {
+impl<T: Clone + Send + 'static> RackscaleBench<T> {
     pub fn run_bench(&self, is_baseline: bool, is_smoke: bool) {
         let test_run = &mut self.test.clone();
 

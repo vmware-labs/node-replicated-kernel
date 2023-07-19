@@ -25,9 +25,6 @@ pub const SHMEM_SIZE: usize = 1024;
 /// Created by `hugeadm --create-global-mounts`
 const SHMEM_AFFINITY_PATH: &'static str = "/var/lib/hugetlbfs/global/pagesize-2MB";
 
-/// Delay between invoking version of nrk in rackscale tests
-pub const CLIENT_BUILD_DELAY: u64 = 5_000;
-
 /// Sets up network interfaces and bridge for rackscale mode
 ///
 /// num_nodes includes the controller in the count. Internally this

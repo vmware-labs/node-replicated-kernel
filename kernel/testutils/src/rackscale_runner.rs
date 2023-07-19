@@ -10,12 +10,12 @@ use rexpect::session::PtySession;
 
 use crate::builder::{Built, Machine};
 use crate::helpers::{
-    get_shmem_names, setup_network, spawn_dcm, spawn_nrk, spawn_shmem_server, CLIENT_BUILD_DELAY,
+    get_shmem_names, setup_network, spawn_dcm, spawn_dhcpd, spawn_nrk, spawn_shmem_server,
     SHMEM_SIZE,
 };
 use crate::runner_args::{
-    check_for_successful_exit, log_qemu_out_with_name, wait_for_sigterm_or_successful_exit_no_log,
-    RackscaleMode, RackscaleTransport, RunnerArgs,
+    log_qemu_out_with_name, wait_for_sigterm_or_successful_exit,
+    wait_for_sigterm_or_successful_exit_no_log, RackscaleMode, RackscaleTransport, RunnerArgs,
 };
 
 fn wait_for_termination<T>(rx: &Receiver<()>) -> bool {
@@ -88,6 +88,10 @@ where
     pub cmd: String,
     /// Argument passed to a matching function
     pub arg: Option<T>,
+    /// client build delay
+    pub client_build_delay: u64,
+    /// Run DHCPD in baseline test
+    pub run_dhcpd_for_baseline: bool,
 }
 
 impl<T: Clone + Send + 'static> RackscaleRun<T> {
@@ -124,6 +128,8 @@ impl<T: Clone + Send + 'static> RackscaleRun<T> {
             file_name: "".to_string(),
             cmd: "".to_string(),
             arg: None,
+            client_build_delay: 5_000, // 5 seconds
+            run_dhcpd_for_baseline: false,
         }
     }
 
@@ -229,6 +235,7 @@ impl<T: Clone + Send + 'static> RackscaleRun<T> {
                     Ok(ret)
                 };
                 let ret = qemu_run();
+
                 controller_output_array
                     .lock()
                     .expect("Failed to get mutex to output array")
@@ -246,6 +253,7 @@ impl<T: Clone + Send + 'static> RackscaleRun<T> {
         // Run client in separate thead. Wait a bit to make sure controller started
         let mut client_procs = Vec::new();
         for i in 0..self.num_clients {
+            sleep(Duration::from_millis(self.client_build_delay));
             let client_output_array: Arc<Mutex<Vec<(String, String)>>> = all_outputs.clone();
             let client_shmem_sockets = shmem_sockets.clone();
             let client_rx = rx_mut.clone();
@@ -255,10 +263,10 @@ impl<T: Clone + Send + 'static> RackscaleRun<T> {
             let client_cmd = self.cmd.clone();
             let client_placement_cores = placement_cores.clone();
             let state = self.clone();
+
             let client = std::thread::Builder::new()
                 .name(format!("Client{}", i + 1))
                 .spawn(move || {
-                    sleep(Duration::from_millis(CLIENT_BUILD_DELAY * (i as u64 + 1)));
                     let cmdline_client =
                         RunnerArgs::new_with_build(&client_kernel_test, &state.built)
                             .timeout(state.client_timeout)
@@ -308,6 +316,7 @@ impl<T: Clone + Send + 'static> RackscaleRun<T> {
                     };
                     // Could exit with 'success' or from sigterm, depending on number of clients.
                     let ret = qemu_run();
+
                     client_output_array
                         .lock()
                         .expect("Failed to get mutex to output array")
@@ -387,6 +396,11 @@ impl<T: Clone + Send + 'static> RackscaleRun<T> {
 
         let mut output = String::new();
         let mut qemu_run = || -> Result<WaitStatus> {
+            let dhcpd_server = if self.run_dhcpd_for_baseline {
+                Some(spawn_dhcpd()?)
+            } else {
+                None
+            };
             let mut p = spawn_nrk(&cmdline_baseline)?;
             (self.controller_match_fn)(
                 &mut p,
@@ -397,10 +411,14 @@ impl<T: Clone + Send + 'static> RackscaleRun<T> {
                 true,
                 self.arg.clone(),
             )?;
+            if let Some(mut server) = dhcpd_server {
+                server.send_control('c')?;
+            }
+            let ret = p.process.kill(SIGTERM)?;
             output += p.exp_eof()?.as_str();
-            p.process.exit()
+            Ok(ret)
         };
-        check_for_successful_exit(&cmdline_baseline, qemu_run(), output);
+        wait_for_sigterm_or_successful_exit(&cmdline_baseline, qemu_run(), output);
     }
 }
 
@@ -408,7 +426,7 @@ pub struct RackscaleBench<T: Clone + Send + 'static> {
     // Test to run
     pub test: RackscaleRun<T>,
     // Function to calculate the command. Takes as argument number of application cores
-    pub cmd_fn: fn(usize) -> String,
+    pub cmd_fn: fn(usize, Option<T>) -> String,
     // Function to calculate the timeout. Takes as argument number of application cores
     pub rackscale_timeout_fn: fn(usize) -> u64,
     // Function to calculate the timeout. Takes as argument number of application cores
@@ -493,7 +511,7 @@ impl<T: Clone + Send + 'static> RackscaleBench<T> {
             test_run.num_clients = num_clients;
 
             // Calculate command based on the number of cores
-            test_run.cmd = (self.cmd_fn)(total_cores);
+            test_run.cmd = (self.cmd_fn)(total_cores, test_run.arg.clone());
 
             // Caclulate memory for each component
             if !is_baseline {

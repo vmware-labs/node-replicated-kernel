@@ -854,11 +854,11 @@ fn s10_memcached_benchmark_internal() {
 
     // memcached arguments // currently not there.
     let (qemu_mem, memsize, queries, timeout) = if cfg!(feature = "smoke") {
-        (4096 /* MB */, 16 /* MB */, 2000000, 240_000)
+        (8 * 1024 /* MB */, 16 /* MB */, 2000000, 240_000)
     } else {
         (
-            96000,     /* MB */
-            32 * 1024, /* MB */
+            128 * 1024, /* MB */
+            32 * 1024,  /* MB */
             50000000,
             600_000,
         )

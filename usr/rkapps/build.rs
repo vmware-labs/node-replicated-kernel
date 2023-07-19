@@ -122,11 +122,11 @@ fn main() {
             .unwrap();
 
         println!(
-            "CHECKOUT b6cea024897ef73a6f06935e6dd660ea74a5fe3c {:?}",
+            "CHECKOUT 83deed5780e271a0829b09bf8eeb831331bfd2d9 {:?}",
             out_dir
         );
         Command::new("git")
-            .args(&["checkout", "b6cea024897ef73a6f06935e6dd660ea74a5fe3c"])
+            .args(&["checkout", "83deed5780e271a0829b09bf8eeb831331bfd2d9"])
             .current_dir(&Path::new(&out_dir))
             .status()
             .unwrap();

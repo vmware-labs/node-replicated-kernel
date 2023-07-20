@@ -13,14 +13,30 @@ in the package repository.
 First, make sure to uncomment all #deb-src lines in /etc/apt/sources.list if not
 already uncommented. Then, run the following commands:
 
+For any build:
 ```bash
 sudo apt update
 sudo apt install build-essential libpmem-dev libdaxctl-dev ninja-build flex bison
 apt source qemu
 sudo apt build-dep qemu
+```
+
+For non-rackscale:
+```bash
 wget https://download.qemu.org/qemu-6.0.0.tar.xz
 tar xvJf qemu-6.0.0.tar.xz
 cd qemu-6.0.0
+```
+
+For non-rackscale OR rackscale:
+```bash
+git clone https://github.com/hunhoffe/qemu.git qemu-6.0.0
+cd qemu-6.0.0
+git checkout --track origin/dev/ivshmem-numa
+```
+
+For any build:
+```bash
 ./configure --enable-rdma --enable-libpmem
 make -j 28
 sudo make -j28 install
@@ -34,14 +50,7 @@ You can also add `--enable-debug` to the configure script which will add debug
 information (useful for source information when stepping through qemu code in
 gdb).
 
-For rackscale mode, install an updated ivshmem-server:
-```bash
-git clone https://github.com/hunhoffe/qemu.git qemu.tar.xz
-cd qemu-6
-git checkout --track origin/dev/ivshmem-numa
-./configure
-make -j 28
-```
-
-Use ```which ivshmem-server``` to find the current location and then overwrite it
-with ```qemu/build/contrib/ivshmem-server/ivshmem-server```. 
+Note that sometimes ```make install``` doesn't actually replace the 
+```ivshmem-server```. Use ```which ivshmem-server``` to find the current 
+location and then overwrite it with 
+```qemu/build/contrib/ivshmem-server/ivshmem-server```. 

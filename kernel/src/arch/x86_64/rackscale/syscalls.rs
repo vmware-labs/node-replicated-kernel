@@ -67,8 +67,7 @@ impl VSpaceDispatch<u64> for Arch86LwkSystemCall {
         let mut total_len = 0;
 
         if total_needed_base_pages > 0 {
-            let mut bp_cache = CLIENT_STATE.per_process_base_pages.lock();
-            let mut per_process_bp_cache = &mut bp_cache[pid];
+            let mut per_process_bp_cache = CLIENT_STATE.per_process_base_pages[pid].lock();
             let base_pages_from_cache = core::cmp::min(
                 per_process_bp_cache.free_base_pages(),
                 total_needed_base_pages,
@@ -127,8 +126,7 @@ impl VSpaceDispatch<u64> for Arch86LwkSystemCall {
                 }
 
                 // Add any remaining base pages to the cache, if there's space.
-                let mut bp_cache = CLIENT_STATE.per_process_base_pages.lock();
-                let mut per_process_bp_cache = &mut bp_cache[pid];
+                let mut per_process_bp_cache = CLIENT_STATE.per_process_base_pages[pid].lock();
                 let base_pages_to_save = core::cmp::min(
                     base_page_iter.len(),
                     per_process_bp_cache.spare_base_page_capacity(),

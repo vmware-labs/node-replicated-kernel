@@ -76,7 +76,7 @@ impl CoreBitMap {
     }
 }
 
-pub(crate) struct CoreBitMapIter(CoreBitMap);
+pub(crate) struct CoreBitMapIter(pub(crate) CoreBitMap);
 
 impl Iterator for CoreBitMapIter {
     type Item = usize;

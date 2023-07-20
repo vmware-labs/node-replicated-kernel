@@ -11,7 +11,7 @@ use rpc::RPCClient;
 use rpc::RPCServer;
 
 use super::super::kernelrpc::*;
-use super::{DCMOps, DCM_INTERFACE};
+use super::{DCMOps, DCM_INTERFACE, HANDLED_DCM_RESPONSES};
 
 #[derive(Debug, Default)]
 #[repr(C)]
@@ -95,9 +95,10 @@ pub(crate) fn dcm_resource_alloc(
         Vec::try_with_capacity(memslices as usize).expect("Failed to allocate memory");
 
     while received_allocations < cores + memslices {
-        let dcm_interface = DCM_INTERFACE.lock();
-        match dcm_interface.server.handle(None) {
-            Ok(Some((alloc_id, node))) => {
+        let mut dcm_interface = DCM_INTERFACE.lock();
+        match dcm_interface.server.handle() {
+            Ok(()) => {
+                let (alloc_id, node) = *HANDLED_DCM_RESPONSES.lock();
                 log::debug!("Received assignment: {:?} to node {:?}", alloc_id, node);
                 if alloc_id > res.alloc_id + cores + memslices || alloc_id < res.alloc_id {
                     panic!("AllocIds do not match!");

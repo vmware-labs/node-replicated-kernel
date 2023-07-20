@@ -2,22 +2,21 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
 use alloc::boxed::Box;
-use core::cell::UnsafeCell;
 
 use crate::api::*;
 use crate::rpc::*;
 use crate::transport::Transport;
 
 pub struct Client {
-    transport: Box<dyn Transport + Send>,
-    hdr: UnsafeCell<RPCHeader>,
+    transport: Box<dyn Transport + Send + Sync>,
+    hdr: RPCHeader,
 }
 
 impl Client {
-    pub fn new<T: 'static + Transport + Send>(transport: Box<T>) -> Client {
+    pub fn new<T: 'static + Transport + Send + Sync>(transport: Box<T>) -> Client {
         Client {
             transport,
-            hdr: UnsafeCell::new(RPCHeader::default()),
+            hdr: RPCHeader::default(),
         }
     }
 }
@@ -43,7 +42,7 @@ impl RPCClient for Client {
         // Create request header and send message. It is safe to create a mutable reference here
         // because it is assumed there will only be one invocation of call() running at a time, and only
         // the client has access to this field.
-        let mut hdr = unsafe { &mut *self.hdr.get() };
+        let mut hdr = &mut self.hdr;
         hdr.msg_type = rpc_id;
         hdr.msg_len = data_in_len as u64;
         self.transport.send_msg(hdr, data_in)?;

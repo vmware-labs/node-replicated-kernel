@@ -39,6 +39,7 @@ pub const HDR_LEN: usize = core::mem::size_of::<RPCHeader>();
 impl RPCHeader {
     /// # Safety
     /// - `self` must be valid RPCHeader
+    #[inline(always)]
     pub unsafe fn as_mut_bytes(&mut self) -> &mut [u8; HDR_LEN] {
         ::core::slice::from_raw_parts_mut((self as *const RPCHeader) as *mut u8, HDR_LEN)
             .try_into()
@@ -47,6 +48,7 @@ impl RPCHeader {
 
     /// # Safety
     /// - `self` must be valid RPCHeader
+    #[inline(always)]
     pub unsafe fn as_bytes(&self) -> &[u8; HDR_LEN] {
         ::core::slice::from_raw_parts((self as *const RPCHeader) as *const u8, HDR_LEN)
             .try_into()
@@ -74,6 +76,7 @@ impl Default for MBuf {
 impl MBuf {
     /// # Safety
     /// - `self` must be valid RPCHeader
+    #[inline(always)]
     pub unsafe fn as_mut_bytes(&mut self) -> &mut [u8; MAX_BUFF_LEN] {
         ::core::slice::from_raw_parts_mut((self as *const MBuf) as *mut u8, MAX_BUFF_LEN)
             .try_into()
@@ -82,6 +85,7 @@ impl MBuf {
 
     /// # Safety
     /// - `self` must be valid RPCHeader
+    #[inline(always)]
     pub unsafe fn as_bytes(&self) -> &[u8; MAX_BUFF_LEN] {
         ::core::slice::from_raw_parts((self as *const MBuf) as *const u8, MAX_BUFF_LEN)
             .try_into()

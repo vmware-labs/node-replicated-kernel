@@ -97,17 +97,17 @@ pub(crate) fn init_ethernet_rpc(
     server_ip: smoltcp::wire::IpAddress,
     server_port: u16,
     send_client_data: bool, // This field is used to indicate if init_client() should send ClientRegistrationRequest
-) -> KResult<alloc::boxed::Box<rpc::client::Client>> {
+) -> KResult<rpc::client::Client> {
     use crate::arch::rackscale::registration::initialize_client;
     use alloc::boxed::Box;
     use rpc::client::Client;
     use rpc::transport::TCPTransport;
     use rpc::RPCClient;
 
-    let rpc_transport = Box::try_new(
+    let rpc_transport = Box::new(
         TCPTransport::new(Some(server_ip), server_port, Arc::clone(&ETHERNET_IFACE))
             .map_err(|err| KError::RackscaleRPCError { err })?,
-    )?;
-    let mut client = Box::try_new(Client::new(rpc_transport))?;
+    );
+    let mut client = Client::new(rpc_transport);
     initialize_client(client, send_client_data)
 }

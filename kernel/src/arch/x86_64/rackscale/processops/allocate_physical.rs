@@ -11,7 +11,7 @@ use kpi::FileOperation;
 use rpc::rpc::*;
 use rpc::RPCClient;
 
-use super::super::controller_state::{ControllerState, SHMEM_MEMSLICE_ALLOCATORS};
+use super::super::controller_state::SHMEM_MEMSLICE_ALLOCATORS;
 use super::super::dcm::resource_alloc::dcm_resource_alloc;
 use super::super::kernelrpc::*;
 use crate::arch::process::Ring3Process;
@@ -82,8 +82,7 @@ pub(crate) fn rpc_allocate_physical(pid: Pid, size: u64, affinity: u64) -> KResu
 pub(crate) fn handle_allocate_physical(
     hdr: &mut RPCHeader,
     payload: &mut [u8],
-    state: ControllerState,
-) -> Result<ControllerState, RPCError> {
+) -> Result<(), RPCError> {
     // Extract data needed from the request
     let size;
     let affinity;
@@ -101,7 +100,7 @@ pub(crate) fn handle_allocate_physical(
     } else {
         log::error!("Invalid payload for request: {:?}", hdr);
         construct_error_ret(hdr, payload, KError::from(RPCError::MalformedRequest));
-        return Ok(state);
+        return Ok(());
     }
 
     // Let DCM choose node
@@ -111,8 +110,7 @@ pub(crate) fn handle_allocate_physical(
 
     // TODO(error_handling): should handle errors gracefully here, maybe percolate to client?
     let frame = {
-        let mut shmem_managers = SHMEM_MEMSLICE_ALLOCATORS.lock();
-        let mut manager = &mut shmem_managers[mid as usize - 1];
+        let mut manager = &mut SHMEM_MEMSLICE_ALLOCATORS[mid as usize - 1].lock();
         manager
             .allocate_large_page()
             .expect("DCM should ensure we have a frame to allocate here.")
@@ -123,5 +121,5 @@ pub(crate) fn handle_allocate_physical(
         payload,
         Ok((frame.affinity as u64, frame.base.as_u64())),
     );
-    Ok(state)
+    Ok(())
 }

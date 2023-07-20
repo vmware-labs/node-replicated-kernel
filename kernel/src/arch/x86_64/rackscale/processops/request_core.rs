@@ -8,7 +8,7 @@ use kpi::system::MachineId;
 use rpc::rpc::*;
 use rpc::RPCClient;
 
-use super::super::controller_state::ControllerState;
+use super::super::controller_state::CONTROLLER_STATE;
 use super::super::dcm::resource_alloc::dcm_resource_alloc;
 use super::super::kernelrpc::*;
 use crate::arch::rackscale::CLIENT_STATE;
@@ -58,11 +58,7 @@ pub(crate) fn rpc_request_core(pid: Pid, new_pid: bool, entry_point: u64) -> KRe
 }
 
 // RPC Handler function for delete() RPCs in the controller
-pub(crate) fn handle_request_core(
-    hdr: &mut RPCHeader,
-    payload: &mut [u8],
-    state: ControllerState,
-) -> Result<ControllerState, RPCError> {
+pub(crate) fn handle_request_core(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCError> {
     log::debug!("handle_request_core() start");
 
     // Parse request
@@ -71,36 +67,16 @@ pub(crate) fn handle_request_core(
         None => {
             log::error!("Invalid payload for request: {:?}", hdr);
             construct_error_ret(hdr, payload, KError::from(RPCError::MalformedRequest));
-            return Ok(state);
+            return Ok(());
         }
     };
 
     let (mids, _) = dcm_resource_alloc(core_req.pid, 1, 0);
     let mid = mids[0];
 
-    let (gtid, gtid_affinity) = {
-        let mut client_state = state.get_client_state(mid).lock();
-
-        // TODO(performance): controller chooses a core id - right now, sequentially for cores on the machine.
-        // it should really choose in a NUMA-aware fashion for the remote node.
-        let mut gtid = None;
-        let mut gtid_affinity = None;
-        for i in 0..client_state.hw_threads.len() {
-            match client_state.hw_threads[i] {
-                (thread, false) => {
-                    gtid = Some(thread.id);
-                    gtid_affinity = Some(thread.node_id);
-                    client_state.hw_threads[i] = (thread, true);
-                    break;
-                }
-                _ => continue,
-            }
-        }
-        // gtid should always be found, as DCM should know if there are free threads or not.
-        let gtid = gtid.expect("Failed to find free thread??");
-        let gtid_affinity = gtid_affinity.expect("Failed to find thread node affinity?");
-        (gtid, gtid_affinity)
-    };
+    let (gtid, gtid_affinity) = CONTROLLER_STATE
+        .claim_hardware_thread(mid)
+        .expect("Failed to find free thread?");
 
     log::debug!(
         "Found unused thread: machine={:?}, gtid={:?} node={:?}",
@@ -130,5 +106,5 @@ pub(crate) fn handle_request_core(
     }
 
     // Construct and return result
-    Ok(state)
+    Ok(())
 }

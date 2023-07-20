@@ -3,9 +3,8 @@
 
 use alloc::boxed::Box;
 use alloc::sync::Arc;
-use alloc::vec::Vec;
+use arrayvec::ArrayVec;
 use core::cell::Cell;
-use fallible_collections::FallibleVecGlobal;
 use smoltcp::time::Instant;
 
 use rpc::api::RPCServer;
@@ -13,6 +12,7 @@ use rpc::rpc::RPCType;
 use rpc::server::Server;
 use rpc::transport::TCPTransport;
 
+use crate::arch::MAX_MACHINES;
 use crate::cmdline::Transport;
 use crate::transport::ethernet::ETHERNET_IFACE;
 use crate::transport::shmem::create_shmem_transport;
@@ -23,46 +23,24 @@ pub(crate) const CONTROLLER_PORT_BASE: u16 = 6970;
 
 /// Controller main method
 pub(crate) fn run() {
-    // Create network interface and clock
-    #[derive(Debug)]
-    #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-    pub(crate) struct Clock(Cell<Instant>);
-
-    impl Clock {
-        fn new() -> Clock {
-            let rt = rawtime::Instant::now().as_nanos();
-            let rt_millis = (rt / 1_000_000) as i64;
-            Clock(Cell::new(Instant::from_millis(rt_millis)))
-        }
-
-        fn elapsed(&self) -> Instant {
-            self.0.get()
-        }
-    }
-    let clock = Clock::new();
-
     // Initialize one server per client
     let num_clients = *crate::environment::NUM_MACHINES - 1;
-    let mut servers: Vec<Box<dyn RPCServer<ControllerState>>> =
-        Vec::try_with_capacity(num_clients as usize)
-            .expect("Failed to allocate vector for RPC server");
+    let mut servers: ArrayVec<Server, MAX_MACHINES> = ArrayVec::new();
 
     if crate::CMDLINE
         .get()
         .map_or(false, |c| c.transport == Transport::Ethernet)
     {
         for mid in 0..num_clients {
-            let transport = Box::try_new(
+            let transport = Box::new(
                 TCPTransport::new(
                     None,
                     CONTROLLER_PORT_BASE + mid as u16,
                     Arc::clone(&ETHERNET_IFACE),
                 )
                 .expect("Failed to create TCP transport"),
-            )
-            .expect("Out of memory during init");
-            let mut server: Box<dyn RPCServer<ControllerState>> =
-                Box::try_new(Server::new(transport)).expect("Out of memory during init");
+            );
+            let mut server = Server::new(transport);
             register_rpcs(&mut server);
             servers.push(server);
         }
@@ -71,14 +49,12 @@ pub(crate) fn run() {
         .map_or(false, |c| c.transport == Transport::Shmem)
     {
         for mid in 1..=num_clients {
-            let transport = Box::try_new(
+            let transport = Box::new(
                 create_shmem_transport(mid.try_into().unwrap())
                     .expect("Failed to create shmem transport"),
-            )
-            .expect("Out of memory during init");
+            );
 
-            let mut server: Box<dyn RPCServer<ControllerState>> =
-                Box::try_new(Server::new(transport)).expect("Out of memory during init");
+            let mut server = Server::new(transport);
             register_rpcs(&mut server);
             servers.push(server);
         }
@@ -86,11 +62,9 @@ pub(crate) fn run() {
         unreachable!("No supported transport layer specified in kernel argument");
     }
 
-    let mut controller_state = ControllerState::new(num_clients as usize);
-
     for server in servers.iter_mut() {
-        controller_state = server
-            .add_client(&CLIENT_REGISTRAR, controller_state)
+        server
+            .add_client(&CLIENT_REGISTRAR)
             .expect("Failed to connect to remote server");
     }
 
@@ -136,16 +110,15 @@ pub(crate) fn run() {
         }
 
         // Try to handle an RPC request
-        for server in servers.iter() {
-            let (mut new_state, _handled) = server
-                .try_handle(controller_state)
+        for server in servers.iter_mut() {
+            let _handled = server
+                .try_handle()
                 .expect("Controller failed to handle RPC");
-            controller_state = new_state;
         }
     }
 }
 
-fn register_rpcs(server: &mut Box<dyn RPCServer<ControllerState>>) {
+fn register_rpcs(server: &mut Server) {
     // Register all of the RPC functions supported
     server
         .register(KernelRpc::Close as RPCType, &CLOSE_HANDLER)

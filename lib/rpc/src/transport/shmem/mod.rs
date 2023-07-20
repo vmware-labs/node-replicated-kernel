@@ -21,15 +21,18 @@ impl<'a> Sender<'a> {
         ))
     }
 
+    #[inline(always)]
     pub fn with_shared_queue(q: Arc<Queue<'a>>) -> Sender<'a> {
         Sender(q.clone())
     }
 
+    #[inline(always)]
     pub fn send(&self, data: &[&[u8]]) -> bool {
         while !self.0.enqueue(data) {}
         true
     }
 
+    #[inline(always)]
     pub fn try_send(&self, data: &[&[u8]]) -> bool {
         self.0.enqueue(data)
     }
@@ -48,10 +51,12 @@ impl<'a> Receiver<'a> {
         ))
     }
 
+    #[inline(always)]
     pub fn with_shared_queue(q: Arc<Queue<'a>>) -> Receiver<'a> {
         Receiver(q.clone())
     }
 
+    #[inline(always)]
     pub fn recv(&self, data_out: &mut [&mut [u8]]) -> usize {
         loop {
             let ret = self.0.dequeue(data_out);
@@ -61,6 +66,7 @@ impl<'a> Receiver<'a> {
         }
     }
 
+    #[inline(always)]
     pub fn try_recv(&self, data_out: &mut [&mut [u8]]) -> Result<usize, QueueError> {
         self.0.dequeue(data_out)
     }

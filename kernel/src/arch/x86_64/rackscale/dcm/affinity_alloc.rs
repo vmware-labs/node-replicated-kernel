@@ -90,8 +90,7 @@ pub(crate) fn dcm_affinity_alloc(
     // Take the frames from the shmem allocator belonging to the requested mid
     let mut regions = Vec::<ShmemRegion>::new();
     {
-        let mut shmem_managers = SHMEM_MEMSLICE_ALLOCATORS.lock();
-        let mut manager = &mut shmem_managers[mid - 1];
+        let mut manager = &mut SHMEM_MEMSLICE_ALLOCATORS[mid - 1].lock();
         for _i in 0..num_memslices {
             let frame = manager
                 .allocate_large_page()

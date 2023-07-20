@@ -13,7 +13,6 @@ use rpc::RPCClient;
 
 use super::super::dcm::resource_release::dcm_resource_release;
 use super::super::kernelrpc::*;
-use super::super::ControllerState;
 use super::super::CLIENT_STATE;
 use crate::arch::process::Ring3Process;
 use crate::arch::rackscale::controller_state::SHMEM_MEMSLICE_ALLOCATORS;
@@ -80,15 +79,14 @@ pub(crate) fn rpc_release_physical(pid: Pid, frame_id: u64) -> KResult<(u64, u64
 pub(crate) fn handle_release_physical(
     hdr: &mut RPCHeader,
     payload: &mut [u8],
-    state: ControllerState,
-) -> Result<ControllerState, RPCError> {
+) -> Result<(), RPCError> {
     // Extract data needed from the request
     let req = match unsafe { decode::<ReleasePhysicalReq>(payload) } {
         Some((req, _)) => req,
         _ => {
             log::error!("Invalid payload for request: {:?}", hdr);
             construct_error_ret(hdr, payload, KError::from(RPCError::MalformedRequest));
-            return Ok(state);
+            return Ok(());
         }
     };
     let mid = shmem_affinity_to_mid(req.affinity);
@@ -109,8 +107,7 @@ pub(crate) fn handle_release_physical(
 
     // TODO(error_handling): should handle errors gracefully here, maybe percolate to client?
     let ret = {
-        let mut shmem_managers = SHMEM_MEMSLICE_ALLOCATORS.lock();
-        let mut manager = &mut shmem_managers[mid as usize - 1];
+        let mut manager = &mut SHMEM_MEMSLICE_ALLOCATORS[mid as usize - 1].lock();
         manager.release_large_page(frame)
     };
 
@@ -133,5 +130,5 @@ pub(crate) fn handle_release_physical(
         }
     };
     construct_ret(hdr, payload, res);
-    Ok(state)
+    Ok(())
 }

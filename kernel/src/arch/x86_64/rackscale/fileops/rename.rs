@@ -11,7 +11,6 @@ use core2::io::Write;
 use rpc::rpc::*;
 use rpc::RPCClient;
 
-use super::super::controller_state::ControllerState;
 use super::super::fileops::get_str_from_payload;
 use super::super::kernelrpc::*;
 use super::super::CLIENT_STATE;
@@ -66,18 +65,14 @@ pub(crate) fn rpc_rename<P: AsRef<[u8]> + Debug>(
 }
 
 // RPC Handler function for rename() RPCs in the controller
-pub(crate) fn handle_rename(
-    hdr: &mut RPCHeader,
-    payload: &mut [u8],
-    state: ControllerState,
-) -> Result<ControllerState, RPCError> {
+pub(crate) fn handle_rename(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCError> {
     // Decode request
     let (pid, oldname_len) = match unsafe { decode::<RenameReq>(payload) } {
         Some((req, _)) => (req.pid, req.oldname_len as usize),
         None => {
             log::error!("Invalid payload for request: {:?}", hdr);
             construct_error_ret(hdr, payload, KError::from(RPCError::MalformedRequest));
-            return Ok(state);
+            return Ok(());
         }
     };
 
@@ -101,5 +96,5 @@ pub(crate) fn handle_rename(
         (Err(e), _) => construct_error_ret(hdr, payload, KError::from(e)),
         (_, Err(e)) => construct_error_ret(hdr, payload, KError::from(e)),
     }
-    Ok(state)
+    Ok(())
 }

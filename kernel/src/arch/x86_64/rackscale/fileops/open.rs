@@ -11,7 +11,6 @@ use kpi::io::{FileFlags, FileModes};
 use rpc::rpc::*;
 use rpc::RPCClient;
 
-use super::super::controller_state::ControllerState;
 use super::super::fileops::get_str_from_payload;
 use super::super::kernelrpc::*;
 use super::super::CLIENT_STATE;
@@ -75,11 +74,7 @@ fn rpc_open_create<P: AsRef<[u8]> + Debug>(
 }
 
 // RPC Handler function for open() RPCs in the controller
-pub(crate) fn handle_open(
-    hdr: &mut RPCHeader,
-    payload: &mut [u8],
-    state: ControllerState,
-) -> Result<ControllerState, RPCError> {
+pub(crate) fn handle_open(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCError> {
     // Decode request
     let (pid, flags, modes) = match unsafe { decode::<OpenReq>(payload) } {
         Some((req, _)) => {
@@ -94,7 +89,7 @@ pub(crate) fn handle_open(
         None => {
             log::error!("Invalid payload for request: {:?}", hdr);
             construct_error_ret(hdr, payload, KError::from(RPCError::MalformedRequest));
-            return Ok(state);
+            return Ok(());
         }
     };
 
@@ -106,5 +101,5 @@ pub(crate) fn handle_open(
     .and_then(|path_string| cnrfs::MlnrKernelNode::map_fd(pid, path_string, flags, modes));
 
     construct_ret(hdr, payload, ret);
-    Ok(state)
+    Ok(())
 }

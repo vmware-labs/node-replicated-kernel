@@ -13,7 +13,6 @@ use kpi::FileOperation;
 use rpc::rpc::*;
 use rpc::RPCClient;
 
-use super::super::controller_state::ControllerState;
 use super::super::kernelrpc::*;
 use super::super::CLIENT_STATE;
 use super::FileIO;
@@ -170,11 +169,7 @@ pub(crate) fn rpc_readat(
 }
 
 // RPC Handler function for read() RPCs in the controller
-pub(crate) fn handle_read(
-    hdr: &mut RPCHeader,
-    payload: &mut [u8],
-    state: ControllerState,
-) -> Result<ControllerState, RPCError> {
+pub(crate) fn handle_read(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCError> {
     // Extract data needed from the request
     let fd;
     let len;
@@ -202,7 +197,7 @@ pub(crate) fn handle_read(
     } else {
         log::error!("Invalid payload for request: {:?}", hdr);
         construct_error_ret(hdr, payload, KError::from(RPCError::MalformedRequest));
-        return Ok(state);
+        return Ok(());
     }
 
     let ret = cnrfs::MlnrKernelNode::file_read(
@@ -214,15 +209,11 @@ pub(crate) fn handle_read(
 
     // Construct return
     construct_ret(hdr, payload, ret);
-    Ok(state)
+    Ok(())
 }
 
 // RPC Handler function for write() RPCs in the controller
-pub(crate) fn handle_write(
-    hdr: &mut RPCHeader,
-    payload: &mut [u8],
-    state: ControllerState,
-) -> Result<ControllerState, RPCError> {
+pub(crate) fn handle_write(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCError> {
     // Decode request
     let ret = if let Some((req, remaining)) = unsafe { decode::<RWReq>(payload) } {
         log::debug!(
@@ -250,5 +241,5 @@ pub(crate) fn handle_write(
         Err(KError::from(RPCError::MalformedRequest))
     };
     construct_ret(hdr, payload, ret);
-    Ok(state)
+    Ok(())
 }

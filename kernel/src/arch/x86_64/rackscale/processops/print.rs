@@ -12,7 +12,6 @@ use kpi::system::MachineId;
 use rpc::rpc::*;
 use rpc::RPCClient;
 
-use super::super::controller_state::ControllerState;
 use super::super::kernelrpc::*;
 use super::super::CLIENT_STATE;
 use crate::arch::serial::SerialControl;
@@ -60,11 +59,7 @@ pub(crate) fn rpc_log(msg: String) -> KResult<(u64, u64)> {
 }
 
 // RPC Handler function for log() RPCs in the controller
-pub(crate) fn handle_log(
-    hdr: &mut RPCHeader,
-    mut payload: &mut [u8],
-    state: ControllerState,
-) -> Result<ControllerState, RPCError> {
+pub(crate) fn handle_log(hdr: &mut RPCHeader, mut payload: &mut [u8]) -> Result<(), RPCError> {
     // Decode and return the result
     if let Some((res, remaining)) = unsafe { decode::<LogReq>(&mut payload) } {
         match core::str::from_utf8(
@@ -80,5 +75,5 @@ pub(crate) fn handle_log(
 
     // Construct results from return data
     construct_ret(hdr, payload, Ok((0, 0)));
-    Ok(state)
+    Ok(())
 }

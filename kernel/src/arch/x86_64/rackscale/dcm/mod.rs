@@ -32,16 +32,12 @@ const DCM_CLIENT_PORT: u16 = 10100;
 const DCM_SERVER_PORT: u16 = 10101;
 
 // RPC Handler for client registration on the controller
-pub(crate) fn register_dcm_client(
-    hdr: &mut RPCHeader,
-    payload: &mut [u8],
-    mut state: Option<(u64, u64)>,
-) -> Result<Option<(u64, u64)>, RPCError> {
-    Ok(None)
+pub(crate) fn register_dcm_client(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCError> {
+    Ok(())
 }
 
 // Re-export client registration
-const DCM_CLIENT_REGISTRAR: RegistrationHandler<Option<(u64, u64)>> = register_dcm_client;
+const DCM_CLIENT_REGISTRAR: RegistrationHandler = register_dcm_client;
 
 #[derive(Debug, Default)]
 #[repr(C)]
@@ -51,12 +47,13 @@ struct NodeAssignment {
 }
 unsafe_abomonate!(NodeAssignment: alloc_id, mid);
 
+lazy_static! {
+    pub(crate) static ref HANDLED_DCM_RESPONSES: Arc<Mutex<(u64, u64)>> =
+        { Arc::new(Mutex::new((0, 0))) };
+}
+
 // RPC Handler function for close() RPCs in the controller
-fn handle_dcm_node_assignment(
-    hdr: &mut RPCHeader,
-    payload: &mut [u8],
-    _state: Option<(u64, u64)>,
-) -> Result<Option<(u64, u64)>, RPCError> {
+fn handle_dcm_node_assignment(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCError> {
     // Decode request
     if let Some((req, _)) = unsafe { decode::<NodeAssignment>(payload) } {
         log::debug!(
@@ -65,14 +62,16 @@ fn handle_dcm_node_assignment(
             req.mid
         );
         hdr.msg_len = 0;
-        Ok(Some((req.alloc_id, req.mid)))
+        let mut responses = HANDLED_DCM_RESPONSES.lock();
+        *responses = (req.alloc_id, req.mid);
+        Ok(())
     } else {
         // Report error if failed to decode request
         Err(RPCError::MalformedRequest)
     }
 }
 
-const NODE_ASSIGNMENT_HANDLER: RPCHandler<Option<(u64, u64)>> = handle_dcm_node_assignment;
+const NODE_ASSIGNMENT_HANDLER: RPCHandler = handle_dcm_node_assignment;
 
 #[derive(Debug, Eq, PartialEq, PartialOrd, Clone, Copy)]
 #[repr(u8)]
@@ -115,8 +114,8 @@ lazy_static! {
 }
 
 pub(crate) struct DCMInterface<'a> {
-    pub client: Box<Client>,
-    pub server: Box<Server<'a, Option<(u64, u64)>>>,
+    pub client: Client,
+    pub server: Server<'a>,
 }
 
 impl DCMInterface<'_> {
@@ -132,11 +131,10 @@ impl DCMInterface<'_> {
                 .expect("Failed to create TCP transport"),
         )
         .expect("Out of memory during init");
-        let mut server: Box<Server<Option<(u64, u64)>>> =
-            Box::try_new(Server::new(transport)).expect("Out of memory during init");
+        let mut server = Server::new(transport);
         log::info!("Created DCM RPC server!");
 
-        let _ = server.add_client(&DCM_CLIENT_REGISTRAR, None).unwrap();
+        let _ = server.add_client(&DCM_CLIENT_REGISTRAR).unwrap();
         log::info!("Added DCM server RPC client!");
 
         server

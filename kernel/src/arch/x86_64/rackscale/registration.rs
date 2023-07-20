@@ -14,7 +14,7 @@ use rpc::rpc::{RPCError, RPCHeader};
 use rpc::RPCClient;
 
 use super::dcm::node_registration::dcm_register_node;
-use crate::arch::rackscale::controller_state::{ControllerState, SHMEM_MEMSLICE_ALLOCATORS};
+use crate::arch::rackscale::controller_state::{CONTROLLER_STATE, SHMEM_MEMSLICE_ALLOCATORS};
 use crate::error::KResult;
 use crate::memory::backends::AllocatorStatistics;
 use crate::memory::mcache::MCache;
@@ -38,9 +38,9 @@ unsafe_abomonate!(
 
 // Called by client to register client with the controller
 pub(crate) fn initialize_client(
-    mut client: Box<Client>,
+    mut client: Client,
     send_client_data: bool, // This field is used to indicate if init_client() should send ClientRegistrationRequest
-) -> KResult<Box<Client>> {
+) -> KResult<Client> {
     if send_client_data {
         // Fetch system information
         let shmem_region = get_affinity_shmem();
@@ -87,11 +87,7 @@ pub(crate) fn initialize_client(
 }
 
 // RPC Handler for client registration on the controller
-pub(crate) fn register_client(
-    hdr: &mut RPCHeader,
-    payload: &mut [u8],
-    mut state: ControllerState,
-) -> Result<ControllerState, RPCError> {
+pub(crate) fn register_client(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCError> {
     log::debug!("register_client start");
     // Decode client registration request
     if let Some((req, hwthreads_data)) =
@@ -125,8 +121,7 @@ pub(crate) fn register_client(
             mid_to_shmem_affinity(req.mid),
         );
         let memslices = {
-            let mut shmem_managers = SHMEM_MEMSLICE_ALLOCATORS.lock();
-            let mut shmem_manager = &mut shmem_managers[req.mid as usize - 1];
+            let mut shmem_manager = &mut SHMEM_MEMSLICE_ALLOCATORS[req.mid as usize - 1].lock();
             shmem_manager.populate_4k_first(frame);
             shmem_manager.free_large_pages() as u64
         };
@@ -144,8 +139,9 @@ pub(crate) fn register_client(
             return Err(RPCError::RegistrationError);
         }
 
-        state.add_client(req.mid, hw_threads);
-        Ok(state)
+        CONTROLLER_STATE.init_client_state(req.mid, hw_threads);
+
+        Ok(())
     } else {
         log::error!("Failed to decode client registration request during register_client");
         Err(RPCError::MalformedResponse)

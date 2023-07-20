@@ -12,7 +12,6 @@ use crate::error::{KError, KResult};
 use crate::fs::cnrfs;
 use crate::fs::fd::FileDescriptor;
 
-use super::super::controller_state::ControllerState;
 use super::super::kernelrpc::*;
 use super::super::CLIENT_STATE;
 use super::FileIO;
@@ -59,11 +58,7 @@ pub(crate) fn rpc_close(pid: usize, fd: FileDescriptor) -> KResult<(u64, u64)> {
 }
 
 // RPC Handler function for close() RPCs in the controller
-pub(crate) fn handle_close(
-    hdr: &mut RPCHeader,
-    payload: &mut [u8],
-    state: ControllerState,
-) -> Result<ControllerState, RPCError> {
+pub(crate) fn handle_close(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCError> {
     // Decode request
     let ret = if let Some((req, _)) = unsafe { decode::<CloseReq>(payload) } {
         log::debug!("Close(pid={:?}), fd={:?}", req.pid, req.fd);
@@ -73,5 +68,5 @@ pub(crate) fn handle_close(
         Err(KError::from(RPCError::MalformedRequest))
     };
     construct_ret(hdr, payload, ret);
-    Ok(state)
+    Ok(())
 }

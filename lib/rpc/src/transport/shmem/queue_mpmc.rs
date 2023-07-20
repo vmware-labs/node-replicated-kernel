@@ -140,10 +140,12 @@ impl<'a> State<'a> {
         )
     }
 
+    #[inline(always)]
     fn enqueue_pos(&self, ordering: Ordering) -> usize {
         unsafe { (*self.enqueue_pos).load(ordering) }
     }
 
+    #[inline(always)]
     fn dequeue_pos(&self, ordering: Ordering) -> usize {
         unsafe { (*self.dequeue_pos).load(ordering) }
     }
@@ -255,6 +257,7 @@ impl<'a> State<'a> {
         }
     }
 
+    #[inline(always)]
     unsafe fn len(&self) -> usize {
         let dequeue = self.dequeue_pos(Relaxed);
         let enqueue = self.enqueue_pos(Relaxed);
@@ -292,18 +295,22 @@ impl<'a> Queue<'a> {
         })
     }
 
+    #[inline(always)]
     pub fn enqueue(&self, values: &[&[u8]]) -> bool {
         unsafe { self.state.push(values) }
     }
 
+    #[inline(always)]
     pub fn dequeue(&self, values: &mut [&mut [u8]]) -> Result<usize, QueueError> {
         unsafe { self.state.pop(values) }
     }
 
+    #[inline(always)]
     pub fn len(&self) -> usize {
         unsafe { self.state.len() }
     }
 
+    #[inline(always)]
     pub fn is_empty(&self) -> bool {
         unsafe { self.state.len() == 0 }
     }

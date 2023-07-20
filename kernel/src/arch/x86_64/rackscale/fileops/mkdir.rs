@@ -12,7 +12,6 @@ use kpi::io::FileModes;
 use rpc::rpc::*;
 use rpc::RPCClient;
 
-use super::super::controller_state::ControllerState;
 use super::super::fileops::get_str_from_payload;
 use super::super::kernelrpc::*;
 use super::super::CLIENT_STATE;
@@ -64,18 +63,14 @@ pub(crate) fn rpc_mkdir<P: AsRef<[u8]> + Debug>(
 }
 
 // RPC Handler function for close() RPCs in the controller
-pub(crate) fn handle_mkdir(
-    hdr: &mut RPCHeader,
-    payload: &mut [u8],
-    state: ControllerState,
-) -> Result<ControllerState, RPCError> {
+pub(crate) fn handle_mkdir(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCError> {
     // Parse request
     let (pid, modes) = match unsafe { decode::<MkDirReq>(payload) } {
         Some((req, _)) => (req.pid, req.modes),
         None => {
             log::error!("Invalid payload for request: {:?}", hdr);
             construct_error_ret(hdr, payload, KError::from(RPCError::MalformedRequest));
-            return Ok(state);
+            return Ok(());
         }
     };
 
@@ -88,5 +83,5 @@ pub(crate) fn handle_mkdir(
 
     // Call mkdir function and send result
     construct_ret(hdr, payload, ret);
-    Ok(state)
+    Ok(())
 }

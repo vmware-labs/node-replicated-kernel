@@ -12,7 +12,7 @@ use kpi::system::CpuThread;
 use rpc::rpc::*;
 use rpc::RPCClient;
 
-use super::super::controller_state::ControllerState;
+use super::super::controller_state::CONTROLLER_STATE;
 use super::super::kernelrpc::*;
 use crate::arch::process::Ring3Process;
 use crate::arch::rackscale::CLIENT_STATE;
@@ -71,10 +71,9 @@ pub(crate) fn rpc_get_hardware_threads(
 pub(crate) fn handle_get_hardware_threads(
     hdr: &mut RPCHeader,
     payload: &mut [u8],
-    state: ControllerState,
-) -> Result<ControllerState, RPCError> {
+) -> Result<(), RPCError> {
     // Encode hwthread information into payload buffer
-    let hw_threads = state.get_hardware_threads();
+    let hw_threads = CONTROLLER_STATE.get_hardware_threads();
     let start = KernelRpcRes_SIZE as usize;
     let end = start
         + hw_threads.len() * core::mem::size_of::<CpuThread>()
@@ -95,5 +94,5 @@ pub(crate) fn handle_get_hardware_threads(
         Ok((additional_data as u64, 0)),
         additional_data as u64,
     );
-    Ok(state)
+    Ok(())
 }

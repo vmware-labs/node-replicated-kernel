@@ -6,33 +6,31 @@ use core::result::Result;
 use crate::rpc::{RPCError, RPCHeader, RPCType};
 
 /// RPC Handler function
-pub type RPCHandler<S> =
-    fn(hdr: &mut RPCHeader, payload: &mut [u8], state: S) -> Result<S, RPCError>;
+pub type RPCHandler = fn(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCError>;
 
 /// RPC Client registration function
-pub type RegistrationHandler<S> =
-    fn(hdr: &mut RPCHeader, payload: &mut [u8], state: S) -> Result<S, RPCError>;
+pub type RegistrationHandler = fn(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCError>;
 
 /// RPC server operations
-pub trait RPCServer<'a, S> {
+pub trait RPCServer<'a> {
     /// Register an RPC func with an ID
-    fn register<'c>(&mut self, rpc_id: RPCType, handler: &'c RPCHandler<S>) -> Result<(), RPCError>
+    fn register<'c>(&mut self, rpc_id: RPCType, handler: &'c RPCHandler) -> Result<(), RPCError>
     where
         'c: 'a;
 
     /// Accept an RPC client
-    fn add_client<'c>(&mut self, func: &'c RegistrationHandler<S>, state: S) -> Result<S, RPCError>
+    fn add_client<'c>(&mut self, func: &'c RegistrationHandler) -> Result<(), RPCError>
     where
         'c: 'a;
 
     /// Handle 1 RPC per client
-    fn handle(&self, state: S) -> Result<S, RPCError>;
+    fn handle(&mut self) -> Result<(), RPCError>;
 
     /// Try to handle 1 RPC per client, if data is available (non-blocking if RPCs not available)
-    fn try_handle(&self, state: S) -> Result<(S, bool), RPCError>;
+    fn try_handle(&mut self) -> Result<bool, RPCError>;
 
     /// Run the RPC server
-    fn run_server(&self, state: S) -> Result<S, RPCError>;
+    fn run_server(&mut self) -> Result<(), RPCError>;
 }
 
 /// RPC client operations

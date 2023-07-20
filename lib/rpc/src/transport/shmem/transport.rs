@@ -19,6 +19,7 @@ impl<'a> ShmemTransport<'a> {
         ShmemTransport { rx, tx }
     }
 
+    #[inline(always)]
     fn send(&self, buf: &[u8]) -> Result<(), RPCError> {
         match self.tx.send(&[buf]) {
             true => Ok(()),
@@ -26,15 +27,18 @@ impl<'a> ShmemTransport<'a> {
         }
     }
 
+    #[inline(always)]
     fn try_send(&self, buf: &[u8]) -> Result<bool, RPCError> {
         Ok(self.tx.try_send(&[buf]))
     }
 
+    #[inline(always)]
     fn recv(&self, buf: &mut [u8]) -> Result<(), RPCError> {
         self.rx.recv(&mut [buf]);
         Ok(())
     }
 
+    #[inline(always)]
     fn try_recv(&self, buf: &mut [u8]) -> Result<bool, RPCError> {
         match self.rx.try_recv(&mut [buf]) {
             Ok(_) => Ok(true),

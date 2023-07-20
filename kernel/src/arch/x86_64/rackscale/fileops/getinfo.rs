@@ -13,7 +13,6 @@ use crate::error::{KError, KResult};
 use crate::fallible_string::TryString;
 use crate::fs::cnrfs;
 
-use super::super::controller_state::ControllerState;
 use super::super::fileops::get_str_from_payload;
 use super::super::kernelrpc::*;
 use super::super::CLIENT_STATE;
@@ -56,18 +55,14 @@ pub(crate) fn rpc_getinfo<P: AsRef<[u8]> + Debug>(pid: usize, name: P) -> KResul
 }
 
 // RPC Handler function for getinfo() RPCs in the controller
-pub(crate) fn handle_getinfo(
-    hdr: &mut RPCHeader,
-    payload: &mut [u8],
-    state: ControllerState,
-) -> Result<ControllerState, RPCError> {
+pub(crate) fn handle_getinfo(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCError> {
     // Parse request
     let pid = match unsafe { decode::<GetInfoReq>(payload) } {
         Some((req, _)) => req.pid,
         None => {
             log::error!("Invalid payload for request: {:?}", hdr);
             construct_error_ret(hdr, payload, KError::from(RPCError::MalformedRequest));
-            return Ok(state);
+            return Ok(());
         }
     };
 
@@ -80,5 +75,5 @@ pub(crate) fn handle_getinfo(
 
     // Construct results from return data
     construct_ret(hdr, payload, ret);
-    Ok(state)
+    Ok(())
 }

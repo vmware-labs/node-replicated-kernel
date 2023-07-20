@@ -1,116 +1,157 @@
 // Copyright © 2022 University of Colorado. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
-
 use alloc::boxed::Box;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use arrayvec::ArrayVec;
+use atopology::NodeId;
 use lazy_static::lazy_static;
 use spin::Mutex;
 
-use kpi::system::{CpuThread, MachineId};
+use kpi::system::{new_gtid, CpuThread, GlobalThreadId, MachineId, MachineThreadId};
 
 use crate::arch::rackscale::FrameCacheBase;
-use crate::arch::MAX_MACHINES;
+use crate::arch::{MAX_CORES, MAX_MACHINES};
 use crate::memory::backends::MemManager;
+use crate::memory::mcache::MCache;
 use crate::memory::shmem_affinity::{local_shmem_affinity, mid_to_shmem_affinity};
-use crate::memory::{mcache::MCache, LARGE_PAGE_SIZE};
+use crate::memory::vspace::{CoreBitMap, CoreBitMapIter};
 use crate::transport::shmem::get_affinity_shmem;
 
-/// TODO(rackscale): think about how we should constrain this?
-/// Global state about the local rackscale client
+/// Caches of memory for use by the controller. The controller cache includes all shmem belonging to the controller,
+/// because DCM does not allocate controller shmem.
 lazy_static! {
-    pub(crate) static ref CONTROLLER_SHMEM_CACHES: Arc<Mutex<ArrayVec<Box<dyn MemManager + Send>, MAX_MACHINES>>> = {
+    pub(crate) static ref CONTROLLER_SHMEM_CACHES: ArrayVec<Arc<Mutex<Box<dyn MemManager + Send>>>, MAX_MACHINES> = {
         let mut shmem_caches = ArrayVec::new();
-        shmem_caches.push(Box::new(MCache::<2048, 2048>::new_with_frame::<2048, 2048>(
+        // TODO(rackscale): think about how we should constrain the mcache?
+        shmem_caches.push(Arc::new(Mutex::new(Box::new(MCache::<2048, 2048>::new_with_frame::<2048, 2048>(
             local_shmem_affinity(),
             get_affinity_shmem(),
-        )) as Box<dyn MemManager + Send>);
+        )) as Box<dyn MemManager + Send>)));
         for i in 1..MAX_MACHINES {
-            shmem_caches.push(Box::new(FrameCacheBase::new(mid_to_shmem_affinity(i)))
-                as Box<dyn MemManager + Send>);
+            shmem_caches.push(Arc::new(Mutex::new(Box::new(FrameCacheBase::new(mid_to_shmem_affinity(i)))
+                as Box<dyn MemManager + Send>)));
         }
 
-        Arc::new(Mutex::new(shmem_caches))
+        shmem_caches
     };
 }
 
-/// TODO(rackscale): think about how we should constrain this?
-/// TODO(rackscale): want to lock around individual allocators?
-/// Global state about the local rackscale client
+/// Caches of memslices allocated by the DCM scheduler
 lazy_static! {
-    pub(crate) static ref SHMEM_MEMSLICE_ALLOCATORS: Arc<Mutex<ArrayVec<MCache<0, 2048>, MAX_MACHINES>>> = {
+    pub(crate) static ref SHMEM_MEMSLICE_ALLOCATORS: ArrayVec<Arc<Mutex<MCache<0, 2048>>>, MAX_MACHINES> = {
+        // TODO(rackscale): think about how we should constrain the mcache?
         let mut shmem_allocators = ArrayVec::new();
-        for i in 0..MAX_MACHINES {
-            shmem_allocators.push(MCache::<0, 2048>::new(mid_to_shmem_affinity(i + 1)));
+        for i in 1..(MAX_MACHINES + 1) {
+            shmem_allocators.push(Arc::new(Mutex::new(MCache::<0, 2048>::new(mid_to_shmem_affinity(i)))));
         }
-        Arc::new(Mutex::new(shmem_allocators))
+        shmem_allocators
     };
+}
+
+struct ThreadMap {
+    pub num_threads: usize,
+    pub map: CoreBitMap,
+}
+
+impl ThreadMap {
+    fn new() -> ThreadMap {
+        let map = CoreBitMap { low: 0, high: 0 };
+        ThreadMap {
+            num_threads: 0,
+            map,
+        }
+    }
+
+    fn init(&mut self, num_threads: usize) {
+        // make sure smaller than max size of CoreBitMap
+        debug_assert!(num_threads <= (u128::BITS as usize) * 2);
+
+        self.num_threads = num_threads;
+        for i in 0..num_threads {
+            self.mark_thread_free(i);
+        }
+    }
+
+    fn mark_thread_free(&mut self, mtid: MachineThreadId) {
+        debug_assert!(mtid < self.num_threads);
+        self.map.set_bit(mtid, true);
+    }
+
+    fn claim_first_free_thread(&mut self) -> Option<MachineThreadId> {
+        let mut iter = CoreBitMapIter(self.map);
+        if let Some(mtid) = iter.next() {
+            if mtid < self.num_threads {
+                self.map.set_bit(mtid, false);
+                return Some(mtid);
+            }
+        }
+        None
+    }
 }
 
 /// This is the state the controller records about each client
-pub(crate) struct PerClientState {
-    /// The client believes it has this ID
-    pub(crate) mid: MachineId,
-
-    /// A list of the hardware threads belonging to this client and whether the thread is scheduler or not
-    /// TODO(rackscale, performance): make this a core map??
-    pub(crate) hw_threads: Vec<(CpuThread, bool)>,
-}
-
-impl PerClientState {
-    pub(crate) fn new(mid: MachineId, hw_threads: Vec<(CpuThread, bool)>) -> PerClientState {
-        PerClientState { mid, hw_threads }
-    }
-}
-
-/// This is the state of the controller, including all per-client state
 pub(crate) struct ControllerState {
-    /// State related to each client.
-    per_client_state: ArrayVec<Arc<Mutex<PerClientState>>, MAX_MACHINES>,
+    /// A composite list of all hardware threads
+    hw_threads_all: Arc<Mutex<ArrayVec<CpuThread, { MAX_MACHINES * MAX_CORES }>>>,
+    /// Bit maps to keep track of free/busy hw threads. Index is machine_id - 1
+    thread_maps: ArrayVec<Arc<Mutex<ThreadMap>>, MAX_MACHINES>,
+    /// The NodeId of each thread, organized by client. Index is machine_id - 1
+    affinities_per_client: ArrayVec<Arc<Mutex<ArrayVec<NodeId, MAX_CORES>>>, MAX_MACHINES>,
 }
 
 impl ControllerState {
-    pub(crate) fn new(max_clients: usize) -> ControllerState {
-        let mut per_client_state = ArrayVec::new();
-        for i in 0..max_clients {
-            per_client_state.push(Arc::new(Mutex::new(PerClientState::new(i, Vec::new()))));
-        }
-        ControllerState { per_client_state }
-    }
-
-    pub(crate) fn add_client(&mut self, mid: MachineId, threads: &Vec<CpuThread>) {
-        let mut client_state = self.per_client_state[mid - 1].lock();
-        assert!(client_state.hw_threads.len() == 0);
-
-        client_state
-            .hw_threads
-            .try_reserve_exact(threads.len())
-            .expect("Failed to reserve room in hw threads vector");
-        for thread in threads {
-            client_state.hw_threads.push((*thread, false));
-        }
-    }
-
-    pub(crate) fn get_client_state(&self, mid: MachineId) -> &Arc<Mutex<PerClientState>> {
-        &self.per_client_state[mid - 1]
-    }
-
-    // TODO(rackscale, efficiency): allocates memory on the fly & also has nested loop
-    // should be called sparingly or rewritten
-    pub(crate) fn get_hardware_threads(&self) -> Vec<CpuThread> {
-        let mut hw_threads = Vec::new();
-        for client_state in &self.per_client_state {
-            let state = client_state.lock();
-            hw_threads
-                .try_reserve_exact(state.hw_threads.len())
-                .expect("Failed to reserve room in hw threads vector");
-            for j in 0..state.hw_threads.len() {
-                // ignore the thread state and just save the information
-                hw_threads.push(state.hw_threads[j].0);
+    pub(crate) fn init_client_state(&self, mid: MachineId, threads: &Vec<CpuThread>) {
+        {
+            // We assume that threads are ordered by gtid within the threads list.
+            let mut hw_threads = self.hw_threads_all.lock();
+            let mut affinities = self.affinities_per_client[mid - 1].lock();
+            for thread in threads {
+                affinities.push(thread.node_id);
+                hw_threads.push(*thread);
             }
         }
-        hw_threads
+        let mut thread_map = self.thread_maps[mid - 1].lock();
+        thread_map.init(threads.len());
     }
+
+    pub(crate) fn get_hardware_threads(&self) -> Vec<CpuThread> {
+        let hw_threads = self.hw_threads_all.lock();
+        // TODO(rackscale, performance): copy is relatiely expensive here
+        hw_threads.to_vec()
+    }
+
+    // Chooses sequentially for cores on the machine.
+    // TODO(rackscale, performance): it should choose in a NUMA-aware fashion for the remote node.
+    pub(crate) fn claim_hardware_thread(&self, mid: MachineId) -> Option<(GlobalThreadId, NodeId)> {
+        let mut thread_map = self.thread_maps[mid - 1].lock();
+        if let Some(mtid) = thread_map.claim_first_free_thread() {
+            let affinity = {
+                let thread_affinities = self.affinities_per_client[mid - 1].lock();
+                thread_affinities[mtid]
+            };
+            Some((kpi::system::new_gtid(mtid, mid), affinity))
+        } else {
+            // No threads are free
+            None
+        }
+    }
+}
+
+/// State the controller maintains about each client.
+lazy_static! {
+    pub(crate) static ref CONTROLLER_STATE: ControllerState = {
+        let mut affinities_per_client = ArrayVec::new();
+        let mut thread_maps = ArrayVec::new();
+        for i in 0..MAX_MACHINES {
+            affinities_per_client.push(Arc::new(Mutex::new(ArrayVec::new())));
+            thread_maps.push(Arc::new(Mutex::new(ThreadMap::new())));
+        }
+        ControllerState {
+            hw_threads_all: Arc::new(Mutex::new(ArrayVec::new())),
+            thread_maps,
+            affinities_per_client,
+        }
+    };
 }

@@ -14,7 +14,6 @@ use rpc::rpc::*;
 use rpc::RPCClient;
 
 use super::client_state::CLIENT_STATE;
-use super::controller_state::ControllerState;
 use super::kernelrpc::*;
 use crate::arch::kcb::per_core_mem;
 use crate::arch::process::{Ring3Process, PROCESS_LOGS};
@@ -101,8 +100,7 @@ pub(crate) fn rpc_get_shmem_structure(
 pub(crate) fn handle_get_shmem_structure(
     hdr: &mut RPCHeader,
     mut payload: &mut [u8],
-    state: ControllerState,
-) -> Result<ControllerState, RPCError> {
+) -> Result<(), RPCError> {
     log::debug!("Handling get_shmem_structure()");
 
     // Decode request
@@ -112,7 +110,7 @@ pub(crate) fn handle_get_shmem_structure(
         } else {
             log::error!("Invalid payload for request: {:?}", hdr);
             construct_error_ret(hdr, payload, KError::from(RPCError::MalformedRequest));
-            return Ok(state);
+            return Ok(());
         };
 
     // We want to allocate clones of the log arcs in shared memory
@@ -182,5 +180,5 @@ pub(crate) fn handle_get_shmem_structure(
             .expect("Can't change affinity");
     }
 
-    Ok(state)
+    Ok(())
 }

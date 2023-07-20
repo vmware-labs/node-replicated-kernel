@@ -13,7 +13,6 @@ use crate::error::{KError, KResult};
 use crate::fallible_string::TryString;
 use crate::fs::cnrfs;
 
-use super::super::controller_state::ControllerState;
 use super::super::fileops::get_str_from_payload;
 use super::super::kernelrpc::*;
 use super::FileIO;
@@ -57,18 +56,14 @@ pub(crate) fn rpc_delete(pid: usize, pathname: String) -> KResult<(u64, u64)> {
 }
 
 // RPC Handler function for delete() RPCs in the controller
-pub(crate) fn handle_delete(
-    hdr: &mut RPCHeader,
-    payload: &mut [u8],
-    state: ControllerState,
-) -> Result<ControllerState, RPCError> {
+pub(crate) fn handle_delete(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCError> {
     // Parse request
     let pid = match unsafe { decode::<DeleteReq>(payload) } {
         Some((req, _)) => req.pid,
         None => {
             log::error!("Invalid payload for request: {:?}", hdr);
             construct_error_ret(hdr, payload, KError::from(RPCError::MalformedRequest));
-            return Ok(state);
+            return Ok(());
         }
     };
 
@@ -80,5 +75,5 @@ pub(crate) fn handle_delete(
     .and_then(|path_string| cnrfs::MlnrKernelNode::file_delete(pid, path_string));
 
     construct_ret(hdr, payload, ret);
-    Ok(state)
+    Ok(())
 }

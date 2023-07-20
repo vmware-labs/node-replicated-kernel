@@ -354,12 +354,11 @@ impl KernelAllocator {
 
         // Take base pages from caches is possible
         if total_needed_base_pages > 0 || is_local_controller {
-            let mut manager_list = if is_controller {
-                CONTROLLER_SHMEM_CACHES.lock()
+            let mut cache_manager = if is_controller {
+                CONTROLLER_SHMEM_CACHES[affinity_index].lock()
             } else {
-                CLIENT_STATE.affinity_base_pages.lock()
+                CLIENT_STATE.affinity_base_pages[affinity_index].lock()
             };
-            let cache_manager = &mut manager_list[affinity_index];
             let pcm = try_per_core_mem().ok_or(KError::KcbUnavailable)?;
             let mut mem_manager = pcm.try_mem_manager()?;
 
@@ -450,12 +449,11 @@ impl KernelAllocator {
             }
 
             // Add any remaining base pages to the cache, if there's space.
-            let mut manager_list = if is_controller {
-                CONTROLLER_SHMEM_CACHES.lock()
+            let mut cache_manager = if is_controller {
+                CONTROLLER_SHMEM_CACHES[affinity_index].lock()
             } else {
-                CLIENT_STATE.affinity_base_pages.lock()
+                CLIENT_STATE.affinity_base_pages[affinity_index].lock()
             };
-            let cache_manager = &mut manager_list[affinity_index];
             let base_pages_to_save = core::cmp::min(
                 base_page_iter.len(),
                 cache_manager.spare_base_page_capacity(),

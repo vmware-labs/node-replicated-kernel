@@ -14,7 +14,7 @@ use rpc::rpc::*;
 use rpc::RPCClient;
 
 use super::client_state::CLIENT_STATE;
-use super::controller_state::{ControllerState, SHMEM_MEMSLICE_ALLOCATORS};
+use super::controller_state::SHMEM_MEMSLICE_ALLOCATORS;
 use super::dcm::{affinity_alloc::dcm_affinity_alloc, resource_alloc::dcm_resource_alloc};
 use super::kernelrpc::*;
 use crate::error::{KError, KResult};
@@ -115,8 +115,7 @@ pub(crate) fn rpc_get_shmem_frames(pid: Option<Pid>, num_frames: usize) -> KResu
 pub(crate) fn handle_get_shmem_frames(
     hdr: &mut RPCHeader,
     mut payload: &mut [u8],
-    state: ControllerState,
-) -> Result<ControllerState, RPCError> {
+) -> Result<(), RPCError> {
     log::debug!("Handling get_shmem_frames()");
 
     // Parse request
@@ -125,7 +124,7 @@ pub(crate) fn handle_get_shmem_frames(
         None => {
             log::error!("Invalid payload for request: {:?}", hdr);
             construct_error_ret(hdr, payload, KError::from(RPCError::MalformedRequest));
-            return Ok(state);
+            return Ok(());
         }
     };
 
@@ -137,7 +136,7 @@ pub(crate) fn handle_get_shmem_frames(
             Ok(new_regions) => regions = new_regions,
             Err(kerr) => {
                 construct_error_ret(hdr, payload, kerr);
-                return Ok(state);
+                return Ok(());
             }
         }
     } else if let Some(pid) = pid {
@@ -148,8 +147,7 @@ pub(crate) fn handle_get_shmem_frames(
             log::debug!("Received node assignment from DCM: node {:?}", mid);
 
             // TODO(error_handling): should handle errors gracefully here, maybe percolate to client?
-            let mut shmem_managers = SHMEM_MEMSLICE_ALLOCATORS.lock();
-            let mut manager = &mut shmem_managers[mid - 1];
+            let mut manager = &mut SHMEM_MEMSLICE_ALLOCATORS[mid - 1].lock();
             let frame = manager
                 .allocate_large_page()
                 .expect("DCM OK'd allocation, this should succeed");
@@ -162,7 +160,7 @@ pub(crate) fn handle_get_shmem_frames(
     } else {
         log::error!("Malformed request: must specify either pid or machine id");
         construct_error_ret(hdr, payload, KError::from(RPCError::MalformedRequest));
-        return Ok(state);
+        return Ok(());
     }
 
     let start = core::mem::size_of::<KResult<((u64, u64))>>() as usize;
@@ -180,5 +178,5 @@ pub(crate) fn handle_get_shmem_frames(
 
     // Construct return
     construct_ret_extra_data(hdr, payload, Ok((0, 0)), additional_data as u64);
-    Ok(state)
+    Ok(())
 }

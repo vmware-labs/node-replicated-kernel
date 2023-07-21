@@ -143,7 +143,14 @@ pub fn spawn_dcm(r: usize) -> Result<rexpect::session::PtySession> {
     );
     eprintln!("Invoke DCM: {}", cmd);
     let ret = spawn(&cmd, None);
-    ret
+    match ret {
+        Ok(mut pty) => {
+            // Wait only half a second, because sometimes DCM takes a while to kill.
+            pty.process.set_kill_timeout(Some(500));
+            Ok(pty)
+        }
+        e => e,
+    }
 }
 
 /// Spawns a DHCP server on our host using most common interface: tap0

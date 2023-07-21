@@ -223,10 +223,6 @@ impl<T: Clone + Send + 'static> RackscaleRun<T> {
                             // Wait for signal from each client that it is done
                             let rx = controller_rx.lock().expect("Failed to get rx lock");
                             let _ = wait_for_termination::<()>(&rx);
-                        } else {
-                            // Notify each client it's okay to shutdown
-                            let tx = controller_tx.lock().expect("Failed to get tx lock");
-                            notify_of_termination(&tx);
                         }
                     }
 
@@ -235,6 +231,14 @@ impl<T: Clone + Send + 'static> RackscaleRun<T> {
                     Ok(ret)
                 };
                 let ret = qemu_run();
+
+                if !state.wait_for_client {
+                    let tx = controller_tx.lock().expect("Failed to get tx lock");
+                    for _ in 0..state.num_clients {
+                        // Notify each client it's okay to shutdown
+                        notify_of_termination(&tx);
+                    }
+                }
 
                 controller_output_array
                     .lock()
@@ -302,10 +306,7 @@ impl<T: Clone + Send + 'static> RackscaleRun<T> {
                         )?;
 
                         // Wait for controller to terminate
-                        if state.wait_for_client {
-                            let tx = client_tx.lock().expect("Failed to get rx lock");
-                            notify_of_termination(&tx);
-                        } else {
+                        if !state.wait_for_client {
                             let rx = client_rx.lock().expect("Failed to get rx lock");
                             let _ = wait_for_termination::<()>(&rx);
                         }
@@ -314,8 +315,14 @@ impl<T: Clone + Send + 'static> RackscaleRun<T> {
                         output += p.exp_eof()?.as_str();
                         ret
                     };
+
                     // Could exit with 'success' or from sigterm, depending on number of clients.
                     let ret = qemu_run();
+
+                    if state.wait_for_client {
+                        let tx = client_tx.lock().expect("Failed to get rx lock");
+                        notify_of_termination(&tx);
+                    }
 
                     client_output_array
                         .lock()

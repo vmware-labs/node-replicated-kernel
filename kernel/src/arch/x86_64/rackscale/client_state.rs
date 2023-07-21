@@ -32,7 +32,6 @@ pub(crate) struct ClientState {
     pub(crate) rpc_client: Arc<Mutex<Client>>,
 
     /// Used to store shmem affinity base pages
-    /// TODO(rackscale): is the box necessary?
     pub(crate) affinity_base_pages: ArrayVec<Arc<Mutex<Box<dyn MemManager + Send>>>, MAX_MACHINES>,
 
     /// Used to store base pages allocated to a process

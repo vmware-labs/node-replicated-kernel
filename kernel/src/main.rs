@@ -122,7 +122,7 @@ pub(crate) fn main() {
         arch::rackscale::controller::run();
     } else if *crate::environment::MACHINE_ID != 1 {
         // For clients other than client 1, just wait for work.
-        log::info!("Waiting for work!");
+        log::debug!("Waiting for work!");
         crate::scheduler::schedule()
     }
 

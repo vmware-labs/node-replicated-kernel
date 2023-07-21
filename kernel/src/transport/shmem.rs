@@ -208,7 +208,7 @@ impl ShmemDevice {
         let doorbell = *self.doorbell.lock();
         let doorbell_ptr = doorbell as *mut u32;
         unsafe { core::ptr::write(doorbell_ptr, doorbell_value) };
-        log::info!(
+        log::debug!(
             "doorbell set to: {:#032b} (id={:#016b}, vector={:#016b})",
             doorbell_value,
             id,
@@ -234,7 +234,7 @@ impl ShmemDevice {
         log::debug!("MSI-X table {:?}", tbl_paddr);
         assert!(table_vector < tbl_paddr.len());
 
-        log::info!(
+        log::debug!(
             "Original MSI entry {:?} is {:?}",
             table_vector,
             tbl_paddr[table_vector]
@@ -294,7 +294,7 @@ impl ShmemDevice {
         // Toggle the interrupt mask for this vector
         tbl_paddr[table_vector].vector_control ^= 0x1;
 
-        log::info!(
+        log::debug!(
             "New MSI entry {:?} is {:?}",
             table_vector,
             tbl_paddr[table_vector]

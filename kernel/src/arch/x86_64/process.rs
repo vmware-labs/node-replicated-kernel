@@ -1433,14 +1433,14 @@ impl Process for Ring3Process {
                     MapAction::user() | MapAction::write(),
                 )
                 .expect("Can't map user-space executor memory.");
-            log::info!(
+            log::debug!(
                 "executor space base expanded {:#x} size: {} end {:#x}",
                 self.executor_offset,
                 memory.size(),
                 self.executor_offset + memory.size()
             );
         } else {
-            log::info!(
+            log::debug!(
                 "skipping executor space vspace mapping for mid={:?} on mid={:?} {:#x} size: {} end {:#x}",
                 mid,
                 *crate::environment::MACHINE_ID,
@@ -1460,7 +1460,7 @@ impl Process for Ring3Process {
                     MapAction::user() | MapAction::write(),
                 )
                 .expect("Can't map user-space executor memory.");
-            info!(
+            log::debug!(
                 "executor space base expanded {:#x} size: {} end {:#x}",
                 self.executor_offset,
                 memory.size(),

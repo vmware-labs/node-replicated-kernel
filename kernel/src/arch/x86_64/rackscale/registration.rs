@@ -133,7 +133,7 @@ pub(crate) fn register_client(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result
 
         // Register client resources with DCM
         if dcm_register_node(req.mid, req.num_cores, memslices) {
-            log::info!("Registered client DCM");
+            log::info!("Registered client with DCM");
         } else {
             log::error!("Failed to register client with DCM");
             return Err(RPCError::RegistrationError);

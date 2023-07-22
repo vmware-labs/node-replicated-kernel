@@ -10,7 +10,7 @@ use rpc::RPCClient;
 use super::super::controller_state::SHMEM_MEMSLICE_ALLOCATORS;
 use super::super::get_shmem_frames::ShmemRegion;
 use super::super::kernelrpc::*;
-use super::{DCMOps, DCM_INTERFACE};
+use super::{DCMOps, DCM_CLIENT};
 use crate::error::{KError, KResult};
 use crate::memory::backends::PhysicalPageProvider;
 use crate::memory::shmem_affinity::mid_to_shmem_affinity;
@@ -74,7 +74,7 @@ pub(crate) fn dcm_affinity_alloc(
     let mut res = AffinityAllocRes { can_satisfy: false };
 
     // Ask DCM to make sure we can safely take from the shmem allocators
-    DCM_INTERFACE.lock().client.call(
+    DCM_CLIENT.lock().call(
         DCMOps::AffinityAlloc as RPCType,
         unsafe { &[req.as_bytes()] },
         unsafe { &mut [res.as_mut_bytes()] },

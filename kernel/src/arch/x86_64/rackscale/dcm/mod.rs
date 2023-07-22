@@ -3,10 +3,12 @@
 
 use alloc::boxed::Box;
 use alloc::sync::Arc;
+use core::sync::atomic::{AtomicU64, Ordering};
 
 use abomonation::{decode, unsafe_abomonate, Abomonation};
 use core2::io::Result as IOResult;
 use core2::io::Write;
+use hashbrown::HashMap;
 use lazy_static::lazy_static;
 use smoltcp::iface::Interface;
 use smoltcp::wire::IpAddress;
@@ -29,7 +31,7 @@ pub(crate) mod resource_alloc;
 pub(crate) mod resource_release;
 
 const DCM_CLIENT_PORT: u16 = 10100;
-const DCM_SERVER_PORT: u16 = 10101;
+pub(crate) const DCM_SERVER_PORT: u16 = 10101;
 
 // RPC Handler for client registration on the controller
 pub(crate) fn register_dcm_client(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCError> {
@@ -37,7 +39,7 @@ pub(crate) fn register_dcm_client(hdr: &mut RPCHeader, payload: &mut [u8]) -> Re
 }
 
 // Re-export client registration
-const DCM_CLIENT_REGISTRAR: RegistrationHandler = register_dcm_client;
+pub(crate) const DCM_CLIENT_REGISTRAR: RegistrationHandler = register_dcm_client;
 
 #[derive(Debug, Default)]
 #[repr(C)]
@@ -48,8 +50,8 @@ struct NodeAssignment {
 unsafe_abomonate!(NodeAssignment: alloc_id, mid);
 
 lazy_static! {
-    pub(crate) static ref HANDLED_DCM_RESPONSES: Arc<Mutex<(u64, u64)>> =
-        { Arc::new(Mutex::new((0, 0))) };
+    pub(crate) static ref IN_FLIGHT_DCM_ASSIGNMENTS: Arc<Mutex<HashMap<u64, Arc<AtomicU64>>>> =
+        Arc::new(Mutex::new(HashMap::new()));
 }
 
 // RPC Handler function for close() RPCs in the controller
@@ -62,8 +64,19 @@ fn handle_dcm_node_assignment(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result
             req.mid
         );
         hdr.msg_len = 0;
-        let mut responses = HANDLED_DCM_RESPONSES.lock();
-        *responses = (req.alloc_id, req.mid);
+
+        let mut assignment_table = IN_FLIGHT_DCM_ASSIGNMENTS.lock();
+        match assignment_table.get(&req.alloc_id) {
+            Some(assignment) => assignment.store(req.mid, Ordering::SeqCst),
+            None => {
+                if let Some(entry) =
+                    assignment_table.insert(req.alloc_id, Arc::new(AtomicU64::new(req.mid)))
+                {
+                    unreachable!("If the key wasn't in the table, I should be able to insert without overwriting");
+                }
+            }
+        }
+
         Ok(())
     } else {
         // Report error if failed to decode request
@@ -71,7 +84,7 @@ fn handle_dcm_node_assignment(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result
     }
 }
 
-const NODE_ASSIGNMENT_HANDLER: RPCHandler = handle_dcm_node_assignment;
+pub(crate) const NODE_ASSIGNMENT_HANDLER: RPCHandler = handle_dcm_node_assignment;
 
 #[derive(Debug, Eq, PartialEq, PartialOrd, Clone, Copy)]
 #[repr(u8)]
@@ -109,37 +122,7 @@ impl From<RPCType> for DCMOps {
 unsafe_abomonate!(DCMOps);
 
 lazy_static! {
-    pub(crate) static ref DCM_INTERFACE: Arc<Mutex<DCMInterface<'static>>> =
-        Arc::new(Mutex::new(DCMInterface::new()));
-}
-
-pub(crate) struct DCMInterface<'a> {
-    pub client: Client,
-    pub server: Server<'a>,
-}
-
-impl DCMInterface<'_> {
-    pub fn new() -> DCMInterface<'static> {
-        // Create RPC client connecting to DCM
-        let client =
-            init_ethernet_rpc(IpAddress::v4(172, 31, 0, 20), DCM_CLIENT_PORT, false).unwrap();
-        log::info!("Created DCM RPC client!");
-
-        // Create RPC server connecting to DCM
-        let transport = Box::try_new(
-            TCPTransport::new(None, DCM_SERVER_PORT, Arc::clone(&ETHERNET_IFACE))
-                .expect("Failed to create TCP transport"),
-        )
-        .expect("Out of memory during init");
-        let mut server = Server::new(transport);
-        log::info!("Created DCM RPC server!");
-
-        let _ = server.add_client(&DCM_CLIENT_REGISTRAR).unwrap();
-        log::info!("Added DCM server RPC client!");
-
-        server
-            .register(DCMOps::NodeAssignment as RPCType, &NODE_ASSIGNMENT_HANDLER)
-            .unwrap();
-        DCMInterface { client, server }
-    }
+    pub(crate) static ref DCM_CLIENT: Arc<Mutex<Client>> = Arc::new(Mutex::new(
+        init_ethernet_rpc(IpAddress::v4(172, 31, 0, 20), DCM_CLIENT_PORT, false).unwrap(),
+    ));
 }

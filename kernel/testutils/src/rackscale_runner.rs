@@ -137,9 +137,10 @@ impl<T: Clone + Send + 'static> RackscaleRun<T> {
         // Do not allow over provisioning
         let machine = Machine::determine();
         assert!(self.cores_per_client * self.num_clients + 1 <= machine.max_cores());
+        let controller_cores = self.num_clients + 1;
 
         let mut vm_cores = vec![self.cores_per_client; self.num_clients + 1];
-        vm_cores[0] = 1; // controller vm only has 1 core
+        vm_cores[0] = controller_cores;
         let placement_cores = machine.rackscale_core_affinity(vm_cores);
 
         // Set up network
@@ -200,6 +201,7 @@ impl<T: Clone + Send + 'static> RackscaleRun<T> {
                         .use_vmxnet3()
                         .memory(state.controller_memory)
                         .nodes(1)
+                        .cores(controller_cores)
                         .node_offset(controller_placement_cores[0].0)
                         .setaffinity(controller_placement_cores[0].1.clone());
 
@@ -493,6 +495,15 @@ impl<T: Clone + Send + 'static> RackscaleBench<T> {
                 total_cores = total_cores - (total_cores % num_clients);
             }
             let cores_per_client = total_cores / num_clients;
+
+            // Break if not enough total cores for the controller, or if we would have to split controller across nodes to make it fit
+            if !is_baseline
+                && ((total_cores + num_clients + 1 > machine.max_cores())
+                    || (num_clients == machine.max_numa_nodes()
+                        && cores_per_client + num_clients + 1 > total_cores_per_node))
+            {
+                break;
+            }
 
             // Print information about each test we run
             let test_type = if is_baseline {

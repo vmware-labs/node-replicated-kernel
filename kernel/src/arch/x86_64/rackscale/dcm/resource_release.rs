@@ -5,7 +5,7 @@ use kpi::system::MachineId;
 use rpc::rpc::RPCType;
 use rpc::RPCClient;
 
-use super::{DCMOps, DCM_INTERFACE};
+use super::{DCMOps, DCM_CLIENT};
 
 #[derive(Debug, Default)]
 #[repr(C)]
@@ -61,9 +61,8 @@ pub(crate) fn dcm_resource_release(mid: MachineId, pid: usize, is_core: bool) ->
 
     // Send call, get allocation response in return
     {
-        DCM_INTERFACE
+        DCM_CLIENT
             .lock()
-            .client
             .call(
                 DCMOps::ResourceRelease as RPCType,
                 unsafe { &[req.as_bytes()] },

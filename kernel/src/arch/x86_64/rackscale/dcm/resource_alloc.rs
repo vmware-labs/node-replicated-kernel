@@ -1,7 +1,9 @@
 // Copyright © 2022 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
+use alloc::sync::Arc;
 use alloc::vec::Vec;
+use core::sync::atomic::{AtomicU64, Ordering};
 
 use fallible_collections::FallibleVecGlobal;
 
@@ -11,7 +13,7 @@ use rpc::RPCClient;
 use rpc::RPCServer;
 
 use super::super::kernelrpc::*;
-use super::{DCMOps, DCM_INTERFACE, HANDLED_DCM_RESPONSES};
+use super::{DCMOps, DCM_CLIENT, IN_FLIGHT_DCM_ASSIGNMENTS};
 
 #[derive(Debug, Default)]
 #[repr(C)]
@@ -76,9 +78,8 @@ pub(crate) fn dcm_resource_alloc(
 
     // Send call, get allocation response in return
     {
-        DCM_INTERFACE
+        DCM_CLIENT
             .lock()
-            .client
             .call(
                 DCMOps::ResourceAlloc as RPCType,
                 unsafe { &[req.as_bytes()] },
@@ -88,33 +89,63 @@ pub(crate) fn dcm_resource_alloc(
     }
     log::debug!("Received allocation id in response: {:?}", res.alloc_id);
 
+    // Insert allocation IDs to be processed.
+    let mut assignments = Vec::try_with_capacity((cores + memslices) as usize)
+        .expect("Failed to get memory to assignment array");
+    for i in 0..(cores + memslices) {
+        let assignment_id = Arc::new(AtomicU64::new(0));
+        assignments.push(assignment_id);
+    }
+
     let mut received_allocations = 0;
     let mut dcm_node_for_cores =
         Vec::try_with_capacity(cores as usize).expect("Failed to allocate memory");
     let mut dcm_node_for_memslices =
         Vec::try_with_capacity(memslices as usize).expect("Failed to allocate memory");
 
-    while received_allocations < cores + memslices {
-        let mut dcm_interface = DCM_INTERFACE.lock();
-        match dcm_interface.server.handle() {
-            Ok(()) => {
-                let (alloc_id, node) = *HANDLED_DCM_RESPONSES.lock();
-                log::debug!("Received assignment: {:?} to node {:?}", alloc_id, node);
-                if alloc_id > res.alloc_id + cores + memslices || alloc_id < res.alloc_id {
-                    panic!("AllocIds do not match!");
-                }
-                if alloc_id - res.alloc_id < cores {
-                    dcm_node_for_cores.push(node as MachineId);
+    {
+        let mut assignment_table = IN_FLIGHT_DCM_ASSIGNMENTS.lock();
+        for i in 0..(cores + memslices) {
+            // If it's already been added to the table, record the allocation
+            if let Some(node_assignment) =
+                assignment_table.insert(res.alloc_id + i, assignments[i as usize].clone())
+            {
+                let assigned_node = node_assignment.load(Ordering::SeqCst);
+                if i < cores {
+                    dcm_node_for_cores.push(assigned_node as MachineId);
                 } else {
-                    dcm_node_for_memslices.push(node as MachineId);
+                    dcm_node_for_memslices.push(assigned_node as MachineId);
                 }
                 received_allocations += 1;
+                assignment_table.remove(&(res.alloc_id + 1));
             }
-            Err(err) => {
-                log::error!("Failed to get assignment from DCM: {:?}", err);
-                panic!("Failed to get assignment from DCM");
+        }
+    }
+
+    // Wait for assignments by checking hash map
+    while received_allocations < cores + memslices {
+        let assigned_node = assignments[received_allocations as usize].load(Ordering::SeqCst);
+
+        // Assignment is fulfilled!
+        if assigned_node != 0 {
+            // Remove from hash map
+            {
+                let mut assignment_table = IN_FLIGHT_DCM_ASSIGNMENTS.lock();
+                assignment_table.remove(&(received_allocations + res.alloc_id));
             }
-            _ => unreachable!("Should not reach here"),
+
+            // Record the assignment
+            log::debug!(
+                "Received assignment: {:?} to node {:?}",
+                received_allocations + res.alloc_id,
+                assigned_node
+            );
+            if received_allocations < cores {
+                dcm_node_for_cores.push(assigned_node as MachineId);
+            } else {
+                dcm_node_for_memslices.push(assigned_node as MachineId);
+            }
+            received_allocations += 1;
         }
     }
     (dcm_node_for_cores, dcm_node_for_memslices)

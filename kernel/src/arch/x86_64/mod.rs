@@ -226,6 +226,13 @@ pub(crate) fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
     // Signals to BSP core that we're done initializing.
     initialized.store(true, Ordering::SeqCst);
 
+    #[cfg(feature = "rackscale")]
+    if crate::CMDLINE
+        .get()
+        .map_or(false, |c| c.mode == crate::cmdline::Mode::Controller)
+    {
+        crate::arch::rackscale::controller::run()
+    }
     crate::scheduler::schedule()
 }
 
@@ -411,7 +418,7 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
             {
                 use crate::arch::rackscale::controller_state::CONTROLLER_SHMEM_CACHES;
                 lazy_static::initialize(&CONTROLLER_SHMEM_CACHES);
-                lazy_static::initialize(&crate::arch::rackscale::dcm::DCM_INTERFACE);
+                lazy_static::initialize(&crate::arch::rackscale::dcm::DCM_CLIENT);
             } else {
                 use crate::arch::irq::{
                     REMOTE_TLB_WORK_PENDING_SHMEM_VECTOR, REMOTE_TLB_WORK_PENDING_VECTOR,

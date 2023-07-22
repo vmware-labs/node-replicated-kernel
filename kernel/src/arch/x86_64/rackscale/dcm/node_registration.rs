@@ -5,7 +5,7 @@ use kpi::system::MachineId;
 use rpc::rpc::RPCType;
 use rpc::RPCClient;
 
-use super::{DCMOps, DCM_INTERFACE};
+use super::{DCMOps, DCM_CLIENT};
 
 #[derive(Debug, Default)]
 #[repr(C)]
@@ -60,9 +60,8 @@ pub(crate) fn dcm_register_node(mid: MachineId, cores: u64, memslices: u64) -> b
 
     // Send call, get allocation response in return
     {
-        DCM_INTERFACE
+        DCM_CLIENT
             .lock()
-            .client
             .call(
                 DCMOps::RegisterNode as RPCType,
                 unsafe { &[req.as_bytes()] },

@@ -119,11 +119,11 @@ pub(crate) fn main() {
         .get()
         .map_or(false, |c| c.mode == cmdline::Mode::Controller)
     {
-        arch::rackscale::controller::run();
-    } else if *crate::environment::MACHINE_ID != 1 {
+        arch::rackscale::controller::poll_interface();
+    } else if *environment::MACHINE_ID != 1 {
         // For clients other than client 1, just wait for work.
         log::debug!("Waiting for work!");
-        crate::scheduler::schedule()
+        scheduler::schedule()
     }
 
     #[cfg(not(feature = "integration-test"))]
@@ -132,7 +132,7 @@ pub(crate) fn main() {
         if let Err(e) = ret {
             log::warn!("{}", e);
         }
-        crate::scheduler::schedule()
+        scheduler::schedule()
     }
     #[cfg(feature = "integration-test")]
     {

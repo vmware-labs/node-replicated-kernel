@@ -128,7 +128,7 @@ impl<T: Clone + Send + 'static> RackscaleRun<T> {
             file_name: "".to_string(),
             cmd: "".to_string(),
             arg: None,
-            client_build_delay: 5_000, // 5 seconds
+            client_build_delay: 6_000, // 5 seconds
             run_dhcpd_for_baseline: false,
         }
     }

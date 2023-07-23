@@ -32,10 +32,10 @@ pub(crate) struct ClientState {
     pub(crate) rpc_client: Arc<Mutex<Client>>,
 
     /// Used to store shmem affinity base pages
-    pub(crate) affinity_base_pages: ArrayVec<Arc<Mutex<Box<dyn MemManager + Send>>>, MAX_MACHINES>,
+    pub(crate) affinity_base_pages: Arc<ArrayVec<Mutex<Box<dyn MemManager + Send>>, MAX_MACHINES>>,
 
     /// Used to store base pages allocated to a process
-    pub(crate) per_process_base_pages: ArrayVec<Arc<Mutex<FrameCacheBase>>, MAX_PROCESSES>,
+    pub(crate) per_process_base_pages: Arc<ArrayVec<Mutex<FrameCacheBase>, MAX_PROCESSES>>,
 }
 
 impl ClientState {
@@ -64,24 +64,21 @@ impl ClientState {
         let mut per_process_base_pages = ArrayVec::new();
         for _i in 0..MAX_PROCESSES {
             // TODO(rackscale): this is a bogus affinity because it should really be "ANY_SHMEM"
-            per_process_base_pages.push(Arc::new(Mutex::new(FrameCacheBase::new(
-                local_shmem_affinity(),
-            ))));
+            per_process_base_pages.push(Mutex::new(FrameCacheBase::new(local_shmem_affinity())));
         }
 
         let mut affinity_base_pages = ArrayVec::new();
         for i in 0..MAX_MACHINES {
-            affinity_base_pages.push(Arc::new(Mutex::new(Box::new(FrameCacheBase::new(
+            affinity_base_pages.push(Mutex::new(Box::new(FrameCacheBase::new(
                 mid_to_shmem_affinity(i),
-            ))
-                as Box<dyn MemManager + Send>)));
+            )) as Box<dyn MemManager + Send>));
         }
 
         log::debug!("Finished initializing client state");
         ClientState {
             rpc_client,
-            affinity_base_pages,
-            per_process_base_pages,
+            affinity_base_pages: Arc::new(affinity_base_pages),
+            per_process_base_pages: Arc::new(per_process_base_pages),
         }
     }
 }

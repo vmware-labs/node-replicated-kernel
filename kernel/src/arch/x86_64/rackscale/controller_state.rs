@@ -22,31 +22,31 @@ use crate::transport::shmem::get_affinity_shmem;
 /// Caches of memory for use by the controller. The controller cache includes all shmem belonging to the controller,
 /// because DCM does not allocate controller shmem.
 lazy_static! {
-    pub(crate) static ref CONTROLLER_SHMEM_CACHES: ArrayVec<Arc<Mutex<Box<dyn MemManager + Send>>>, MAX_MACHINES> = {
+    pub(crate) static ref CONTROLLER_SHMEM_CACHES: Arc<ArrayVec<Mutex<Box<dyn MemManager + Send>>, MAX_MACHINES>> = {
         let mut shmem_caches = ArrayVec::new();
         // TODO(rackscale): think about how we should constrain the mcache?
-        shmem_caches.push(Arc::new(Mutex::new(Box::new(MCache::<2048, 2048>::new_with_frame::<2048, 2048>(
+        shmem_caches.push(Mutex::new(Box::new(MCache::<2048, 2048>::new_with_frame::<2048, 2048>(
             local_shmem_affinity(),
             get_affinity_shmem(),
-        )) as Box<dyn MemManager + Send>)));
+        )) as Box<dyn MemManager + Send>));
         for i in 1..MAX_MACHINES {
-            shmem_caches.push(Arc::new(Mutex::new(Box::new(FrameCacheBase::new(mid_to_shmem_affinity(i)))
-                as Box<dyn MemManager + Send>)));
+            shmem_caches.push(Mutex::new(Box::new(FrameCacheBase::new(mid_to_shmem_affinity(i)))
+                as Box<dyn MemManager + Send>));
         }
 
-        shmem_caches
+        Arc::new(shmem_caches)
     };
 }
 
 /// Caches of memslices allocated by the DCM scheduler
 lazy_static! {
-    pub(crate) static ref SHMEM_MEMSLICE_ALLOCATORS: ArrayVec<Arc<Mutex<MCache<0, 2048>>>, MAX_MACHINES> = {
+    pub(crate) static ref SHMEM_MEMSLICE_ALLOCATORS: Arc<ArrayVec<Mutex<MCache<0, 2048>>, MAX_MACHINES>> = {
         // TODO(rackscale): think about how we should constrain the mcache?
         let mut shmem_allocators = ArrayVec::new();
         for i in 1..(MAX_MACHINES + 1) {
-            shmem_allocators.push(Arc::new(Mutex::new(MCache::<0, 2048>::new(mid_to_shmem_affinity(i)))));
+            shmem_allocators.push(Mutex::new(MCache::<0, 2048>::new(mid_to_shmem_affinity(i))));
         }
-        shmem_allocators
+        Arc::new(shmem_allocators)
     };
 }
 
@@ -96,9 +96,9 @@ pub(crate) struct ControllerState {
     /// A composite list of all hardware threads
     hw_threads_all: Arc<Mutex<ArrayVec<CpuThread, { MAX_MACHINES * MAX_CORES }>>>,
     /// Bit maps to keep track of free/busy hw threads. Index is machine_id - 1
-    thread_maps: ArrayVec<Arc<Mutex<ThreadMap>>, MAX_MACHINES>,
+    thread_maps: Arc<ArrayVec<Mutex<ThreadMap>, MAX_MACHINES>>,
     /// The NodeId of each thread, organized by client. Index is machine_id - 1
-    affinities_per_client: ArrayVec<Arc<Mutex<ArrayVec<NodeId, MAX_CORES>>>, MAX_MACHINES>,
+    affinities_per_client: Arc<ArrayVec<Mutex<ArrayVec<NodeId, MAX_CORES>>, MAX_MACHINES>>,
 }
 
 impl ControllerState {
@@ -145,13 +145,13 @@ lazy_static! {
         let mut affinities_per_client = ArrayVec::new();
         let mut thread_maps = ArrayVec::new();
         for i in 0..MAX_MACHINES {
-            affinities_per_client.push(Arc::new(Mutex::new(ArrayVec::new())));
-            thread_maps.push(Arc::new(Mutex::new(ThreadMap::new())));
+            affinities_per_client.push(Mutex::new(ArrayVec::new()));
+            thread_maps.push(Mutex::new(ThreadMap::new()));
         }
         ControllerState {
             hw_threads_all: Arc::new(Mutex::new(ArrayVec::new())),
-            thread_maps,
-            affinities_per_client,
+            thread_maps: Arc::new(thread_maps),
+            affinities_per_client: Arc::new(affinities_per_client),
         }
     };
 }

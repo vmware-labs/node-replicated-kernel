@@ -60,8 +60,8 @@ if [ -d "${DEPLOY_DIR}" ]; then
    DEPLOY_DIR=${DEPLOY_DIR}${DATE_PREFIX}
 fi
 mkdir -p ${DEPLOY_DIR}
-mv s10_memcached_benchmark_internal.csv ${DEPLOY_DIR}
-gzip ${DEPLOY_DIR}/s10_memcached_benchmark_internal.csv
+mv memcached_benchmark_internal.csv ${DEPLOY_DIR}
+gzip ${DEPLOY_DIR}/memcached_benchmark_internal.csv
 
 # Copy vmops results
 DEPLOY_DIR="gh-pages/vmops/${CI_MACHINE_TYPE}/${GIT_REV_CURRENT}/"

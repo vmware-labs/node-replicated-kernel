@@ -622,11 +622,11 @@ fn rackscale_memcached_benchmark(is_shmem: bool) {
     }
 
     fn baseline_timeout_fn(num_cores: usize) -> u64 {
-        20_000 * num_cores as u64
+        40_000 * num_cores as u64
     }
 
     fn rackscale_timeout_fn(num_cores: usize) -> u64 {
-        180_000 + 60_000 * num_cores as u64
+        180_000 + 120_000 * num_cores as u64
     }
 
     fn mem_fn(num_cores: usize, is_smoke: bool) -> usize {

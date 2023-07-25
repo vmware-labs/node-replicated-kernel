@@ -37,6 +37,13 @@ pub unsafe extern "C" fn __fork() -> c_int {
     crate::rumprt::errno::ENOTSUP
 }
 
+#[no_mangle]
+pub unsafe extern "C" fn __vfork14() -> c_int {
+    error!("__vfork14 called, not supported");
+    crate::rumprt::errno::ENOTSUP
+}
+
+
 /// Returns information describing the resources used by the current process,
 /// or all its terminated child processes.
 #[no_mangle]

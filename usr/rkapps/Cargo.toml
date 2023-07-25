@@ -19,4 +19,5 @@ memcached = []
 nginx = []
 leveldb-bench = []
 memcached-bench = []
+monetdb = []
 

@@ -81,6 +81,15 @@ fn build_plan() -> Vec<(&'static str, &'static str, &'static str, bool)> {
         ));
     }
 
+    if cfg!(feature = "monetdb") {
+        plan.push((
+            "monetdb",
+            "../../../../monetdb.bin",
+            "build/bin/monetdb",
+            !unwind_hack,
+        ));
+    }
+
     plan
 }
 
@@ -122,11 +131,11 @@ fn main() {
             .unwrap();
 
         println!(
-            "CHECKOUT 83deed5780e271a0829b09bf8eeb831331bfd2d9 {:?}",
+            "CHECKOUT 45855aaa1ba403daa53d470626e56131ff505a34 {:?}",
             out_dir
         );
         Command::new("git")
-            .args(&["checkout", "83deed5780e271a0829b09bf8eeb831331bfd2d9"])
+            .args(&["checkout", "45855aaa1ba403daa53d470626e56131ff505a34"])
             .current_dir(&Path::new(&out_dir))
             .status()
             .unwrap();

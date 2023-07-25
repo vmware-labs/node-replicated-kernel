@@ -1027,3 +1027,50 @@ fn s10_pmem_alloc() {
 
     check_for_successful_exit(&cmdline, qemu_run(), output);
 }
+
+#[test]
+fn s10_monetdb() {
+    setup_network(1);
+
+    let machine = Machine::determine();
+    let build = BuildArgs::default()
+        .module("rkapps")
+        .user_feature("rkapps:monetdb")
+        .release()
+        .build();
+
+    // let kernel_cmdline = String::from(r#"init=monetdbd.bin initargs=2 appcmd='create'"#);
+    let kernel_cmdline = String::from(r"init=monetdbd.bin initargs=2 appcmd='create dbfarm'");
+
+    let mut cmdline = RunnerArgs::new_with_build("userspace-smp", &build)
+        .timeout(20_000)
+        .cores(machine.max_cores())
+        .nodes(2)
+//        .use_virtio()
+        .memory(8192)
+        .setaffinity(Vec::new())
+        .cmd(kernel_cmdline.as_str())
+        .no_network_setup();
+
+    let mut output = String::new();
+    let mut qemu_run = || -> Result<WaitStatus> {
+        let mut dhcp_server = spawn_dhcpd()?;
+        let mut p = spawn_nrk(&cmdline)?;
+
+        // currently we don't have anything running here
+        let (prev, matched) = p.exp_regex(r#"monetdbd:"#)?;
+        println!("{prev}");
+        println!("> {}", matched);
+
+
+        // cleanup
+        dhcp_server.send_control('c')?;
+        p.process.kill(SIGTERM)?;
+        p.process.exit()
+    };
+
+    check_for_successful_exit(&cmdline, qemu_run(), output);
+}
+
+
+

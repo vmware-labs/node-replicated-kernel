@@ -84,6 +84,13 @@ fn build_plan() -> Vec<(&'static str, &'static str, &'static str, bool)> {
     if cfg!(feature = "monetdb") {
         plan.push((
             "monetdb",
+            "../../../../monetdbd.bin",
+            "build/bin/monetdbd",
+            !unwind_hack,
+        ));
+
+        plan.push((
+            "monetdb",
             "../../../../monetdb.bin",
             "build/bin/monetdb",
             !unwind_hack,

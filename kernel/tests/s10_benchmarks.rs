@@ -854,7 +854,7 @@ fn s10_memcached_benchmark_internal() {
 
     // memcached arguments // currently not there.
     let (qemu_mem, memsize, queries, timeout) = if cfg!(feature = "smoke") {
-        (8 * 1024 /* MB */, 16 /* MB */, 2000000, 240_000)
+        (16 * 1024 /* MB */, 16 /* MB */, 2000000, 300_000)
     } else {
         (
             128 * 1024, /* MB */
@@ -1046,7 +1046,6 @@ fn s10_monetdb() {
         .timeout(20_000)
         .cores(machine.max_cores())
         .nodes(2)
-//        .use_virtio()
         .memory(8192)
         .setaffinity(Vec::new())
         .cmd(kernel_cmdline.as_str())

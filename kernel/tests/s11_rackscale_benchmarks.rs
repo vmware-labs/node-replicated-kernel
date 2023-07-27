@@ -646,3 +646,90 @@ fn rackscale_memcached_benchmark(is_shmem: bool) {
     }
     bench.run_bench(false, is_smoke);
 }
+
+#[test]
+#[cfg(not(feature = "baremetal"))]
+fn s11_rackscale_monetdb_benchmark() {
+    rackscale_memcached_benchmark(true);
+}
+
+#[cfg(not(feature = "baremetal"))]
+fn rackscale_monetdb_benchmark(is_shmem: bool) {
+    use std::sync::Arc;
+
+    // TODO(rackscale): because this test is flaky, always just run smoke test.
+    // Seen bugs include mutex locking against itself, _lwp_exit returning after a thread has blocked.
+    let is_smoke = true; // cfg!(feature = "smoke")
+
+    let transport_str = if is_shmem { "shmem" } else { "ethernet" };
+    let file_name = Arc::new(format!(
+        "rackscale_{}_memcached_benchmark.csv",
+        transport_str
+    ));
+    let _ignore = std::fs::remove_file(file_name.as_ref());
+
+    let built = BuildArgs::default()
+        .module("rkapps")
+        .user_feature("rkapps:monetdb")
+        .release()
+        .build();
+
+    fn controller_match_fn(
+        proc: &mut PtySession,
+        output: &mut String,
+        _cores_per_client: usize,
+        num_clients: usize,
+        file_name: &str,
+        is_baseline: bool,
+        arg: Option<MemcachedInternalConfig>,
+    ) -> Result<()> {
+        // let _config = arg.expect("match function expects a memcached config");
+
+        // currently we don't have anything running here
+        let (prev, matched) = proc.exp_regex(r#"monetdbd:"#)?;
+        println!("{prev}");
+        println!("> {}", matched);
+
+        Ok(())
+    }
+
+    let mut test = RackscaleRun::new("userspace-smp".to_string(), built);
+    test.controller_match_fn = controller_match_fn;
+    test.transport = RackscaleTransport::Shmem;
+    test.use_affinity_shmem = cfg!(feature = "affinity-shmem");
+    test.file_name = file_name.to_string();
+    test.arg = None;
+    test.client_build_delay *= 2;
+    test.run_dhcpd_for_baseline = true;
+
+    fn cmd_fn(num_cores: usize, arg: Option<MemcachedInternalConfig>) -> String {
+        format!(r#"init=monetdbd.bin initargs=2 appcmd='create dbfarm'"#,)
+    }
+
+    fn baseline_timeout_fn(num_cores: usize) -> u64 {
+        40_000 * num_cores as u64
+    }
+
+    fn rackscale_timeout_fn(num_cores: usize) -> u64 {
+        180_000 + 120_000 * num_cores as u64
+    }
+
+    fn mem_fn(num_cores: usize, is_smoke: bool) -> usize {
+        512 * num_cores + if is_smoke { 8192 } else { 40_000 }
+    }
+
+    let bench = RackscaleBench {
+        test,
+        cmd_fn,
+        baseline_timeout_fn,
+        rackscale_timeout_fn,
+        controller_mem_fn: mem_fn,
+        client_mem_fn: mem_fn,
+        baseline_mem_fn: mem_fn,
+    };
+
+    if cfg!(feature = "baseline") {
+        bench.run_bench(true, is_smoke);
+    }
+    bench.run_bench(false, is_smoke);
+}

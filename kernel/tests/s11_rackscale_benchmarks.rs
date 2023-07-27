@@ -467,8 +467,6 @@ fn s11_rackscale_memcached_benchmark_internal() {
 #[cfg(not(feature = "baremetal"))]
 fn rackscale_memcached_benchmark(is_shmem: bool) {
     use std::sync::Arc;
-    use std::thread::sleep;
-    use std::time::Duration;
 
     // TODO(rackscale): because this test is flaky, always just run smoke test.
     // Seen bugs include mutex locking against itself, _lwp_exit returning after a thread has blocked.
@@ -490,13 +488,13 @@ fn rackscale_memcached_benchmark(is_shmem: bool) {
     fn controller_match_fn(
         proc: &mut PtySession,
         output: &mut String,
-        cores_per_client: usize,
+        _cores_per_client: usize,
         num_clients: usize,
         file_name: &str,
         is_baseline: bool,
         arg: Option<MemcachedInternalConfig>,
     ) -> Result<()> {
-        let config = arg.expect("match function expects a memcached config");
+        let _config = arg.expect("match function expects a memcached config");
 
         // match the title
         let (prev, matched) = proc.exp_regex(r#"INTERNAL BENCHMARK CONFIGURE"#)?;

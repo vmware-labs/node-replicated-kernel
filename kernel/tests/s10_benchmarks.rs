@@ -881,7 +881,7 @@ fn s10_memcached_benchmark_internal() {
             *thread, memsize, queries
         );
 
-        let mut cmdline = RunnerArgs::new_with_build("userspace-smp", &build)
+        let cmdline = RunnerArgs::new_with_build("userspace-smp", &build)
             .timeout(timeout)
             .cores(machine.max_cores())
             .nodes(2)
@@ -1042,7 +1042,7 @@ fn s10_monetdb() {
     // let kernel_cmdline = String::from(r#"init=monetdbd.bin initargs=2 appcmd='create'"#);
     let kernel_cmdline = String::from(r"init=monetdbd.bin initargs=2 appcmd='create dbfarm'");
 
-    let mut cmdline = RunnerArgs::new_with_build("userspace-smp", &build)
+    let cmdline = RunnerArgs::new_with_build("userspace-smp", &build)
         .timeout(20_000)
         .cores(machine.max_cores())
         .nodes(2)
@@ -1051,8 +1051,8 @@ fn s10_monetdb() {
         .cmd(kernel_cmdline.as_str())
         .no_network_setup();
 
-    let mut output = String::new();
-    let mut qemu_run = || -> Result<WaitStatus> {
+    let output = String::new();
+    let qemu_run = || -> Result<WaitStatus> {
         let mut dhcp_server = spawn_dhcpd()?;
         let mut p = spawn_nrk(&cmdline)?;
 
@@ -1060,7 +1060,6 @@ fn s10_monetdb() {
         let (prev, matched) = p.exp_regex(r#"monetdbd:"#)?;
         println!("{prev}");
         println!("> {}", matched);
-
 
         // cleanup
         dhcp_server.send_control('c')?;
@@ -1070,6 +1069,3 @@ fn s10_monetdb() {
 
     check_for_successful_exit(&cmdline, qemu_run(), output);
 }
-
-
-

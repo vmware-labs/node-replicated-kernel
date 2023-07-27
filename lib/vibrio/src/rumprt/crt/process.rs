@@ -43,7 +43,6 @@ pub unsafe extern "C" fn __vfork14() -> c_int {
     crate::rumprt::errno::ENOTSUP
 }
 
-
 /// Returns information describing the resources used by the current process,
 /// or all its terminated child processes.
 #[no_mangle]

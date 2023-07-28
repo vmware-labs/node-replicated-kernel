@@ -164,7 +164,7 @@ fn s06_rackscale_shmem_fs_prop_test() {
     test_run.wait_for_client = true;
     test_run.client_timeout = 300_000;
     test_run.controller_timeout = 300_000;
-    test_run.shmem_size = test_run.shmem_size * 2;
+    test_run.shmem_size *= 2;
     test_run.run_rackscale();
 }
 

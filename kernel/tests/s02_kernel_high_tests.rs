@@ -35,14 +35,14 @@ fn s02_acpi_topology() {
     let mut output = String::new();
 
     let mut qemu_run = || -> Result<WaitStatus> {
-        let mut p = spawn_nrk(&cmdline).expect("Can't spawn QEMU instance");
+        let mut p = spawn_nrk(cmdline).expect("Can't spawn QEMU instance");
 
         output += p.exp_string("ACPI Initialized")?.as_str();
         output += p.exp_eof()?.as_str();
         p.process.exit()
     };
 
-    check_for_successful_exit(&cmdline, qemu_run(), output);
+    check_for_successful_exit(cmdline, qemu_run(), output);
 }
 
 /// Test that we can initialize the ACPI subsystem and figure out the machine topology
@@ -57,14 +57,14 @@ fn s02_acpi_smoke() {
     let mut output = String::new();
 
     let mut qemu_run = || -> Result<WaitStatus> {
-        let mut p = spawn_nrk(&cmdline).expect("Can't spawn QEMU instance");
+        let mut p = spawn_nrk(cmdline).expect("Can't spawn QEMU instance");
 
         output += p.exp_string("ACPI Initialized")?.as_str();
         output += p.exp_eof()?.as_str();
         p.process.exit()
     };
 
-    check_for_successful_exit(&cmdline, qemu_run(), output);
+    check_for_successful_exit(cmdline, qemu_run(), output);
 }
 
 /// Test that we can boot an additional core.
@@ -164,13 +164,11 @@ fn s02_gdb() {
     /// Spawn the gdb debugger
     pub fn spawn_gdb(binary: &str) -> Result<PtyReplSession> {
         // The `-nx` ignores any potential .gdbinit files that may mess with the test
-        spawn(format!("gdb -nx {}", binary).as_str(), Some(3_000)).and_then(|p| {
-            Ok(PtyReplSession {
-                prompt: "(gdb) ".to_string(),
-                pty_session: p,
-                quit_command: Some("quit".to_string()),
-                echo_on: false,
-            })
+        spawn(format!("gdb -nx {}", binary).as_str(), Some(3_000)).map(|p| PtyReplSession {
+            prompt: "(gdb) ".to_string(),
+            pty_session: p,
+            quit_command: Some("quit".to_string()),
+            echo_on: false,
         })
     }
 
@@ -319,7 +317,7 @@ fn s02_vspace_debug() {
         eprintln!("About to invoke dot...");
 
         let o = process::Command::new("sfdp")
-            .args(&["-Tsvg", "vspace.dot", "-O"])
+            .args(["-Tsvg", "vspace.dot", "-O"])
             .output()
             .expect("failed to create graph");
         if !o.status.success() {
@@ -338,17 +336,17 @@ fn s02_vspace_debug() {
     let mut output = String::new();
     let mut graphviz_output = String::new();
 
-    const GRAPHVIZ_START: &'static str = "===== graphviz =====";
-    const GRAPHVIZ_END: &'static str = "===== end graphviz =====";
+    const GRAPHVIZ_START: &str = "===== graphviz =====";
+    const GRAPHVIZ_END: &str = "===== end graphviz =====";
 
     let mut qemu_run = || -> Result<WaitStatus> {
-        let mut p = spawn_nrk(&cmdline)?;
+        let mut p = spawn_nrk(cmdline)?;
         output += p.exp_string(GRAPHVIZ_START)?.as_str();
         graphviz_output = p.exp_string(GRAPHVIZ_END)?;
         output += p.exp_eof()?.as_str();
         p.process.exit()
     };
 
-    check_for_successful_exit(&cmdline, qemu_run(), output);
+    check_for_successful_exit(cmdline, qemu_run(), output);
     plot_vspace(&graphviz_output).expect("Can't plot vspace");
 }

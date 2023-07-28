@@ -117,14 +117,14 @@ fn s04_userspace_rumprt_fs() {
     let mut output = String::new();
 
     let mut qemu_run = || -> Result<WaitStatus> {
-        let mut p = spawn_nrk(&cmdline)?;
+        let mut p = spawn_nrk(cmdline)?;
         p.exp_string("bytes_written: 12")?;
         p.exp_string("bytes_read: 12")?;
         output = p.exp_eof()?;
         p.process.exit()
     };
 
-    check_for_successful_exit(&cmdline, qemu_run(), output);
+    check_for_successful_exit(cmdline, qemu_run(), output);
 }
 
 /// Tests a flurry of shootdowns for multiple threads.

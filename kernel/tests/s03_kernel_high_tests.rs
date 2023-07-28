@@ -28,7 +28,7 @@ fn s03_coreboot() {
         .memory(4096);
     let mut output = String::new();
     let mut qemu_run = || -> Result<WaitStatus> {
-        let mut p = spawn_nrk(&cmdline).expect("Can't spawn QEMU instance");
+        let mut p = spawn_nrk(cmdline).expect("Can't spawn QEMU instance");
 
         for i in 1..32 {
             // Check that we see all 32 cores booting up
@@ -40,7 +40,7 @@ fn s03_coreboot() {
         p.process.exit()
     };
 
-    check_for_successful_exit(&cmdline, qemu_run(), output);
+    check_for_successful_exit(cmdline, qemu_run(), output);
 }
 
 /// Tests that basic user-space support is functional.
@@ -92,7 +92,7 @@ fn s03_vmxnet3_smoltcp() {
         )
     }
 
-    const RANDOM_PAYLOAD: &'static str = std::concat!(
+    const RANDOM_PAYLOAD: &str = std::concat!(
         "wpztnynnlbpcileyvhokhihlbjtbvqlsntqoykjynunjhvjzfgtlukphzgj",
         "arcrclwthsijhtqmutxtnzxxlsvmgnueuaqyvbpsnqsmrhaxcfqlqvzaihv",
         "lkrnfasemjbbcfiwuokjzhhmmraaqilcndvgwqluyxrieudytmrkahhcreb",
@@ -181,7 +181,7 @@ fn s03_ivshmem_write_and_read() {
 
     let cmdline = RunnerArgs::new_with_build("cxl-write", &build)
         .timeout(30_000)
-        .shmem_size(vec![shmem_size as usize])
+        .shmem_size(vec![shmem_size])
         .shmem_path(shmem_sockets);
 
     let mut shmem_server = spawn_shmem_server(&shmem_socket, &shmem_file, shmem_size, None)
@@ -196,10 +196,10 @@ fn s03_ivshmem_write_and_read() {
 
     check_for_successful_exit(&cmdline, qemu_run(), output);
 
-    let shmem_sockets = vec![shmem_socket.clone()];
+    let shmem_sockets = vec![shmem_socket];
     let cmdline = RunnerArgs::new_with_build("cxl-read", &build)
         .timeout(30_000)
-        .shmem_size(vec![shmem_size as usize])
+        .shmem_size(vec![shmem_size])
         .shmem_path(shmem_sockets);
 
     let mut output = String::new();
@@ -259,7 +259,7 @@ fn s03_ivshmem_interrupt() {
     // Start interruptor processs
     let build2 = build.clone();
     let shmem_sizes = vec![shmem_size; 2];
-    let shmem_sockets = vec![shmem_socket0.clone(), shmem_socket1.clone()];
+    let shmem_sockets = vec![shmem_socket0, shmem_socket1];
     let interruptor = std::thread::spawn(move || {
         let interruptor_cmdline = RunnerArgs::new_with_build("shmem-interruptor", &build2)
             .cores(2)
@@ -323,7 +323,7 @@ fn s03_ivshmem_read_and_write_multi() {
     check_for_successful_exit(&cmdline, qemu_run(), output);
 
     let shmem_sizes = vec![shmem_size; 2];
-    let shmem_sockets = vec![shmem_socket0.clone(), shmem_socket1.clone()];
+    let shmem_sockets = vec![shmem_socket0, shmem_socket1];
     let cmdline = RunnerArgs::new_with_build("cxl-read", &build)
         .timeout(30_000)
         .shmem_size(shmem_sizes)

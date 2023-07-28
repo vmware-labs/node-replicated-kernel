@@ -607,7 +607,6 @@ fn rackscale_memcached_benchmark(is_shmem: bool) {
     test.use_affinity_shmem = cfg!(feature = "affinity-shmem");
     test.file_name = file_name.to_string();
     test.arg = Some(config);
-    test.client_build_delay *= 3;
     test.run_dhcpd_for_baseline = true;
 
     fn cmd_fn(num_cores: usize, arg: Option<MemcachedInternalConfig>) -> String {
@@ -698,7 +697,6 @@ fn rackscale_monetdb_benchmark(is_shmem: bool) {
     test.use_affinity_shmem = cfg!(feature = "affinity-shmem");
     test.file_name = file_name.to_string();
     test.arg = None;
-    test.client_build_delay *= 3;
     test.run_dhcpd_for_baseline = true;
 
     fn cmd_fn(num_cores: usize, arg: Option<MemcachedInternalConfig>) -> String {

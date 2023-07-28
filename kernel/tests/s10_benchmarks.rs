@@ -805,7 +805,7 @@ fn s10_leveldb_benchmark() {
             }
 
             let parts: Vec<&str> = matched.split("ops/sec").collect();
-            let mut parts: Vec<&str> = parts[0].split(" ").collect();
+            let mut parts: Vec<&str> = parts[0].split(' ').collect();
             parts.pop();
             let r = csv_file.write(format!("{},", env!("GIT_HASH")).as_bytes());
             assert!(r.is_ok());
@@ -955,7 +955,7 @@ fn s10_memcached_benchmark_internal() {
             println!("> {}", matched);
             let b_queries = matched
                 .replace("benchmark executed ", "")
-                .split(" ")
+                .split(' ')
                 .next()
                 .unwrap()
                 .to_string();

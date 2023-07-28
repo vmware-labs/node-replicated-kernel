@@ -460,23 +460,18 @@ struct MemcachedInternalConfig {
 #[test]
 #[cfg(not(feature = "baremetal"))]
 fn s11_rackscale_memcached_benchmark_internal() {
-    rackscale_memcached_benchmark(true);
+    rackscale_memcached_benchmark(RackscaleTransport::Shmem);
 }
 
 #[cfg(not(feature = "baremetal"))]
-fn rackscale_memcached_benchmark(is_shmem: bool) {
-    use std::sync::Arc;
+fn rackscale_memcached_benchmark(transport: RackscaleTransport) {
+    let is_smoke = cfg!(feature = "smoke");
 
-    // TODO(rackscale): because this test is flaky, always just run smoke test.
-    // Seen bugs include mutex locking against itself, _lwp_exit returning after a thread has blocked.
-    let is_smoke = true; // cfg!(feature = "smoke")
-
-    let transport_str = if is_shmem { "shmem" } else { "ethernet" };
-    let file_name = Arc::new(format!(
+    let file_name = format!(
         "rackscale_{}_memcached_benchmark.csv",
-        transport_str
-    ));
-    let _ignore = std::fs::remove_file(file_name.as_ref());
+        transport.to_string(),
+    );
+    let _ignore = std::fs::remove_file(file_name.clone());
 
     let built = BuildArgs::default()
         .module("rkapps")
@@ -578,8 +573,8 @@ fn rackscale_memcached_benchmark(is_shmem: bool) {
         let r = csv_file.write(format!("{},", env!("GIT_HASH")).as_bytes());
         assert!(r.is_ok());
         let out = format!(
-            "memcached,{},{},{},{},{},{}",
-            b_threads, b_mem, b_queries, b_time, b_thpt, actual_num_clients
+            "memcached,{},{},{},{},{},{},{}",
+            b_threads, b_mem, b_queries, b_time, b_thpt, actual_num_clients, num_clients
         );
         let r = csv_file.write(out.as_bytes());
         assert!(r.is_ok());
@@ -596,14 +591,15 @@ fn rackscale_memcached_benchmark(is_shmem: bool) {
         }
     } else {
         MemcachedInternalConfig {
-            num_queries: 100_000_000,
-            mem_size: 32_000,
+            num_queries: 1_000_000, // TODO(rackscale): should be 100_000_000,
+            mem_size: 16,           // TODO(rackscale): should be 32_000,
         }
     };
 
     let mut test = RackscaleRun::new("userspace-smp".to_string(), built);
     test.controller_match_fn = controller_match_fn;
-    test.transport = RackscaleTransport::Shmem;
+    test.transport = transport;
+    test.shmem_size *= 2;
     test.use_affinity_shmem = cfg!(feature = "affinity-shmem");
     test.file_name = file_name.to_string();
     test.arg = Some(config);
@@ -648,23 +644,16 @@ fn rackscale_memcached_benchmark(is_shmem: bool) {
 #[test]
 #[cfg(not(feature = "baremetal"))]
 fn s11_rackscale_monetdb_benchmark() {
-    rackscale_memcached_benchmark(true);
+    rackscale_monetdb_benchmark(RackscaleTransport::Shmem);
 }
 
 #[cfg(not(feature = "baremetal"))]
-fn rackscale_monetdb_benchmark(is_shmem: bool) {
-    use std::sync::Arc;
-
-    // TODO(rackscale): because this test is flaky, always just run smoke test.
-    // Seen bugs include mutex locking against itself, _lwp_exit returning after a thread has blocked.
+fn rackscale_monetdb_benchmark(transport: RackscaleTransport) {
+    // TODO(rackscale): test under development, should not always be smoke permanently
     let is_smoke = true; // cfg!(feature = "smoke")
 
-    let transport_str = if is_shmem { "shmem" } else { "ethernet" };
-    let file_name = Arc::new(format!(
-        "rackscale_{}_memcached_benchmark.csv",
-        transport_str
-    ));
-    let _ignore = std::fs::remove_file(file_name.as_ref());
+    let file_name = format!("rackscale_{}_monetdb_benchmark.csv", transport.to_string(),);
+    let _ignore = std::fs::remove_file(file_name.clone());
 
     let built = BuildArgs::default()
         .module("rkapps")
@@ -674,16 +663,14 @@ fn rackscale_monetdb_benchmark(is_shmem: bool) {
 
     fn controller_match_fn(
         proc: &mut PtySession,
-        output: &mut String,
+        _output: &mut String,
         _cores_per_client: usize,
-        num_clients: usize,
-        file_name: &str,
-        is_baseline: bool,
-        arg: Option<MemcachedInternalConfig>,
+        _num_clients: usize,
+        _file_name: &str,
+        _is_baseline: bool,
+        _arg: Option<()>,
     ) -> Result<()> {
-        // let _config = arg.expect("match function expects a memcached config");
-
-        // currently we don't have anything running here
+        // TODO: currently we don't have anything running here
         let (prev, matched) = proc.exp_regex(r#"monetdbd:"#)?;
         println!("{prev}");
         println!("> {}", matched);
@@ -693,14 +680,17 @@ fn rackscale_monetdb_benchmark(is_shmem: bool) {
 
     let mut test = RackscaleRun::new("userspace-smp".to_string(), built);
     test.controller_match_fn = controller_match_fn;
-    test.transport = RackscaleTransport::Shmem;
+    test.transport = transport;
     test.use_affinity_shmem = cfg!(feature = "affinity-shmem");
     test.file_name = file_name.to_string();
     test.arg = None;
     test.run_dhcpd_for_baseline = true;
 
-    fn cmd_fn(num_cores: usize, arg: Option<MemcachedInternalConfig>) -> String {
-        format!(r#"init=monetdbd.bin initargs=2 appcmd='create dbfarm'"#,)
+    fn cmd_fn(num_cores: usize, _arg: Option<()>) -> String {
+        format!(
+            r#"init=monetdbd.bin initargs={} appcmd='create dbfarm'"#,
+            num_cores
+        )
     }
 
     fn baseline_timeout_fn(num_cores: usize) -> u64 {

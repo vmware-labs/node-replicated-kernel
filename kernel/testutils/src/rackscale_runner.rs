@@ -1,7 +1,7 @@
 use std::sync::mpsc::{Receiver, Sender, TryRecvError};
 use std::sync::{mpsc::channel, Arc, Mutex};
+use std::thread;
 use std::time::Duration;
-use std::{thread, thread::sleep};
 
 use rexpect::errors::*;
 use rexpect::process::signal::{SIGKILL, SIGTERM};
@@ -18,7 +18,7 @@ use crate::runner_args::{
     wait_for_sigterm_or_successful_exit_no_log, RackscaleMode, RackscaleTransport, RunnerArgs,
 };
 
-fn wait_for_termination<T>(rx: &Receiver<()>) -> bool {
+fn wait_for_signal<T>(rx: &Receiver<()>) -> bool {
     loop {
         thread::sleep(Duration::from_millis(250));
         match rx.try_recv() {
@@ -32,7 +32,7 @@ fn wait_for_termination<T>(rx: &Receiver<()>) -> bool {
     true
 }
 
-fn notify_of_termination(tx: &Sender<()>) {
+fn send_signal(tx: &Sender<()>) {
     let _ = tx.send(());
 }
 
@@ -88,8 +88,6 @@ where
     pub cmd: String,
     /// Argument passed to a matching function
     pub arg: Option<T>,
-    /// client build delay
-    pub client_build_delay: u64,
     /// Run DHCPD in baseline test
     pub run_dhcpd_for_baseline: bool,
 }
@@ -128,7 +126,6 @@ impl<T: Clone + Send + 'static> RackscaleRun<T> {
             file_name: "".to_string(),
             cmd: "".to_string(),
             arg: None,
-            client_build_delay: 6_000, // 5 seconds
             run_dhcpd_for_baseline: false,
         }
     }
@@ -176,6 +173,9 @@ impl<T: Clone + Send + 'static> RackscaleRun<T> {
         let rx_mut = Arc::new(Mutex::new(rx));
         let tx_mut = Arc::new(Mutex::new(tx));
 
+        let (tx_build_timer, rx_build_timer) = channel();
+        let tx_build_timer_mut = Arc::new(Mutex::new(tx_build_timer));
+
         // Run controller in separate thread
         let controller_output_array: Arc<Mutex<Vec<(String, String)>>> = all_outputs.clone();
         let controller_shmem_sockets = shmem_sockets.clone();
@@ -185,6 +185,7 @@ impl<T: Clone + Send + 'static> RackscaleRun<T> {
         let controller_file_name = self.file_name.clone();
         let controller_placement_cores = placement_cores.clone();
         let state = self.clone();
+        let controller_tx_build_timer = tx_build_timer_mut.clone();
         let controller = std::thread::Builder::new()
             .name("Controller".to_string())
             .spawn(move || {
@@ -209,6 +210,14 @@ impl<T: Clone + Send + 'static> RackscaleRun<T> {
                 let qemu_run = || -> Result<WaitStatus> {
                     let mut p = spawn_nrk(&cmdline_controller)?;
 
+                    output += p.exp_string("CONTROLLER READY")?.as_str();
+                    {
+                        let tx = controller_tx_build_timer
+                            .lock()
+                            .expect("Failed to get build timer lock");
+                        send_signal(&tx);
+                    }
+
                     // User-supplied function to check output
                     (state.controller_match_fn)(
                         &mut p,
@@ -224,7 +233,7 @@ impl<T: Clone + Send + 'static> RackscaleRun<T> {
                         if state.wait_for_client {
                             // Wait for signal from each client that it is done
                             let rx = controller_rx.lock().expect("Failed to get rx lock");
-                            let _ = wait_for_termination::<()>(&rx);
+                            let _ = wait_for_signal::<()>(&rx);
                         }
                     }
 
@@ -234,11 +243,18 @@ impl<T: Clone + Send + 'static> RackscaleRun<T> {
                 };
                 let ret = qemu_run();
 
+                if ret.is_err() {
+                    let tx = controller_tx_build_timer
+                        .lock()
+                        .expect("Failed to get build timer lock");
+                    send_signal(&tx);
+                }
+
                 if !state.wait_for_client {
                     let tx = controller_tx.lock().expect("Failed to get tx lock");
                     for _ in 0..state.num_clients {
                         // Notify each client it's okay to shutdown
-                        notify_of_termination(&tx);
+                        send_signal(&tx);
                     }
                 }
 
@@ -259,7 +275,8 @@ impl<T: Clone + Send + 'static> RackscaleRun<T> {
         // Run client in separate thead. Wait a bit to make sure controller started
         let mut client_procs = Vec::new();
         for i in 0..self.num_clients {
-            sleep(Duration::from_millis(self.client_build_delay));
+            wait_for_signal::<()>(&rx_build_timer);
+
             let client_output_array: Arc<Mutex<Vec<(String, String)>>> = all_outputs.clone();
             let client_shmem_sockets = shmem_sockets.clone();
             let client_rx = rx_mut.clone();
@@ -269,7 +286,7 @@ impl<T: Clone + Send + 'static> RackscaleRun<T> {
             let client_cmd = self.cmd.clone();
             let client_placement_cores = placement_cores.clone();
             let state = self.clone();
-
+            let client_tx_build_timer = tx_build_timer_mut.clone();
             let client = std::thread::Builder::new()
                 .name(format!("Client{}", i + 1))
                 .spawn(move || {
@@ -296,6 +313,14 @@ impl<T: Clone + Send + 'static> RackscaleRun<T> {
                     let qemu_run = || -> Result<WaitStatus> {
                         let mut p = spawn_nrk(&cmdline_client)?;
 
+                        output += p.exp_string("CLIENT READY")?.as_str();
+                        {
+                            let tx = client_tx_build_timer
+                                .lock()
+                                .expect("Failed to get build timer lock");
+                            send_signal(&tx);
+                        }
+
                         // User-supplied function to check output
                         (state.client_match_fn)(
                             &mut p,
@@ -310,7 +335,7 @@ impl<T: Clone + Send + 'static> RackscaleRun<T> {
                         // Wait for controller to terminate
                         if !state.wait_for_client {
                             let rx = client_rx.lock().expect("Failed to get rx lock");
-                            let _ = wait_for_termination::<()>(&rx);
+                            let _ = wait_for_signal::<()>(&rx);
                         }
 
                         let ret = p.process.kill(SIGTERM);
@@ -321,9 +346,16 @@ impl<T: Clone + Send + 'static> RackscaleRun<T> {
                     // Could exit with 'success' or from sigterm, depending on number of clients.
                     let ret = qemu_run();
 
+                    if ret.is_err() {
+                        let tx = client_tx_build_timer
+                            .lock()
+                            .expect("Failed to get build timer lock");
+                        send_signal(&tx);
+                    }
+
                     if state.wait_for_client {
                         let tx = client_tx.lock().expect("Failed to get rx lock");
-                        notify_of_termination(&tx);
+                        send_signal(&tx);
                     }
 
                     client_output_array

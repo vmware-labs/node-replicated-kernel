@@ -413,7 +413,6 @@ fn s11_rackscale_shmem_leveldb_benchmark() {
     test.use_affinity_shmem = cfg!(feature = "affinity-shmem");
     test.file_name = file_name.to_string();
     test.arg = Some(config);
-    test.client_build_delay *= 2;
     test.run_dhcpd_for_baseline = true;
 
     fn cmd_fn(num_cores: usize, arg: Option<LevelDBConfig>) -> String {

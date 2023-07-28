@@ -67,6 +67,9 @@ pub(crate) fn run() {
     // Wait for all clients to connect before fulfilling any RPCs.
     while !DCMServerReady.load(Ordering::SeqCst) {}
 
+    // Don't modify this line without modifying testutils/rackscale_runner.rs
+    log::warn!("CONTROLLER READY");
+
     server
         .add_client(&CLIENT_REGISTRAR)
         .expect("Failed to accept client");

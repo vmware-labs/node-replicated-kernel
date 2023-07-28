@@ -41,6 +41,9 @@ pub(crate) fn initialize_client(
     mut client: Client,
     send_client_data: bool, // This field is used to indicate if init_client() should send ClientRegistrationRequest
 ) -> KResult<Client> {
+    // Don't modify this line without modifying testutils/rackscale_runner.rs
+    log::warn!("CLIENT READY");
+
     if send_client_data {
         // Fetch system information
         let shmem_region = get_affinity_shmem();

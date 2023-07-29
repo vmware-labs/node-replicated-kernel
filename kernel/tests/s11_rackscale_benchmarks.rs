@@ -622,7 +622,7 @@ fn rackscale_memcached_benchmark(transport: RackscaleTransport) {
     }
 
     fn mem_fn(num_cores: usize, is_smoke: bool) -> usize {
-        512 * num_cores + if is_smoke { 8192 } else { 40_000 }
+        512 * num_cores + if is_smoke { 8192 } else { 36_000 }
     }
 
     let bench = RackscaleBench {
@@ -702,7 +702,7 @@ fn rackscale_monetdb_benchmark(transport: RackscaleTransport) {
     }
 
     fn mem_fn(num_cores: usize, is_smoke: bool) -> usize {
-        512 * num_cores + if is_smoke { 8192 } else { 40_000 }
+        512 * num_cores + if is_smoke { 8192 } else { 36_000 }
     }
 
     let bench = RackscaleBench {

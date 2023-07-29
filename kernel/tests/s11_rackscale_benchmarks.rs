@@ -563,7 +563,7 @@ fn rackscale_memcached_benchmark(transport: RackscaleTransport) {
             .open(file_name)
             .expect("Can't open file");
         if write_headers {
-            let row = "git_rev,benchmark,nthreads,mem,queries,time,thpt,num_clients\n";
+            let row = "git_rev,benchmark,nthreads,mem,queries,time,thpt,num_clients,num_replicas\n";
             let r = csv_file.write(row.as_bytes());
             assert!(r.is_ok());
         }

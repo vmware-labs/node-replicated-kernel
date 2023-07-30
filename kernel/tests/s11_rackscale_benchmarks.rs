@@ -117,6 +117,7 @@ fn rackscale_fxmark_benchmark(transport: RackscaleTransport) {
     test.controller_match_fn = controller_match_fn;
     test.transport = transport;
     test.use_affinity_shmem = cfg!(feature = "affinity-shmem");
+    test.use_qemu_huge_pages = cfg!(feature = "affinity-shmem");
     test.file_name = file_name.clone();
     test.arg = Some(config);
 
@@ -144,9 +145,7 @@ fn rackscale_fxmark_benchmark(transport: RackscaleTransport) {
         cmd_fn,
         baseline_timeout_fn: timeout_fn,
         rackscale_timeout_fn: timeout_fn,
-        controller_mem_fn: mem_fn,
-        client_mem_fn: mem_fn,
-        baseline_mem_fn: mem_fn,
+        mem_fn,
     };
 
     if cfg!(feature = "baseline") {
@@ -284,6 +283,7 @@ fn rackscale_vmops_benchmark(transport: RackscaleTransport, benchtype: VMOpsBenc
     test.controller_match_fn = controller_match_fn;
     test.transport = transport;
     test.use_affinity_shmem = cfg!(feature = "affinity-shmem");
+    test.use_qemu_huge_pages = cfg!(feature = "affinity-shmem");
     test.file_name = file_name.clone();
     test.arg = Some(benchtype);
 
@@ -308,9 +308,7 @@ fn rackscale_vmops_benchmark(transport: RackscaleTransport, benchtype: VMOpsBenc
         cmd_fn,
         baseline_timeout_fn,
         rackscale_timeout_fn,
-        controller_mem_fn: mem_fn,
-        client_mem_fn: mem_fn,
-        baseline_mem_fn: mem_fn,
+        mem_fn,
     };
 
     if cfg!(feature = "baseline") {
@@ -411,6 +409,7 @@ fn s11_rackscale_shmem_leveldb_benchmark() {
     test.controller_match_fn = controller_match_fn;
     test.transport = RackscaleTransport::Shmem;
     test.use_affinity_shmem = cfg!(feature = "affinity-shmem");
+    test.use_qemu_huge_pages = cfg!(feature = "affinity-shmem");
     test.file_name = file_name.to_string();
     test.arg = Some(config);
     test.run_dhcpd_for_baseline = true;
@@ -440,9 +439,7 @@ fn s11_rackscale_shmem_leveldb_benchmark() {
         cmd_fn,
         baseline_timeout_fn,
         rackscale_timeout_fn,
-        controller_mem_fn: mem_fn,
-        client_mem_fn: mem_fn,
-        baseline_mem_fn: mem_fn,
+        mem_fn,
     };
 
     if cfg!(feature = "baseline") {
@@ -601,6 +598,7 @@ fn rackscale_memcached_benchmark(transport: RackscaleTransport) {
     test.transport = transport;
     test.shmem_size *= 2;
     test.use_affinity_shmem = cfg!(feature = "affinity-shmem");
+    test.use_qemu_huge_pages = cfg!(feature = "affinity-shmem");
     test.file_name = file_name.to_string();
     test.arg = Some(config);
     test.run_dhcpd_for_baseline = true;
@@ -630,9 +628,7 @@ fn rackscale_memcached_benchmark(transport: RackscaleTransport) {
         cmd_fn,
         baseline_timeout_fn,
         rackscale_timeout_fn,
-        controller_mem_fn: mem_fn,
-        client_mem_fn: mem_fn,
-        baseline_mem_fn: mem_fn,
+        mem_fn,
     };
 
     if cfg!(feature = "baseline") {
@@ -682,6 +678,7 @@ fn rackscale_monetdb_benchmark(transport: RackscaleTransport) {
     test.controller_match_fn = controller_match_fn;
     test.transport = transport;
     test.use_affinity_shmem = cfg!(feature = "affinity-shmem");
+    test.use_qemu_huge_pages = cfg!(feature = "affinity-shmem");
     test.file_name = file_name.to_string();
     test.arg = None;
     test.run_dhcpd_for_baseline = true;
@@ -710,9 +707,7 @@ fn rackscale_monetdb_benchmark(transport: RackscaleTransport) {
         cmd_fn,
         baseline_timeout_fn,
         rackscale_timeout_fn,
-        controller_mem_fn: mem_fn,
-        client_mem_fn: mem_fn,
-        baseline_mem_fn: mem_fn,
+        mem_fn,
     };
 
     if cfg!(feature = "baseline") {

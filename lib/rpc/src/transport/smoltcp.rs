@@ -3,7 +3,7 @@
 
 use alloc::sync::Arc;
 use alloc::vec::Vec;
-use log::{debug, warn};
+use log::{debug, trace, warn};
 use spin::Mutex;
 
 use smoltcp::iface::{Interface, SocketHandle};
@@ -67,7 +67,7 @@ impl TCPTransport<'_> {
     }
 
     fn send(&self, send_buf: &[u8], is_try: bool) -> Result<bool, RPCError> {
-        debug!("send {:?} bytes, try={:?}", send_buf.len(), is_try);
+        trace!("send {:?} bytes, try={:?}", send_buf.len(), is_try);
         let mut offset = 0;
 
         if send_buf.is_empty() {
@@ -81,7 +81,7 @@ impl TCPTransport<'_> {
             // Attempt to write from first buffer into the socket send buffer
             if socket.can_send() {
                 if let Ok(bytes_sent) = socket.send_slice(send_buf) {
-                    debug!("send [{:?}-{:?}]", 0, bytes_sent);
+                    trace!("send [{:?}-{:?}]", 0, bytes_sent);
                     offset = bytes_sent;
                 }
             }
@@ -107,7 +107,7 @@ impl TCPTransport<'_> {
                 // Attempt to send until end of data array
                 if let Ok(bytes_sent) = socket.send_slice(&send_buf[offset..]) {
                     // Try to send remaining in current send_buf
-                    debug!("sent [{:?}-{:?}]", offset, offset + bytes_sent);
+                    trace!("sent [{:?}-{:?}]", offset, offset + bytes_sent);
 
                     // Update index if reached end of send_buf
                     offset += bytes_sent;
@@ -115,7 +115,7 @@ impl TCPTransport<'_> {
                         return Ok(true);
                     }
                 } else {
-                    debug!("send_slice failed... trying again?");
+                    trace!("send_slice failed... trying again?");
                 }
             }
 
@@ -135,7 +135,7 @@ impl TCPTransport<'_> {
 
     /// Receive data from a remote node
     fn recv(&self, recv_buf: &mut [u8]) -> Result<(), RPCError> {
-        debug!("recv {:?} bytes", recv_buf.len());
+        trace!("recv {:?} bytes", recv_buf.len());
         let mut offset = 0;
 
         if recv_buf.is_empty() {
@@ -153,7 +153,7 @@ impl TCPTransport<'_> {
                 // Attempt to recv until end of data array
                 if let Ok(bytes_recv) = socket.recv_slice(&mut recv_buf[offset..]) {
                     // Try to recv remaining in current recv_buf
-                    debug!("recv [{:?}-{:?}]", offset, offset + bytes_recv);
+                    trace!("recv [{:?}-{:?}]", offset, offset + bytes_recv);
 
                     // Update index if reached end of recv_buf
                     offset += bytes_recv;
@@ -187,7 +187,7 @@ impl TCPTransport<'_> {
     ) -> Result<bool, RPCError> {
         // Try to receive the header, bail if try and data was not received here. Otherwise, proceed
         // to finish receiving
-        debug!("recv_msg, try = {:?}", is_try);
+        trace!("recv_msg, try = {:?}", is_try);
         let mut offset = 0;
         {
             let mut iface = self.iface.lock();
@@ -195,7 +195,7 @@ impl TCPTransport<'_> {
             if socket.can_recv() {
                 let hdr_slice = unsafe { hdr.as_mut_bytes() };
                 if let Ok(bytes_recv) = socket.recv_slice(hdr_slice) {
-                    debug!("recv_msg [{:?}-{:?}]", 0, bytes_recv);
+                    trace!("recv_msg [{:?}-{:?}]", 0, bytes_recv);
                     if is_try && bytes_recv == 0 {
                         return Ok(false);
                     }
@@ -229,7 +229,7 @@ impl TCPTransport<'_> {
             let mut recv_count = 0;
             for p in payload.iter_mut() {
                 if recv_count + p.len() > expected_data {
-                    debug!(
+                    trace!(
                         "recv_msg recv payload buf[{:?}-{:?}]",
                         0,
                         expected_data - recv_count
@@ -237,7 +237,7 @@ impl TCPTransport<'_> {
                     self.recv(&mut p[..(expected_data - recv_count)])?;
                     return Ok(true);
                 } else {
-                    debug!("recv_msg recv payload buf[{:?}-{:?}]", 0, p.len());
+                    trace!("recv_msg recv payload buf[{:?}-{:?}]", 0, p.len());
                     recv_count += p.len();
                     self.recv(p)?;
                 }
@@ -257,21 +257,21 @@ impl Transport for TCPTransport<'_> {
     }
 
     fn send_msg(&self, hdr: &RPCHeader, payload: &[&[u8]]) -> Result<(), RPCError> {
-        debug!("send_msg - sending header");
+        trace!("send_msg - sending header");
         self.send(&unsafe { hdr.as_bytes() }[..], false)?;
         for p in payload {
-            debug!("send_msg - sending payload");
+            trace!("send_msg - sending payload");
             self.send(p, false)?;
         }
         Ok(())
     }
 
     fn try_send_msg(&self, hdr: &RPCHeader, payload: &[&[u8]]) -> Result<bool, RPCError> {
-        debug!("try_send_msg - sending header");
+        trace!("try_send_msg - sending header");
         match self.send(&unsafe { hdr.as_bytes() }[..], true)? {
             true => {
                 for p in payload {
-                    debug!("send_msg - sending payload");
+                    trace!("send_msg - sending payload");
                     self.send(p, false)?;
                 }
                 Ok(true)
@@ -281,7 +281,7 @@ impl Transport for TCPTransport<'_> {
     }
 
     fn send_mbuf(&self, mbuf: &MBuf) -> Result<(), RPCError> {
-        debug!("try_send_mbuf");
+        trace!("try_send_mbuf");
         self.send(
             &unsafe { mbuf.as_bytes() }[..HDR_LEN + mbuf.hdr.msg_len as usize],
             false,
@@ -290,7 +290,7 @@ impl Transport for TCPTransport<'_> {
     }
 
     fn try_send_mbuf(&self, mbuf: &MBuf) -> Result<bool, RPCError> {
-        debug!("try_send_mbuf");
+        trace!("try_send_mbuf");
         self.send(
             &unsafe { mbuf.as_bytes() }[..HDR_LEN + mbuf.hdr.msg_len as usize],
             true,
@@ -298,18 +298,18 @@ impl Transport for TCPTransport<'_> {
     }
 
     fn recv_mbuf(&self, mbuf: &mut MBuf) -> Result<(), RPCError> {
-        debug!("recv_mbuf");
+        trace!("recv_mbuf");
         self.recv_msg(&mut mbuf.hdr, &mut [&mut mbuf.data], false)?;
         Ok(())
     }
 
     fn try_recv_mbuf(&self, mbuf: &mut MBuf) -> Result<bool, RPCError> {
-        debug!("try_recv_mbuf");
+        trace!("try_recv_mbuf");
         self.recv_msg(&mut mbuf.hdr, &mut [&mut mbuf.data], true)
     }
 
     fn recv_msg(&self, hdr: &mut RPCHeader, payload: &mut [&mut [u8]]) -> Result<(), RPCError> {
-        debug!("recv_msg");
+        trace!("recv_msg");
         self.recv_msg(hdr, payload, false)?;
         Ok(())
     }
@@ -319,7 +319,7 @@ impl Transport for TCPTransport<'_> {
         hdr: &mut RPCHeader,
         payload: &mut [&mut [u8]],
     ) -> Result<bool, RPCError> {
-        debug!("try_recv_msg");
+        trace!("try_recv_msg");
         self.recv_msg(hdr, payload, true)
     }
 
@@ -333,9 +333,10 @@ impl Transport for TCPTransport<'_> {
             socket
                 .connect(cx, (ip, self.server_port), self.client_port)
                 .map_err(|_| RPCError::ClientConnectError)?;
-            debug!(
+            trace!(
                 "Attempting to connect to server {}:{}",
-                ip, self.server_port
+                ip,
+                self.server_port
             );
         }
 
@@ -355,7 +356,7 @@ impl Transport for TCPTransport<'_> {
 
                 // Waiting for send/recv forces the TCP handshake to fully complete
                 if socket.is_active() && (socket.may_send() || socket.may_recv()) {
-                    debug!("Connected to server, ready to send/recv data");
+                    trace!("Connected to server, ready to send/recv data");
                     break;
                 }
             }
@@ -371,7 +372,7 @@ impl Transport for TCPTransport<'_> {
             socket
                 .listen(self.server_port)
                 .map_err(|_| RPCError::ServerListenError)?;
-            debug!("Listening at port {}", self.server_port);
+            trace!("Listening at port {}", self.server_port);
         }
 
         // Poll interface until connection is established

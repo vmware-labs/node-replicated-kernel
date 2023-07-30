@@ -20,7 +20,7 @@ use crate::memory::backends::AllocatorStatistics;
 use crate::memory::mcache::MCache;
 use crate::memory::shmem_affinity::mid_to_shmem_affinity;
 use crate::memory::{Frame, PAddr, LARGE_PAGE_SIZE};
-use crate::transport::shmem::get_affinity_shmem;
+use crate::transport::shmem::{get_affinity_shmem, get_affinity_shmem_by_mid};
 
 #[derive(Debug, Default)]
 pub(crate) struct ClientRegistrationRequest {
@@ -116,6 +116,16 @@ pub(crate) fn register_client(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result
                 return Err(RPCError::MalformedResponse);
             }
         };
+
+        // Make sure the controller and the client are seeing the same shmem addresses.
+        {
+            let shmem_region = get_affinity_shmem_by_mid(req.mid);
+            assert_eq!(
+                shmem_region.base.as_u64(),
+                req.shmem_region_base,
+                "Controller did not assign shmem region the same address as the client"
+            );
+        }
 
         // Create shmem memory manager
         let frame = Frame::new(

@@ -58,14 +58,12 @@ where
     built: Built<'static>,
     /// Timeout for the controller process
     pub controller_timeout: u64,
-    /// Amount of non-shmem QEMU memory given to the controller
-    pub controller_memory: usize,
     /// Function that is called after the controller is spawned to match output of the controller process
     pub controller_match_fn: RackscaleMatchFn<T>,
     /// Timeout for each client process
     pub client_timeout: u64,
-    /// Amount of non-shmem QEMU memory given to each client
-    pub client_memory: usize,
+    /// Amount of non-shmem QEMU memory given to each QEMU instance
+    pub memory: usize,
     /// Function that is called after each client is spawned to match output of the client process
     pub client_match_fn: RackscaleMatchFn<T>,
     /// Number of client machines to spawn
@@ -90,6 +88,8 @@ where
     pub arg: Option<T>,
     /// Run DHCPD in baseline test
     pub run_dhcpd_for_baseline: bool,
+    /// Huge huge pages for qemu memory. This requires pre-alloc'ing them on the host before running.
+    pub use_qemu_huge_pages: bool,
 }
 
 impl<T: Clone + Send + 'static> RackscaleRun<T> {
@@ -109,11 +109,10 @@ impl<T: Clone + Send + 'static> RackscaleRun<T> {
 
         RackscaleRun {
             controller_timeout: 60_000,
-            controller_memory: 1024,
             controller_match_fn: blank_match_fn,
             client_timeout: 60_000,
-            client_memory: 1024,
             client_match_fn: blank_match_fn,
+            memory: 1024,
             kernel_test,
             built,
             num_clients: 1,
@@ -127,6 +126,7 @@ impl<T: Clone + Send + 'static> RackscaleRun<T> {
             cmd: "".to_string(),
             arg: None,
             run_dhcpd_for_baseline: false,
+            use_qemu_huge_pages: false,
         }
     }
 
@@ -186,10 +186,11 @@ impl<T: Clone + Send + 'static> RackscaleRun<T> {
         let controller_placement_cores = placement_cores.clone();
         let state = self.clone();
         let controller_tx_build_timer = tx_build_timer_mut.clone();
+        let use_large_pages = self.use_qemu_huge_pages;
         let controller = std::thread::Builder::new()
             .name("Controller".to_string())
             .spawn(move || {
-                let cmdline_controller =
+                let mut cmdline_controller =
                     RunnerArgs::new_with_build(&controller_kernel_test, &state.built)
                         .timeout(state.controller_timeout)
                         .transport(state.transport)
@@ -200,11 +201,15 @@ impl<T: Clone + Send + 'static> RackscaleRun<T> {
                         .no_network_setup()
                         .workers(state.num_clients + 1)
                         .use_vmxnet3()
-                        .memory(state.controller_memory)
+                        .memory(state.memory)
                         .nodes(1)
                         .cores(controller_cores)
                         .node_offset(controller_placement_cores[0].0)
                         .setaffinity(controller_placement_cores[0].1.clone());
+
+                if use_large_pages {
+                    cmdline_controller = cmdline_controller.large_pages().prealloc();
+                }
 
                 let mut output = String::new();
                 let qemu_run = || -> Result<WaitStatus> {
@@ -287,10 +292,11 @@ impl<T: Clone + Send + 'static> RackscaleRun<T> {
             let client_placement_cores = placement_cores.clone();
             let state = self.clone();
             let client_tx_build_timer = tx_build_timer_mut.clone();
+            let use_large_pages = self.use_qemu_huge_pages;
             let client = std::thread::Builder::new()
                 .name(format!("Client{}", i + 1))
                 .spawn(move || {
-                    let cmdline_client =
+                    let mut cmdline_client =
                         RunnerArgs::new_with_build(&client_kernel_test, &state.built)
                             .timeout(state.client_timeout)
                             .transport(state.transport)
@@ -301,13 +307,17 @@ impl<T: Clone + Send + 'static> RackscaleRun<T> {
                             .no_network_setup()
                             .workers(state.num_clients + 1)
                             .cores(state.cores_per_client)
-                            .memory(state.client_memory)
+                            .memory(state.memory)
                             .nobuild() // Use single build for all for consistency
                             .use_vmxnet3()
                             .cmd(&client_cmd)
                             .nodes(1)
                             .node_offset(client_placement_cores[i + 1].0)
                             .setaffinity(client_placement_cores[i + 1].1.clone());
+
+                    if use_large_pages {
+                        cmdline_client = cmdline_client.large_pages().prealloc();
+                    }
 
                     let mut output = String::new();
                     let qemu_run = || -> Result<WaitStatus> {
@@ -425,15 +435,19 @@ impl<T: Clone + Send + 'static> RackscaleRun<T> {
             setup_network(self.num_clients + 1);
         }
 
-        let cmdline_baseline = RunnerArgs::new_with_build(&self.kernel_test, &self.built)
+        let mut cmdline_baseline = RunnerArgs::new_with_build(&self.kernel_test, &self.built)
             .timeout(self.controller_timeout)
-            .memory(self.controller_memory)
+            .memory(self.memory)
             .workers(1)
             .cores(self.cores_per_client * self.num_clients)
             .cmd(&self.cmd)
             .no_network_setup()
             .nodes(self.num_clients)
             .setaffinity(all_placement_cores);
+
+        if self.use_qemu_huge_pages {
+            cmdline_baseline = cmdline_baseline.large_pages().prealloc();
+        }
 
         let mut output = String::new();
         let mut qemu_run = || -> Result<WaitStatus> {
@@ -472,12 +486,8 @@ pub struct RackscaleBench<T: Clone + Send + 'static> {
     pub rackscale_timeout_fn: fn(usize) -> u64,
     // Function to calculate the timeout. Takes as argument number of application cores
     pub baseline_timeout_fn: fn(usize) -> u64,
-    // Function to calculate controller (and baseline) memory. Takes as argument number of application cores and is_smoke
-    pub controller_mem_fn: fn(usize, bool) -> usize,
-    // Function to calculate client memory. Takes as argument number of application cores and is_smoke
-    pub client_mem_fn: fn(usize, bool) -> usize,
-    // Function to calculate baseline nros memory. Takes as argument number of application cores and is_smoke
-    pub baseline_mem_fn: fn(usize, bool) -> usize,
+    // Function to calculate memory (excpeting controller memory). Takes as argument number of application cores and is_smoke
+    pub mem_fn: fn(usize, bool) -> usize,
 }
 
 impl<T: Clone + Send + 'static> RackscaleBench<T> {
@@ -565,11 +575,11 @@ impl<T: Clone + Send + 'static> RackscaleBench<T> {
 
             // Caclulate memory for each component
             if !is_baseline {
-                test_run.controller_memory = (self.controller_mem_fn)(total_cores, is_smoke);
-                test_run.client_memory = (self.client_mem_fn)(total_cores, is_smoke);
+                test_run.memory = ((self.mem_fn)(total_cores, is_smoke) / test_run.num_clients)
+                    - test_run.shmem_size;
+                assert!(test_run.memory > 0);
             } else {
-                test_run.controller_memory = (self.baseline_mem_fn)(total_cores, is_smoke);
-                test_run.client_memory = test_run.controller_memory;
+                test_run.memory = (self.mem_fn)(total_cores, is_smoke);
             }
 
             if is_baseline {

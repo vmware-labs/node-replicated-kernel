@@ -6,6 +6,8 @@ use core::hint::spin_loop;
 use core::ptr;
 use core::sync::atomic::{AtomicUsize, Ordering};
 
+use kpi::process::MAX_CORES;
+
 use crate::threads::ThreadId;
 use crate::tls2::{Environment, ThreadControlBlock};
 
@@ -51,7 +53,7 @@ impl Mutex {
                 lwp_ptr: Cell::new(ptr::null()),
                 is_kmutex,
                 is_spin,
-                waitlist: ArrayQueue::new(64),
+                waitlist: ArrayQueue::new(MAX_CORES),
                 counter: CachePadded::new(AtomicUsize::new(0)),
             },
         }

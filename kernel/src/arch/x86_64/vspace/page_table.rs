@@ -295,6 +295,20 @@ impl PageTable {
     }
 
     /// Check if we can just insert a large page for the current mapping
+    #[cfg(feature = "pages-4k")]
+    fn can_map_as_large_page(
+        &mut self,
+        _pdpt_entry: PDPTEntry,
+        _pbase: PAddr,
+        _psize: usize,
+        _vbase: VAddr,
+        _rights: MapAction,
+    ) -> bool {
+        false
+    }
+
+    /// Check if we can just insert a large page for the current mapping
+    #[cfg(not(feature = "pages-4k"))]
     fn can_map_as_large_page(
         &mut self,
         pdpt_entry: PDPTEntry,

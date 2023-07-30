@@ -100,6 +100,8 @@ shmem = []
 rackscale = ["rpc"]
 # server code (supply --kgdb to run.py).
 gdb = []
+# Use to enable 4kiB only in kernel - useful for memcached, similar benchmarks
+pages-4k = []
 
 #
 # The following features are used for testing *only* and should not be enabled

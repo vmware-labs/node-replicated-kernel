@@ -473,6 +473,7 @@ fn rackscale_memcached_benchmark(transport: RackscaleTransport) {
     let built = BuildArgs::default()
         .module("rkapps")
         .user_feature("rkapps:memcached-bench")
+        .kernel_feature("pages-4k")
         .release()
         .build();
 

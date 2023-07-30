@@ -784,7 +784,7 @@ pub extern "C" fn handle_generic_exception(a: ExceptionArguments) -> ! {
                 .get()
                 .map_or(false, |c| c.mode == crate::cmdline::Mode::Client)
             {
-                log::warn!("Received remote TLB shootdown request!");
+                log::debug!("Received remote TLB shootdown request!");
                 let mid = kpi::system::mid_from_gtid(*crate::environment::CORE_ID);
                 super::tlb::remote_dequeue(mid);
             } else {

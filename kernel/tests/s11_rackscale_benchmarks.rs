@@ -131,13 +131,13 @@ fn rackscale_fxmark_benchmark(transport: RackscaleTransport) {
         )
     }
     fn timeout_fn(num_cores: usize) -> u64 {
-        120_000 + 20000 * num_cores as u64
+        180_000 + 5_000 * num_cores as u64
     }
     fn mem_fn(num_cores: usize, is_smoke: bool) -> usize {
         if is_smoke {
             8192
         } else {
-            core::cmp::max(73728, num_cores * 2048)
+            8192 + 64 * num_cores
         }
     }
     let bench = RackscaleBench {
@@ -291,16 +291,16 @@ fn rackscale_vmops_benchmark(transport: RackscaleTransport, benchtype: VMOpsBenc
         format!("initargs={}", num_cores)
     }
     fn baseline_timeout_fn(num_cores: usize) -> u64 {
-        20_000 * num_cores as u64
+        120_000 + 500 * num_cores as u64
     }
     fn rackscale_timeout_fn(num_cores: usize) -> u64 {
-        120_000 + 60_000 * num_cores as u64
+        240_000 + 500 * num_cores as u64
     }
     fn mem_fn(_num_cores: usize, is_smoke: bool) -> usize {
         if is_smoke {
-            10 * 1024
+            8192
         } else {
-            48 * 1024
+            24 * 1024
         }
     }
     let bench = RackscaleBench {
@@ -421,19 +421,23 @@ fn s11_rackscale_shmem_leveldb_benchmark() {
             num_cores, num_cores, config.reads, config.num, config.val_size
         )
     }
+
     fn baseline_timeout_fn(num_cores: usize) -> u64 {
-        20_000 * num_cores as u64
+        40_000 + 500 * num_cores as u64
     }
+
     fn rackscale_timeout_fn(num_cores: usize) -> u64 {
-        180_000 + 60_000 * num_cores as u64
+        180_000 + 500 * num_cores as u64
     }
-    fn mem_fn(_num_cores: usize, is_smoke: bool) -> usize {
+
+    fn mem_fn(num_cores: usize, is_smoke: bool) -> usize {
         if is_smoke {
             8192
         } else {
-            80_000
+            512 * num_cores + 4096
         }
     }
+
     let bench = RackscaleBench {
         test,
         cmd_fn,
@@ -613,15 +617,19 @@ fn rackscale_memcached_benchmark(transport: RackscaleTransport) {
     }
 
     fn baseline_timeout_fn(num_cores: usize) -> u64 {
-        40_000 * num_cores as u64
+        120_000 + 500 * num_cores as u64
     }
 
     fn rackscale_timeout_fn(num_cores: usize) -> u64 {
-        180_000 + 120_000 * num_cores as u64
+        180_000 + 500 * num_cores as u64
     }
 
     fn mem_fn(num_cores: usize, is_smoke: bool) -> usize {
-        512 * num_cores + if is_smoke { 8192 } else { 36_000 }
+        if is_smoke {
+            8192
+        } else {
+            512 * num_cores + 8192
+        }
     }
 
     let bench = RackscaleBench {
@@ -692,15 +700,19 @@ fn rackscale_monetdb_benchmark(transport: RackscaleTransport) {
     }
 
     fn baseline_timeout_fn(num_cores: usize) -> u64 {
-        40_000 * num_cores as u64
+        120_000 + 500 * num_cores as u64
     }
 
     fn rackscale_timeout_fn(num_cores: usize) -> u64 {
-        180_000 + 120_000 * num_cores as u64
+        180_000 + 500 * num_cores as u64
     }
 
     fn mem_fn(num_cores: usize, is_smoke: bool) -> usize {
-        512 * num_cores + if is_smoke { 8192 } else { 36_000 }
+        if is_smoke {
+            8192
+        } else {
+            512 * num_cores + 8192
+        }
     }
 
     let bench = RackscaleBench {

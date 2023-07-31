@@ -438,7 +438,7 @@ fn s11_rackscale_shmem_leveldb_benchmark() {
         if is_smoke {
             8192
         } else {
-            2048 * (((num_cores + 3 - 1) / 3) * 3)
+            2048 * (((((num_cores + 1) / 2) + 3 - 1) / 3) * 3)
         }
     }
 
@@ -625,14 +625,14 @@ fn rackscale_memcached_benchmark(transport: RackscaleTransport) {
     }
 
     fn rackscale_timeout_fn(num_cores: usize) -> u64 {
-        180_000 + 500 * num_cores as u64
+        180_000 + 1_000 * num_cores as u64
     }
 
     fn mem_fn(num_cores: usize, is_smoke: bool) -> usize {
         if is_smoke {
             8192
         } else {
-            2048 * (((num_cores + 3 - 1) / 3) * 3)
+            2048 * (((((num_cores + 1) / 2) + 3 - 1) / 3) * 3)
         }
     }
 
@@ -715,7 +715,7 @@ fn rackscale_monetdb_benchmark(transport: RackscaleTransport) {
         if is_smoke {
             8192
         } else {
-            2048 * (((num_cores + 3 - 1) / 3) * 3)
+            2048 * (((((num_cores + 1) / 2) + 3 - 1) / 3) * 3)
         }
     }
 

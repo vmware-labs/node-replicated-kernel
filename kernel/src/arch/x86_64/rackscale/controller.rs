@@ -64,11 +64,10 @@ pub(crate) fn run() {
         unreachable!("No supported transport layer specified in kernel argument");
     };
 
+    ClientReadyCount.fetch_add(1, Ordering::SeqCst);
+
     // Wait for all clients to connect before fulfilling any RPCs.
     while !DCMServerReady.load(Ordering::SeqCst) {}
-
-    // Don't modify this line without modifying testutils/rackscale_runner.rs
-    log::warn!("CONTROLLER READY");
 
     server
         .add_client(&CLIENT_REGISTRAR)
@@ -135,6 +134,15 @@ pub(crate) fn poll_interface() {
         .unwrap();
     let _ = server.add_client(&DCM_CLIENT_REGISTRAR).unwrap();
     log::info!("Added DCM server RPC client!");
+
+    // Wait for all clients to initialize before signaling the all-clear
+    while ClientReadyCount.load(Ordering::SeqCst) != (*crate::environment::NUM_MACHINES - 1) as u64
+    {
+    }
+    ClientReadyCount.store(0, Ordering::SeqCst);
+
+    // Don't modify this line without modifying testutils/rackscale_runner.rs
+    log::warn!("CONTROLLER READY");
 
     // Now that server is ready, the clients may be accepted.
     DCMServerReady.store(true, Ordering::SeqCst);

@@ -26,7 +26,6 @@ fn s11_rackscale_shmem_fxmark_benchmark() {
 }
 
 #[test]
-#[ignore]
 #[cfg(not(feature = "baremetal"))]
 fn s11_rackscale_ethernet_fxmark_benchmark() {
     rackscale_fxmark_benchmark(RackscaleTransport::Ethernet);
@@ -137,6 +136,7 @@ fn rackscale_fxmark_benchmark(transport: RackscaleTransport) {
         if is_smoke {
             8192
         } else {
+            // Memory must also be divisible by number of nodes, which could be 1, 2, 3, or 4
             2048 * (((num_cores + 3 - 1) / 3) * 3)
         }
     }
@@ -438,6 +438,7 @@ fn s11_rackscale_shmem_leveldb_benchmark() {
         if is_smoke {
             8192
         } else {
+            // Memory must also be divisible by number of nodes, which could be 1, 2, 3, or 4
             2048 * (((((num_cores + 1) / 2) + 3 - 1) / 3) * 3)
         }
     }
@@ -632,6 +633,7 @@ fn rackscale_memcached_benchmark(transport: RackscaleTransport) {
         if is_smoke {
             8192
         } else {
+            // Memory must also be divisible by number of nodes, which could be 1, 2, 3, or 4
             2048 * (((((num_cores + 1) / 2) + 3 - 1) / 3) * 3)
         }
     }
@@ -715,6 +717,7 @@ fn rackscale_monetdb_benchmark(transport: RackscaleTransport) {
         if is_smoke {
             8192
         } else {
+            // Memory must also be divisible by number of nodes, which could be 1, 2, 3, or 4
             2048 * (((((num_cores + 1) / 2) + 3 - 1) / 3) * 3)
         }
     }

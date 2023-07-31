@@ -469,7 +469,7 @@ impl KernelAllocator {
             }
 
             if base_page_iter.len() > 0 {
-                log::error!(
+                log::debug!(
                     "Losing {:?} base pages of shared memory. Oh well.",
                     base_page_iter.len()
                 );
@@ -639,10 +639,10 @@ unsafe impl GlobalAlloc for KernelAllocator {
                         if is_shmem_addr(ptr as u64, false, false) {
                             panic!("Should not be trying to dealloc non-kernel mapped shmem in kernel dealloc");
                         } else if is_shmem_affinity(affinity) && !is_shmem_addr_with_affinity(ptr as u64, affinity, true) {
-                            log::error!("Trying to deallocate memory not in shmem affinity into shmem allocator - losing this memory. Oh well.");
+                            log::debug!("Trying to deallocate memory not in shmem affinity into shmem allocator - losing this memory. Oh well.");
                             return;
                         } else if !is_shmem_affinity(affinity) && is_shmem_addr(ptr as u64, false, true) {
-                            log::error!("Trying to deallocate shmem into non-shmem allocator - losing this memory. Oh well.");
+                            log::debug!("Trying to deallocate shmem into non-shmem allocator - losing this memory. Oh well.");
                             return;
                         }
                     }
@@ -717,7 +717,7 @@ unsafe impl GlobalAlloc for KernelAllocator {
                             .release_large_page(frame)
                             .expect("Can't deallocate frame");
                     } else {
-                        error!("Loosing large memory region. Oh well.")
+                        log::debug!("Loosing large memory region. Oh well.")
                     }
                 }
             },

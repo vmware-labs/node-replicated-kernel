@@ -294,7 +294,7 @@ fn rackscale_vmops_benchmark(transport: RackscaleTransport, benchtype: VMOpsBenc
         120_000 + 500 * num_cores as u64
     }
     fn rackscale_timeout_fn(num_cores: usize) -> u64 {
-        240_000 + 500 * num_cores as u64
+        240_000 + 1_000 * num_cores as u64
     }
     fn mem_fn(num_cores: usize, is_smoke: bool) -> usize {
         if is_smoke {
@@ -435,13 +435,11 @@ fn s11_rackscale_shmem_leveldb_benchmark() {
     }
 
     fn mem_fn(num_cores: usize, is_smoke: bool) -> usize {
-        let mem_size = if is_smoke {
+        if is_smoke {
             8192
         } else {
-            512 * num_cores + 4096
-        };
-        // memory needs to be divisible by # of nodes, but we'll use cores for now
-        mem_size - (mem_size % num_cores)
+            2048 * (((num_cores + 3 - 1) / 3) * 3)
+        }
     }
 
     let bench = RackscaleBench {
@@ -631,13 +629,11 @@ fn rackscale_memcached_benchmark(transport: RackscaleTransport) {
     }
 
     fn mem_fn(num_cores: usize, is_smoke: bool) -> usize {
-        let mem_size = if is_smoke {
+        if is_smoke {
             8192
         } else {
-            512 * num_cores + 8192
-        };
-        // memory needs to be divisible by # of nodes, but we'll use cores for now
-        mem_size - (mem_size % num_cores)
+            2048 * (((num_cores + 3 - 1) / 3) * 3)
+        }
     }
 
     let bench = RackscaleBench {
@@ -716,13 +712,11 @@ fn rackscale_monetdb_benchmark(transport: RackscaleTransport) {
     }
 
     fn mem_fn(num_cores: usize, is_smoke: bool) -> usize {
-        let mem_size = if is_smoke {
+        if is_smoke {
             8192
         } else {
-            512 * num_cores + 8192
-        };
-        // memory needs to be divisible by # of nodes, but we'll use cores for now
-        mem_size - (mem_size % num_cores)
+            2048 * (((num_cores + 3 - 1) / 3) * 3)
+        }
     }
 
     let bench = RackscaleBench {

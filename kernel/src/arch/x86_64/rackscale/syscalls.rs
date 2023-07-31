@@ -143,8 +143,8 @@ impl VSpaceDispatch<u64> for Arch86LwkSystemCall {
                 }
 
                 if base_page_iter.len() > 0 {
-                    log::error!(
-                    "Losing {:?} base pages of shared memoryn allocated to process {:?}. Oh well.",
+                    log::debug!(
+                    "Losing {:?} base pages of shared memory allocated to process {:?}. Oh well.",
                     base_page_iter.len(),
                     pid,
                 );

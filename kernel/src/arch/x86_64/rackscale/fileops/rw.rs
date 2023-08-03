@@ -11,7 +11,6 @@ use spin::Once;
 
 use kpi::FileOperation;
 use rpc::rpc::*;
-use rpc::RPCClient;
 
 use super::super::kernelrpc::*;
 use super::super::CLIENT_STATE;

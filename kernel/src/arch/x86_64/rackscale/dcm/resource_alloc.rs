@@ -9,8 +9,6 @@ use fallible_collections::FallibleVecGlobal;
 
 use kpi::system::MachineId;
 use rpc::rpc::RPCType;
-use rpc::RPCClient;
-use rpc::RPCServer;
 
 use super::super::kernelrpc::*;
 use super::{DCMOps, DCM_CLIENT, IN_FLIGHT_DCM_ASSIGNMENTS};

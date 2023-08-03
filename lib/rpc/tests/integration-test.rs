@@ -8,10 +8,9 @@ fn test_client_server_shmem_transport() {
     use std::sync::Arc;
     use std::thread;
 
-    use rpc::api::{RPCClient, RPCHandler, RPCServer, RegistrationHandler};
     use rpc::client::Client;
     use rpc::rpc::{RPCError, RPCHeader, RPCType};
-    use rpc::server::Server;
+    use rpc::server::{RPCHandler, RegistrationHandler, Server};
     use rpc::transport::shmem::allocator::ShmemAllocator;
     use rpc::transport::shmem::{Queue, Receiver, Sender};
     use rpc::transport::ShmemTransport;
@@ -82,10 +81,9 @@ fn test_client_shmem_multithread() {
     use std::sync::Arc;
     use std::thread;
 
-    use rpc::api::{RPCClient, RPCHandler, RPCServer, RegistrationHandler};
     use rpc::client::Client;
     use rpc::rpc::{RPCError, RPCHeader, RPCType};
-    use rpc::server::Server;
+    use rpc::server::{RPCHandler, RegistrationHandler, Server};
     use rpc::transport::shmem::allocator::ShmemAllocator;
     use rpc::transport::shmem::{Queue, Receiver, Sender};
     use rpc::transport::ShmemTransport;

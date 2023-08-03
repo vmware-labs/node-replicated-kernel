@@ -9,7 +9,6 @@ use atopology::NodeId;
 use kpi::system::MachineId;
 use kpi::FileOperation;
 use rpc::rpc::*;
-use rpc::RPCClient;
 
 use super::super::controller_state::SHMEM_MEMSLICE_ALLOCATORS;
 use super::super::dcm::resource_alloc::dcm_resource_alloc;

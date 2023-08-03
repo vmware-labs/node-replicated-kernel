@@ -11,7 +11,6 @@ use fallible_collections::{FallibleVec, FallibleVecGlobal};
 use kpi::system::{CpuThread, MachineId};
 use rpc::client::Client;
 use rpc::rpc::{RPCError, RPCHeader};
-use rpc::RPCClient;
 
 use super::dcm::node_registration::dcm_register_node;
 use crate::arch::rackscale::controller_state::{CONTROLLER_STATE, SHMEM_MEMSLICE_ALLOCATORS};

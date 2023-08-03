@@ -3,7 +3,6 @@
 
 use kpi::system::MachineId;
 use rpc::rpc::RPCType;
-use rpc::RPCClient;
 
 use super::{DCMOps, DCM_CLIENT};
 

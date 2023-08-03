@@ -5,7 +5,6 @@ use alloc::vec::Vec;
 
 use kpi::system::MachineId;
 use rpc::rpc::RPCType;
-use rpc::RPCClient;
 
 use super::super::controller_state::SHMEM_MEMSLICE_ALLOCATORS;
 use super::super::get_shmem_frames::ShmemRegion;

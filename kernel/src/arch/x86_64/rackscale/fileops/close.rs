@@ -6,7 +6,6 @@ use core2::io::Result as IOResult;
 use core2::io::Write;
 
 use rpc::rpc::*;
-use rpc::RPCClient;
 
 use crate::error::{KError, KResult};
 use crate::fs::cnrfs;

@@ -8,7 +8,6 @@ use core::cell::Cell;
 use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use smoltcp::time::Instant;
 
-use rpc::api::RPCServer;
 use rpc::rpc::RPCType;
 use rpc::server::Server;
 use rpc::transport::TCPTransport;

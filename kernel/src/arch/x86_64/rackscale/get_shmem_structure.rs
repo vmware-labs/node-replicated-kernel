@@ -11,7 +11,6 @@ use atopology::NodeId;
 use crossbeam_queue::ArrayQueue;
 use node_replication::{Dispatch, Log};
 use rpc::rpc::*;
-use rpc::RPCClient;
 
 use super::client_state::CLIENT_STATE;
 use super::kernelrpc::*;

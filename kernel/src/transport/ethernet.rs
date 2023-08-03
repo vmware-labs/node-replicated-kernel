@@ -102,7 +102,6 @@ pub(crate) fn init_ethernet_rpc(
     use alloc::boxed::Box;
     use rpc::client::Client;
     use rpc::transport::TCPTransport;
-    use rpc::RPCClient;
 
     let rpc_transport = Box::new(
         TCPTransport::new(Some(server_ip), server_port, Arc::clone(&ETHERNET_IFACE))

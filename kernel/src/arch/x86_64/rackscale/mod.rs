@@ -5,7 +5,7 @@
 
 use static_assertions as sa;
 
-use rpc::api::{RPCHandler, RegistrationHandler};
+use rpc::server::{RPCHandler, RegistrationHandler};
 
 use crate::memory::{mcache::MCache, LARGE_PAGE_SIZE};
 

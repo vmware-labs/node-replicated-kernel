@@ -9,7 +9,6 @@ use core2::io::Write;
 
 use kpi::io::{FileFlags, FileModes};
 use rpc::rpc::*;
-use rpc::RPCClient;
 
 use super::super::fileops::get_str_from_payload;
 use super::super::kernelrpc::*;

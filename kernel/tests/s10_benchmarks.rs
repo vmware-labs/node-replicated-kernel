@@ -223,12 +223,13 @@ fn s10_shootdown_simple() {
             cmdline = cmdline.memory(48 * 1024);
         }
 
-        if cfg!(feature = "smoke") && cores > 2 {
-            cmdline = cmdline.nodes(2);
+        let num_nodes = if cfg!(feature = "smoke") && cores > 2 {
+            core::cmp::min(cores, 2)
         } else {
             let max_numa_nodes = cmdline.machine.max_numa_nodes();
-            cmdline = cmdline.nodes(max_numa_nodes);
-        }
+            core::cmp::min(cores, max_numa_nodes)
+        };
+        cmdline = cmdline.nodes(num_nodes);
 
         let mut output = String::new();
         let mut qemu_run = || -> Result<WaitStatus> {

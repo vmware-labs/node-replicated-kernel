@@ -25,7 +25,7 @@ use {
     crate::memory::shmem_affinity::shmem_affinity_to_mid,
     alloc::boxed::Box,
     kpi::system::MachineId,
-    rpc::rpc::MAX_BUFF_LEN,
+    rpc::transport::shmem::queue_mpmc::QUEUE_ENTRY_SIZE,
     rpc::transport::ShmemTransport,
     static_assertions::const_assert,
 };
@@ -307,7 +307,7 @@ const SHMEM_QUEUE_SIZE: usize = 32;
 
 // The total size of two queues(sender and reciever) should be less than the transport size.
 #[cfg(feature = "rpc")]
-const_assert!(2 * SHMEM_QUEUE_SIZE * MAX_BUFF_LEN <= SHMEM_TRANSPORT_SIZE as usize);
+const_assert!(2 * SHMEM_QUEUE_SIZE * QUEUE_ENTRY_SIZE <= SHMEM_TRANSPORT_SIZE as usize);
 
 #[cfg(feature = "rpc")]
 pub(crate) const SHMEM_TRANSPORT_SIZE: u64 = 2 * 1024 * 1024;

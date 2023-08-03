@@ -5,7 +5,7 @@ use alloc::sync::Arc;
 pub mod allocator;
 pub mod transport;
 
-mod queue_mpmc;
+pub mod queue_mpmc;
 pub use queue_mpmc::{Queue, QueueError};
 
 #[repr(transparent)]

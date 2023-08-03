@@ -12,7 +12,8 @@ use crate::transport::Transport;
 pub struct Server<'a> {
     transport: Box<dyn Transport + Send + Sync + 'a>,
     handlers: HashMap<RPCType, &'a RPCHandler>,
-    mbuf: MBuf,
+    hdr: RPCHeader,
+    data: [u8; 8192],
 }
 
 impl<'t, 'a> Server<'a> {
@@ -24,33 +25,36 @@ impl<'t, 'a> Server<'a> {
         Server {
             transport,
             handlers: HashMap::new(),
-            mbuf: MBuf {
-                hdr: RPCHeader::default(),
-                data: [0u8; MAX_BUFF_LEN - HDR_LEN],
-            },
+            hdr: RPCHeader::default(),
+            data: [0u8; 8192],
         }
     }
 
     /// receives next RPC call with RPC ID
     fn receive(&mut self) -> Result<RPCType, RPCError> {
         // Receive request header
-        self.transport.recv_mbuf(&mut self.mbuf)?;
-        Ok(self.mbuf.hdr.msg_type)
+        self.transport
+            .recv_msg(&mut self.hdr, &mut [&mut self.data])?;
+        Ok(self.hdr.msg_type)
     }
 
     /// receives next RPC call with RPC ID
     fn try_receive(&mut self) -> Result<Option<RPCType>, RPCError> {
         // Receive request header
-        if !self.transport.try_recv_mbuf(&mut self.mbuf)? {
+        if !self
+            .transport
+            .try_recv_msg(&mut self.hdr, &mut [&mut self.data])?
+        {
             return Ok(None);
         }
 
-        Ok(Some(self.mbuf.hdr.msg_type))
+        Ok(Some(self.hdr.msg_type))
     }
 
     /// Replies an RPC call with results
     fn reply(&mut self) -> Result<(), RPCError> {
-        self.transport.send_mbuf(&mut self.mbuf)
+        self.transport
+            .send_msg(&self.hdr, &[&self.data[..self.hdr.msg_len as usize]])
     }
 }
 
@@ -78,30 +82,30 @@ impl<'a> RPCServer<'a> for Server<'a> {
         // Receive registration information
         self.receive()?;
 
-        let state = func(&mut self.mbuf.hdr, &mut self.mbuf.data)?;
+        func(&mut self.hdr, &mut self.data)?;
 
         // No result for registration
-        let hdr = &mut self.mbuf.hdr;
+        let hdr = &mut self.hdr;
         hdr.msg_len = 0;
 
         // Send response
         self.reply()?;
-        Ok(state)
+        Ok(())
     }
 
     /// Handle 1 RPC per client
     fn handle(&mut self) -> Result<(), RPCError> {
         let rpc_id = self.receive()?;
-        let new_state = match self.handlers.get(&rpc_id) {
+        match self.handlers.get(&rpc_id) {
             Some(func) => {
-                func(&mut self.mbuf.hdr, &mut self.mbuf.data)?;
+                func(&mut self.hdr, &mut self.data)?;
                 self.reply()?
             }
             None => {
                 return Err(RPCError::NoHandlerForRPCType);
             }
         };
-        Ok(new_state)
+        Ok(())
     }
 
     /// Try to handle 1 RPC per client, if data is available (non-blocking if RPCs not available)
@@ -109,7 +113,7 @@ impl<'a> RPCServer<'a> for Server<'a> {
         match self.try_receive()? {
             Some(rpc_id) => match self.handlers.get(&rpc_id) {
                 Some(func) => {
-                    func(&mut self.mbuf.hdr, &mut self.mbuf.data)?;
+                    func(&mut self.hdr, &mut self.data)?;
                     self.reply()?;
                     Ok(true)
                 }

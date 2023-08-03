@@ -58,37 +58,6 @@ impl<'a> Transport for ShmemTransport<'a> {
         QUEUE_ENTRY_SIZE
     }
 
-    fn send_mbuf(&self, mbuf: &MBuf) -> Result<(), RPCError> {
-        match self
-            .tx
-            .send(&[&unsafe { mbuf.as_bytes() }[..HDR_LEN + mbuf.hdr.msg_len as usize]])
-        {
-            true => Ok(()),
-            false => Err(RPCError::TransportError),
-        }
-    }
-
-    fn try_send_mbuf(&self, mbuf: &MBuf) -> Result<bool, RPCError> {
-        Ok(self
-            .tx
-            .try_send(&[&unsafe { mbuf.as_bytes() }[..HDR_LEN + mbuf.hdr.msg_len as usize]]))
-    }
-
-    fn recv_mbuf(&self, mbuf: &mut MBuf) -> Result<(), RPCError> {
-        self.rx.recv(&mut [&mut unsafe { mbuf.as_mut_bytes() }[..]]);
-        Ok(())
-    }
-
-    fn try_recv_mbuf(&self, mbuf: &mut MBuf) -> Result<bool, RPCError> {
-        match self
-            .rx
-            .try_recv(&mut [&mut unsafe { mbuf.as_mut_bytes() }[..]])
-        {
-            Ok(_) => Ok(true),
-            Err(_) => Ok(false),
-        }
-    }
-
     fn send_msg(&self, hdr: &RPCHeader, payload: &[&[u8]]) -> Result<(), RPCError> {
         let mut pointers: [&[u8]; 7] = [&[1]; 7];
         pointers[0] = unsafe { &hdr.as_bytes()[..] };

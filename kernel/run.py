@@ -453,7 +453,7 @@ def run_qemu(args):
     num_host_numa_nodes = len(host_numa_nodes_list)
     if args.qemu_nodes and args.qemu_nodes > 0:
         for node in range(0, args.qemu_nodes):
-            if args.qemu_cores > 1:
+            if args.qemu_cores > 0:
                 offset = args.qemu_node_offset if args.qemu_node_offset else 0
                 mem_per_node = args.qemu_memory / args.qemu_nodes
                 prealloc = "on" if args.qemu_prealloc else "off"

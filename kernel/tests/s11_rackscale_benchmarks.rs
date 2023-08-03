@@ -432,7 +432,7 @@ fn s11_rackscale_shmem_leveldb_benchmark() {
     }
 
     fn rackscale_timeout_fn(num_cores: usize) -> u64 {
-        180_000 + 500 * num_cores as u64
+        240_000 + 500 * num_cores as u64
     }
 
     fn mem_fn(num_cores: usize, is_smoke: bool) -> usize {

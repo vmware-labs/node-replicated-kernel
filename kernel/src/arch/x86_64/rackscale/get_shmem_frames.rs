@@ -11,7 +11,6 @@ use fallible_collections::FallibleVecGlobal;
 use atopology::NodeId;
 use kpi::system::MachineId;
 use rpc::rpc::*;
-use rpc::RPCClient;
 
 use super::client_state::CLIENT_STATE;
 use super::controller_state::SHMEM_MEMSLICE_ALLOCATORS;

@@ -13,10 +13,7 @@ extern crate core2;
 extern crate smoltcp;
 extern crate vmxnet3;
 
-pub mod api;
 pub mod client;
 pub mod rpc;
 pub mod server;
 pub mod transport;
-
-pub use api::{RPCClient, RPCServer};

@@ -15,12 +15,10 @@ use smoltcp::wire::IpAddress;
 use spin::Mutex;
 
 use kpi::system::MachineId;
-use rpc::api::{RPCHandler, RegistrationHandler};
 use rpc::client::Client;
 use rpc::rpc::{RPCError, RPCHeader, RPCType};
-use rpc::server::Server;
+use rpc::server::{RPCHandler, RegistrationHandler, Server};
 use rpc::transport::TCPTransport;
-use rpc::RPCServer;
 
 use crate::error::{KError, KResult};
 use crate::transport::ethernet::{init_ethernet_rpc, ETHERNET_IFACE};

@@ -10,7 +10,6 @@ use core2::io::Write;
 use klogger::sprint;
 use kpi::system::MachineId;
 use rpc::rpc::*;
-use rpc::RPCClient;
 
 use super::super::kernelrpc::*;
 use super::super::CLIENT_STATE;

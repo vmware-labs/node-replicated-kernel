@@ -10,7 +10,6 @@ use fallible_collections::FallibleVecGlobal;
 
 use kpi::system::CpuThread;
 use rpc::rpc::*;
-use rpc::RPCClient;
 
 use super::super::controller_state::CONTROLLER_STATE;
 use super::super::kernelrpc::*;

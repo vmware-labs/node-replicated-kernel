@@ -9,7 +9,6 @@ use atopology::NodeId;
 use kpi::process::FrameId;
 use kpi::FileOperation;
 use rpc::rpc::*;
-use rpc::RPCClient;
 
 use super::super::dcm::resource_release::dcm_resource_release;
 use super::super::kernelrpc::*;

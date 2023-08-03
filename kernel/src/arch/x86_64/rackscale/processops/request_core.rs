@@ -6,7 +6,6 @@ use core2::io::Result as IOResult;
 use core2::io::Write;
 use kpi::system::MachineId;
 use rpc::rpc::*;
-use rpc::RPCClient;
 
 use super::super::controller_state::CONTROLLER_STATE;
 use super::super::dcm::resource_alloc::dcm_resource_alloc;

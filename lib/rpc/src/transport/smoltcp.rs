@@ -280,34 +280,6 @@ impl Transport for TCPTransport<'_> {
         }
     }
 
-    fn send_mbuf(&self, mbuf: &MBuf) -> Result<(), RPCError> {
-        trace!("try_send_mbuf");
-        self.send(
-            &unsafe { mbuf.as_bytes() }[..HDR_LEN + mbuf.hdr.msg_len as usize],
-            false,
-        )?;
-        Ok(())
-    }
-
-    fn try_send_mbuf(&self, mbuf: &MBuf) -> Result<bool, RPCError> {
-        trace!("try_send_mbuf");
-        self.send(
-            &unsafe { mbuf.as_bytes() }[..HDR_LEN + mbuf.hdr.msg_len as usize],
-            true,
-        )
-    }
-
-    fn recv_mbuf(&self, mbuf: &mut MBuf) -> Result<(), RPCError> {
-        trace!("recv_mbuf");
-        self.recv_msg(&mut mbuf.hdr, &mut [&mut mbuf.data], false)?;
-        Ok(())
-    }
-
-    fn try_recv_mbuf(&self, mbuf: &mut MBuf) -> Result<bool, RPCError> {
-        trace!("try_recv_mbuf");
-        self.recv_msg(&mut mbuf.hdr, &mut [&mut mbuf.data], true)
-    }
-
     fn recv_msg(&self, hdr: &mut RPCHeader, payload: &mut [&mut [u8]]) -> Result<(), RPCError> {
         trace!("recv_msg");
         self.recv_msg(hdr, payload, false)?;

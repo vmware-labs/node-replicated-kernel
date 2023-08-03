@@ -34,7 +34,10 @@ pub(crate) fn rpc_close(pid: usize, fd: FileDescriptor) -> KResult<(u64, u64)> {
     let mut res_data = [0u8; core::mem::size_of::<KResult<(u64, u64)>>()];
 
     // Call Close() RPC
-    CLIENT_STATE.rpc_client.lock().call(
+    CLIENT_STATE.rpc_client.call(
+        kpi::system::mtid_from_gtid(*crate::environment::CORE_ID)
+            .try_into()
+            .unwrap(),
         KernelRpc::Close as RPCType,
         &[&req_data],
         &mut [&mut res_data],

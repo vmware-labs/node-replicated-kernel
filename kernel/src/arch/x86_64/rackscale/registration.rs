@@ -83,7 +83,7 @@ pub(crate) fn initialize_client(
             .expect("Failed to encode hardware thread vector");
         client.connect(&[&req_data])?;
     } else {
-        client.connect(&[&[]])?;
+        client.connect(&[])?;
     }
     Ok(client)
 }

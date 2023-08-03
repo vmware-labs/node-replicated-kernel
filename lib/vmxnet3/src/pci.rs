@@ -59,12 +59,14 @@ pub(crate) unsafe fn busread(bar_base: u64, offset: u64) -> u32 {
 }
 
 pub(crate) unsafe fn buswrite(bar_base: u64, offset: u64, value: u32) {
+    /*
     trace!(
         "buswrite ({:#x} + {:#x}) = value({:#x})",
         bar_base,
         offset,
         value
     );
+    */
     *((bar_base + offset) as *mut u32) = value;
 }
 

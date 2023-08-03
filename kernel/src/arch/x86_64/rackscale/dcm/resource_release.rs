@@ -61,8 +61,10 @@ pub(crate) fn dcm_resource_release(mid: MachineId, pid: usize, is_core: bool) ->
     // Send call, get allocation response in return
     {
         DCM_CLIENT
-            .lock()
             .call(
+                kpi::system::mtid_from_gtid(*crate::environment::CORE_ID)
+                    .try_into()
+                    .unwrap(),
                 DCMOps::ResourceRelease as RPCType,
                 unsafe { &[req.as_bytes()] },
                 unsafe { &mut [res.as_mut_bytes()] },

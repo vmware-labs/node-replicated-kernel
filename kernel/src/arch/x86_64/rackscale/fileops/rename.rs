@@ -44,7 +44,10 @@ pub(crate) fn rpc_rename<P: AsRef<[u8]> + Debug>(
     let mut res_data = [0u8; core::mem::size_of::<KResult<(u64, u64)>>()];
 
     // Call the RPC
-    CLIENT_STATE.rpc_client.lock().call(
+    CLIENT_STATE.rpc_client.call(
+        kpi::system::mtid_from_gtid(*crate::environment::CORE_ID)
+            .try_into()
+            .unwrap(),
         KernelRpc::FileRename as RPCType,
         &[&req_data, oldname.as_ref(), newname.as_ref()],
         &mut [&mut res_data],

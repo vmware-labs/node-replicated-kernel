@@ -398,15 +398,6 @@ pub(crate) fn get_affinity_shmem_by_mid(mid: MachineId) -> Frame {
         region.base = region.base + SHMEM_TRANSPORT_SIZE;
         region.size = region.size - SHMEM_TRANSPORT_SIZE as usize;
     };
-
-    log::trace!(
-        "Shmem affinity region: base={:x}, size={:x}, affinity={:x}, range: [{:X}-{:X}]",
-        region.base,
-        region.size,
-        region.affinity,
-        region.base,
-        region.base + region.size,
-    );
     region
 }
 

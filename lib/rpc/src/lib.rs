@@ -9,6 +9,7 @@ extern crate std;
 
 extern crate abomonation;
 extern crate alloc;
+extern crate arrayvec;
 extern crate core2;
 extern crate smoltcp;
 extern crate vmxnet3;

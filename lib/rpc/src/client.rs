@@ -8,43 +8,49 @@ use crate::transport::Transport;
 
 pub struct Client {
     transport: Box<dyn Transport + Send + Sync>,
-    hdr: RPCHeader,
 }
 
 impl Client {
     pub fn new<T: 'static + Transport + Send + Sync>(transport: Box<T>) -> Client {
-        Client {
-            transport,
-            hdr: RPCHeader::default(),
-        }
+        Client { transport }
     }
 
     /// Registers with a RPC server
     pub fn connect(&mut self, data_in: &[&[u8]]) -> Result<(), RPCError> {
         self.transport.client_connect()?;
-        self.call(RPC_TYPE_CONNECT, data_in, &mut [])
+        let call_ret = self.call(0, RPC_TYPE_CONNECT, data_in, &mut [])?;
+        if self.transport.has_response() {
+            Ok(call_ret)
+        } else {
+            let mut hdr = RPCHeader::default();
+            self.transport.recv_msg(Some(0), &mut hdr, &mut [])
+        }
     }
 
     /// Calls a remote RPC function with ID
+    /// Safety: MsgId should be unique (e.g., no other RPCs in-flight with that same MsgId)
     pub fn call(
-        &mut self,
+        &self,
+        msg_id: MsgId,
         rpc_id: RPCType,
         data_in: &[&[u8]],
         data_out: &mut [&mut [u8]],
     ) -> Result<(), RPCError> {
-        // Calculate total data_out len
+        // Calculate total data_out len, and create header
         let data_in_len = data_in.iter().fold(0, |acc, x| acc + x.len());
+        let mut hdr = RPCHeader {
+            msg_id,
+            msg_type: rpc_id,
+            msg_len: data_in_len as MsgLen,
+        };
 
-        // Create request header and send message. It is safe to create a mutable reference here
-        // because it is assumed there will only be one invocation of call() running at a time, and only
-        // the client has access to this field.
-        let mut hdr = &mut self.hdr;
-        hdr.msg_type = rpc_id;
-        hdr.msg_len = data_in_len as u64;
-        self.transport.send_msg(hdr, data_in)?;
+        // Send message.
+        self.transport.send_msg(&hdr, data_in)?;
 
         // Receive the response
-        self.transport.recv_msg(hdr, data_out)?;
+        if self.transport.has_response() {
+            self.transport.recv_msg(Some(msg_id), &mut hdr, data_out)?;
+        }
         Ok(())
     }
 }

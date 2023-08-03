@@ -35,7 +35,10 @@ pub(crate) fn rpc_log(msg: String) -> KResult<(u64, u64)> {
 
         // Construct result buffer and call RPC
         let mut res_data = [0u8; core::mem::size_of::<KResult<(u64, u64)>>()];
-        CLIENT_STATE.rpc_client.lock().call(
+        CLIENT_STATE.rpc_client.call(
+            kpi::system::mtid_from_gtid(*crate::environment::CORE_ID)
+                .try_into()
+                .unwrap(),
             KernelRpc::Log as RPCType,
             &[&req_data, print_str.as_ref()],
             &mut [&mut res_data],

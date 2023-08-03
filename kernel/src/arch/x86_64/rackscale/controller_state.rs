@@ -94,11 +94,11 @@ impl ThreadMap {
 /// This is the state the controller records about each client
 pub(crate) struct ControllerState {
     /// A composite list of all hardware threads
-    hw_threads_all: Arc<Mutex<ArrayVec<CpuThread, { MAX_MACHINES * MAX_CORES }>>>,
+    hw_threads_all: Mutex<ArrayVec<CpuThread, { MAX_MACHINES * MAX_CORES }>>,
     /// Bit maps to keep track of free/busy hw threads. Index is machine_id - 1
-    thread_maps: Arc<ArrayVec<Mutex<ThreadMap>, MAX_MACHINES>>,
+    thread_maps: ArrayVec<Mutex<ThreadMap>, MAX_MACHINES>,
     /// The NodeId of each thread, organized by client. Index is machine_id - 1
-    affinities_per_client: Arc<ArrayVec<Mutex<ArrayVec<NodeId, MAX_CORES>>, MAX_MACHINES>>,
+    affinities_per_client: ArrayVec<Mutex<ArrayVec<NodeId, MAX_CORES>>, MAX_MACHINES>,
 }
 
 impl ControllerState {
@@ -141,17 +141,17 @@ impl ControllerState {
 
 /// State the controller maintains about each client.
 lazy_static! {
-    pub(crate) static ref CONTROLLER_STATE: ControllerState = {
+    pub(crate) static ref CONTROLLER_STATE: Arc<ControllerState> = {
         let mut affinities_per_client = ArrayVec::new();
         let mut thread_maps = ArrayVec::new();
         for i in 0..MAX_MACHINES {
             affinities_per_client.push(Mutex::new(ArrayVec::new()));
             thread_maps.push(Mutex::new(ThreadMap::new()));
         }
-        ControllerState {
-            hw_threads_all: Arc::new(Mutex::new(ArrayVec::new())),
-            thread_maps: Arc::new(thread_maps),
-            affinities_per_client: Arc::new(affinities_per_client),
-        }
+        Arc::new(ControllerState {
+            hw_threads_all: Mutex::new(ArrayVec::new()),
+            thread_maps: thread_maps,
+            affinities_per_client: affinities_per_client,
+        })
     };
 }

@@ -48,14 +48,8 @@ impl<'a> ShmemTransport<'a> {
 }
 
 impl<'a> Transport for ShmemTransport<'a> {
-    /// Maximum per-send payload size
-    fn max_send(&self) -> usize {
-        QUEUE_ENTRY_SIZE
-    }
-
-    /// Maximum per-send payload size
-    fn max_recv(&self) -> usize {
-        QUEUE_ENTRY_SIZE
+    fn has_response(&self) -> bool {
+        false
     }
 
     fn send_msg(&self, hdr: &RPCHeader, payload: &[&[u8]]) -> Result<(), RPCError> {
@@ -81,7 +75,12 @@ impl<'a> Transport for ShmemTransport<'a> {
         Ok(self.tx.try_send(&pointers[..payload.len() + 1]))
     }
 
-    fn recv_msg(&self, hdr: &mut RPCHeader, payload: &mut [&mut [u8]]) -> Result<(), RPCError> {
+    fn recv_msg(
+        &self,
+        _msg_id: Option<MsgId>,
+        hdr: &mut RPCHeader,
+        payload: &mut [&mut [u8]],
+    ) -> Result<(), RPCError> {
         if payload.is_empty() {
             self.rx.recv(&mut [unsafe { &mut hdr.as_mut_bytes()[..] }]);
             return Ok(());
@@ -108,6 +107,7 @@ impl<'a> Transport for ShmemTransport<'a> {
 
     fn try_recv_msg(
         &self,
+        _msg_id: Option<MsgId>,
         hdr: &mut RPCHeader,
         payload: &mut [&mut [u8]],
     ) -> Result<bool, RPCError> {

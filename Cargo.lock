@@ -1645,8 +1645,8 @@ name = "rpc"
 version = "0.1.0"
 dependencies = [
  "abomonation",
+ "arrayvec",
  "core2",
- "hashbrown 0.11.2",
  "lazy_static",
  "log",
  "rawtime",

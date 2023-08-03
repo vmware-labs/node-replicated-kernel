@@ -65,8 +65,10 @@ pub(crate) fn rpc_get_shmem_structure(
     let mut res_data = [0u8; core::mem::size_of::<[u64; MAX_PROCESSES]>()];
     CLIENT_STATE
         .rpc_client
-        .lock()
         .call(
+            kpi::system::mtid_from_gtid(*crate::environment::CORE_ID)
+                .try_into()
+                .unwrap(),
             KernelRpc::GetShmemStructure as RPCType,
             &[&req_data],
             &mut [&mut res_data[..res_size]],
@@ -145,7 +147,7 @@ pub(crate) fn handle_get_shmem_structure(
 
             // Modify header and write into output buffer
             unsafe { encode(&logs, &mut payload) }.unwrap();
-            hdr.msg_len = core::mem::size_of::<[u64; MAX_PROCESSES]>() as u64;
+            hdr.msg_len = core::mem::size_of::<[u64; MAX_PROCESSES]>() as MsgLen;
         }
         ShmemStructure::NrLog => {
             let log_clone = Arc::into_raw(Arc::clone(&NR_LOG));
@@ -155,7 +157,7 @@ pub(crate) fn handle_get_shmem_structure(
 
             // Modify header and write into output buffer
             unsafe { encode(&[log_paddr], &mut payload) }.unwrap();
-            hdr.msg_len = core::mem::size_of::<[u64; 1]>() as u64;
+            hdr.msg_len = core::mem::size_of::<[u64; 1]>() as MsgLen;
         }
         ShmemStructure::WorkQueues => {
             let client_workqueue_clone = Arc::into_raw(Arc::clone(&RACKSCALE_CLIENT_WORKQUEUES));
@@ -168,7 +170,7 @@ pub(crate) fn handle_get_shmem_structure(
 
             // Modify header and write into output buffer
             unsafe { encode(&[arc_workqueue_paddr], &mut payload) }.unwrap();
-            hdr.msg_len = core::mem::size_of::<[u64; 1]>() as u64;
+            hdr.msg_len = core::mem::size_of::<[u64; 1]>() as MsgLen;
         }
     }
 

@@ -23,15 +23,18 @@ pub enum RPCError {
 }
 unsafe_abomonate!(RPCError);
 
-// TODO(efficiency): type could probably be u8, but this seems easier for alignment w/ DCM?
-pub type RPCType = u64;
-pub const RPC_TYPE_CONNECT: u64 = 0u64;
+pub type RPCType = u8;
+pub const RPC_TYPE_CONNECT: u8 = 0u8;
+pub type MsgId = u8;
+pub type MsgLen = u16;
 
-#[derive(Debug, Default)]
-#[repr(C)]
+#[derive(Debug, Default, Copy, Clone)]
+#[repr(C, packed)]
 pub struct RPCHeader {
+    // Note: some transports assume that the first byte is the ID. Don't change this without changing them too.
+    pub msg_id: MsgId,
     pub msg_type: RPCType,
-    pub msg_len: u64,
+    pub msg_len: MsgLen,
 }
 
 pub const HDR_LEN: usize = core::mem::size_of::<RPCHeader>();

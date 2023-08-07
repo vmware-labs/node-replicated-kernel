@@ -7,7 +7,7 @@ use core::fmt::Debug;
 use alloc::sync::Arc;
 use hashbrown::HashMap;
 use log::{error, trace};
-use node_replication::{Dispatch, Replica, ReplicaToken};
+use nr2::nr::{NodeReplicated, ThreadToken, Dispatch};
 use spin::Once;
 
 #[cfg(feature = "rackscale")]
@@ -19,18 +19,18 @@ use crate::process::{Pid, MAX_PROCESSES};
 
 /// Kernel scheduler / process mgmt. replica
 #[thread_local]
-pub(crate) static NR_REPLICA: Once<(Arc<Replica<'static, KernelNode>>, ReplicaToken)> = Once::new();
+pub(crate) static NR_REPLICA: Once<(Arc<NodeReplicated<KernelNode>>, ThreadToken)> = Once::new();
 
 // Base nr log. The rackscale controller needs to save a reference to this, so it can give
 // clones to client so they can create replicas of their own.
 #[cfg(feature = "rackscale")]
 lazy_static! {
-    pub(crate) static ref NR_LOG: Arc<node_replication::Log<'static, Op>> = {
+    pub(crate) static ref NR_LOG: Arc<nr2::nr::Log<Op>> = {
         if crate::CMDLINE
             .get()
             .map_or(false, |c| c.mode == crate::cmdline::Mode::Controller)
         {
-            use node_replication::Log;
+            use nr2::nr::Log;
             use crate::arch::kcb::per_core_mem;
             use crate::memory::{LARGE_PAGE_SIZE, shmem_affinity::local_shmem_affinity};
 
@@ -47,7 +47,7 @@ lazy_static! {
 
             log
         } else {
-            use node_replication::Log;
+            use nr2::nr::Log;
             use crate::memory::{paddr_to_kernel_vaddr, PAddr};
 
             use crate::arch::rackscale::get_shmem_structure::{rpc_get_shmem_structure, ShmemStructure};
@@ -99,6 +99,8 @@ pub(crate) struct CoreInfo {
     pub entry_point: VAddr,
 }
 
+
+#[derive(Debug, Clone)]
 pub(crate) struct KernelNode {
     process_map: HashMap<Pid, ()>,
     scheduler_map: HashMap<kpi::system::GlobalThreadId, CoreInfo>,

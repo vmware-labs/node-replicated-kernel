@@ -15,7 +15,7 @@ use arrayvec::ArrayVec;
 use kpi::process::FrameId;
 use lazy_static::lazy_static;
 
-use node_replication::{Dispatch, Log, Replica};
+use nr2::nr::{Dispatch, Log, Replica};
 
 use crate::arch::kcb::get_kcb;
 use crate::error::{KError, KResult};

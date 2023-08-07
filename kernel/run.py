@@ -769,8 +769,7 @@ def configure_dcm_scheduler(args):
         # Download jar if necessary
         if not os.path.exists(dcm_path):
             subprocess.run("wget https://github.com/hunhoffe/nrk-dcm-scheduler/releases/download/release-{}/{} -P {}".format(
-                DCM_SCHEDULER_VERSION, dcm_jar, jar_dir), shell=True, check=True, timeout=10)
-
+                DCM_SCHEDULER_VERSION, dcm_jar, jar_dir), shell=True, check=True, timeout=120)
     # Create consistent symlink location for the DCM scheduler jar
     if os.path.exists(symlink_jar_path) or os.path.islink(symlink_jar_path):
         os.unlink(symlink_jar_path)

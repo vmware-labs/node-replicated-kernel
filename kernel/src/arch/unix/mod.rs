@@ -10,7 +10,7 @@ use cnr::Replica as MlnrReplica;
 use ctor::ctor;
 use fallible_collections::TryClone;
 use log::{debug, info};
-use node_replication::{Log, Replica};
+use nr2::nr::{Log, Replica};
 use x86::current::paging::HUGE_PAGE_SIZE;
 
 use crate::fs::cnrfs::MlnrKernelNode;

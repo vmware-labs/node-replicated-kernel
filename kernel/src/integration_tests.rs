@@ -422,7 +422,7 @@ fn coreboot_nrlog() {
     use core::sync::atomic::{AtomicBool, Ordering};
     use klogger::sprintln;
     use log::info;
-    use node_replication::Log;
+    use nr2::Log;
 
     let log: Arc<Log<usize>> =
         Arc::try_new(Log::<usize>::new(1024 * 1024 * 1)).expect("Can't Arc this");

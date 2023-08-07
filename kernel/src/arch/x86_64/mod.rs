@@ -23,6 +23,7 @@ use alloc::sync::Arc;
 use core::mem::transmute;
 use core::sync::atomic::AtomicBool;
 use core::sync::atomic::Ordering;
+use core::num::NonZeroUsize;
 
 #[cfg(feature = "rackscale")]
 use crate::nr::NR_LOG;
@@ -31,10 +32,8 @@ use cnr::Replica as MlnrReplica;
 use fallible_collections::TryClone;
 use klogger::sprint;
 use log::{debug, error, info};
-use node_replication::Replica;
+use nr2::nr::{AffinityChange, NodeReplicated};
 use x86::{controlregs, cpuid};
-#[cfg(not(feature = "rackscale"))]
-use {crate::nr::Op, node_replication::Log};
 
 use crate::cmdline::CommandLineArguments;
 use crate::fs::cnrfs::MlnrKernelNode;
@@ -194,7 +193,7 @@ pub(crate) fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
     serial::init();
 
     {
-        let local_ridx = args.replica.register().unwrap();
+        let local_ridx = args.replica.register(args.node).unwrap();
         crate::nr::NR_REPLICA.call_once(|| (args.replica.clone(), local_ridx));
 
         #[cfg(feature = "rackscale")]
@@ -244,9 +243,6 @@ pub(crate) fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
 #[start]
 #[no_mangle]
 fn _start(argc: isize, _argv: *const *const u8) -> isize {
-    #[cfg(not(feature = "rackscale"))]
-    use crate::memory::LARGE_PAGE_SIZE;
-
     // Very early init:
     sprint!("\r\n");
     sprint!("NRK booting on x86_64...\r\n");
@@ -454,16 +450,27 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     // Set-up interrupt routing drivers (I/O APIC controllers)
     irq::ioapic_initialize();
 
-    // Create the global operation log and first replica and store it (needs
-    // TLS)
+
+    // Let's go with one replica per NUMA node for now:
+    let numa_nodes = core::cmp::max(1, atopology::MACHINE_TOPOLOGY.num_nodes());
+    let numa_nodes = NonZeroUsize::new(numa_nodes).expect("At least one NUMA node");
+
     #[cfg(not(feature = "rackscale"))]
-    let (log, bsp_replica) = {
-        let log: Arc<Log<Op>> = Arc::try_new(Log::<Op>::new(LARGE_PAGE_SIZE))
-            .expect("Not enough memory to initialize system");
-        let bsp_replica = Replica::<KernelNode>::new(&log);
-        let local_ridx = bsp_replica.register().unwrap();
-        crate::nr::NR_REPLICA.call_once(|| (bsp_replica.clone(), local_ridx));
-        (log, bsp_replica)
+    let kernel_node = {
+        // Create the global operation log and first replica and store it (needs
+        // TLS)
+        let kernel_node: Arc<NodeReplicated<KernelNode>> = Arc::try_new(NodeReplicated::new(numa_nodes, |afc: AffinityChange| { 
+            let pcm = kcb::per_core_mem();
+            match afc {
+                AffinityChange::Replica(r) => pcm.set_mem_affinity(r).expect("Can't set affinity"),
+                AffinityChange::Revert(orig) => pcm.set_mem_affinity(orig).expect("Can't set affinity"),
+            }
+            return 0; // xxx
+            }).expect("Not enough memory to initialize system")).expect("Not enough memory to initialize system");
+
+        let local_ridx = kernel_node.register(0).unwrap();
+        crate::nr::NR_REPLICA.call_once(|| (kernel_node.clone(), local_ridx));
+        kernel_node
     };
 
     // Starting to initialize file-system
@@ -541,7 +548,7 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     }
 
     // Bring up the rest of the system (needs topology, APIC, and global memory)
-    coreboot::boot_app_cores(log.clone(), bsp_replica, fs_logs, fs_replica);
+    coreboot::boot_app_cores(kernel_node, fs_logs, fs_replica);
 
     // Done with initialization, now we go in
     // the arch-independent part:

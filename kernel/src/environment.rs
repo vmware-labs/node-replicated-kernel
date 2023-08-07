@@ -58,7 +58,7 @@ pub fn init_topology() {
         "We don't support as many replicas as we have NUMA nodes."
     );
     assert!(
-        node_replication::MAX_REPLICAS_PER_LOG >= nodes,
+        nr2::nr::MAX_REPLICAS_PER_LOG >= nodes,
         "We don't support as many replicas as we have NUMA nodes."
     );
     assert!(

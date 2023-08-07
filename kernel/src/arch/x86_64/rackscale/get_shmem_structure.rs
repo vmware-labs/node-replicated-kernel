@@ -9,7 +9,7 @@ use core2::io::Write;
 
 use atopology::NodeId;
 use crossbeam_queue::ArrayQueue;
-use node_replication::{Dispatch, Log};
+use nr2::nr::{Dispatch, Log};
 use rpc::rpc::*;
 use rpc::RPCClient;
 

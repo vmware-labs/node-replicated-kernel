@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
 use alloc::boxed::Box;
-use hashbrown::HashMap;
 use log::debug;
+
+use arrayvec::ArrayVec;
 
 use crate::rpc::*;
 use crate::transport::Transport;
@@ -16,7 +17,7 @@ pub type RegistrationHandler = fn(hdr: &mut RPCHeader, payload: &mut [u8]) -> Re
 
 pub struct Server<'a> {
     transport: Box<dyn Transport + Send + Sync + 'a>,
-    handlers: HashMap<RPCType, &'a RPCHandler>,
+    handlers: ArrayVec<Option<&'a RPCHandler>, MAX_RPC_TYPE>,
     hdr: RPCHeader,
     data: [u8; 8192],
 }
@@ -26,10 +27,14 @@ impl<'t, 'a> Server<'a> {
     where
         't: 'a,
     {
+        let mut handlers = ArrayVec::new();
+        for _ in 0..MAX_RPC_TYPE {
+            handlers.push(None);
+        }
         // Initialize the server struct
         Server {
             transport,
-            handlers: HashMap::new(),
+            handlers,
             hdr: RPCHeader::default(),
             data: [0u8; 8192],
         }
@@ -40,11 +45,13 @@ impl<'t, 'a> Server<'a> {
     where
         'c: 'a,
     {
-        if self.handlers.contains_key(&rpc_id) {
-            return Err(RPCError::DuplicateRPCType);
+        match self.handlers[rpc_id as usize] {
+            Some(_) => Err(RPCError::DuplicateRPCType),
+            None => {
+                self.handlers[rpc_id as usize] = Some(handler);
+                Ok(())
+            }
         }
-        self.handlers.insert(rpc_id, handler);
-        Ok(())
     }
 
     /// Accept a client
@@ -71,7 +78,7 @@ impl<'t, 'a> Server<'a> {
     /// Handle 1 RPC per client
     pub fn handle(&mut self) -> Result<(), RPCError> {
         let rpc_id = self.receive()?;
-        match self.handlers.get(&rpc_id) {
+        match self.handlers[rpc_id as usize] {
             Some(func) => {
                 func(&mut self.hdr, &mut self.data)?;
                 self.reply()?
@@ -86,7 +93,7 @@ impl<'t, 'a> Server<'a> {
     /// Try to handle 1 RPC per client, if data is available (non-blocking if RPCs not available)
     pub fn try_handle(&mut self) -> Result<bool, RPCError> {
         match self.try_receive()? {
-            Some(rpc_id) => match self.handlers.get(&rpc_id) {
+            Some(rpc_id) => match self.handlers[rpc_id as usize] {
                 Some(func) => {
                     func(&mut self.hdr, &mut self.data)?;
                     self.reply()?;

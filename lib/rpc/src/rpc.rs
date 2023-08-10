@@ -25,7 +25,9 @@ unsafe_abomonate!(RPCError);
 
 pub type RPCType = u8;
 pub const RPC_TYPE_CONNECT: u8 = 0u8;
+pub const MAX_RPC_TYPE: usize = 256; // Max # of RPC types
 pub type MsgId = u8;
+pub const MAX_INFLIGHT_MSGS: usize = 256; // Max # of MsgIds
 pub type MsgLen = u16;
 
 #[derive(Debug, Default, Copy, Clone)]

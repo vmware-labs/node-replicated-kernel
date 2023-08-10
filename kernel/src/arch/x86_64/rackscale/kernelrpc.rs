@@ -88,7 +88,7 @@ impl TryFrom<RPCType> for KernelRpc {
     }
 }
 
-pub(crate) const KernelRpcRes_SIZE: u64 = core::mem::size_of::<KResult<(u64, u64)>>() as u64;
+pub(crate) const KernelRpcRes_SIZE: u16 = core::mem::size_of::<KResult<(u64, u64)>>() as MsgLen;
 
 #[inline(always)]
 pub(crate) fn construct_error_ret(hdr: &mut RPCHeader, payload: &mut [u8], err: KError) {
@@ -111,5 +111,5 @@ pub(crate) fn construct_ret_extra_data(
     unsafe { encode(&res, &mut payload) }.unwrap();
 
     // Modify header and write into output buffer
-    hdr.msg_len = KernelRpcRes_SIZE + additional_data_len;
+    hdr.msg_len = KernelRpcRes_SIZE + additional_data_len as MsgLen;
 }

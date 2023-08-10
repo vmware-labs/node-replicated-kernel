@@ -71,7 +71,6 @@ pub(crate) fn rpc_writeat(
     };
     CLIENT_STATE
         .rpc_client
-        .lock()
         .call(rpc_type, &[&req_data, &data], &mut [&mut res_data])?;
 
     // Decode result, return result if decoded successfully
@@ -129,7 +128,7 @@ pub(crate) fn rpc_readat(
         KernelRpc::ReadAt as RPCType
     };
 
-    CLIENT_STATE.rpc_client.lock().call(
+    CLIENT_STATE.rpc_client.call(
         KernelRpc::ReadAt as RPCType,
         &[&req_data],
         &mut [&mut res_data],

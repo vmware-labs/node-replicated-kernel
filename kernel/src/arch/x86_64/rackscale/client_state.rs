@@ -29,7 +29,7 @@ use crate::process::MAX_PROCESSES;
 /// This is the state the client records about itself
 pub(crate) struct ClientState {
     /// The RPC client used to communicate with the controller
-    pub(crate) rpc_client: Arc<Mutex<Client>>,
+    pub(crate) rpc_client: Client,
 
     /// Used to store shmem affinity base pages
     pub(crate) affinity_base_pages: Arc<ArrayVec<Mutex<Box<dyn MemManager + Send>>, MAX_MACHINES>>,
@@ -45,20 +45,15 @@ impl ClientState {
             .get()
             .map_or(false, |c| c.transport == Transport::Ethernet)
         {
-            Arc::new(Mutex::new(
-                crate::transport::ethernet::init_ethernet_rpc(
-                    smoltcp::wire::IpAddress::v4(172, 31, 0, 11),
-                    CONTROLLER_PORT_BASE + (*crate::environment::MACHINE_ID as u16 - 1),
-                    true,
-                )
-                .expect("Failed to initialize ethernet RPC"),
-            ))
+            crate::transport::ethernet::init_ethernet_rpc(
+                smoltcp::wire::IpAddress::v4(172, 31, 0, 11),
+                CONTROLLER_PORT_BASE + (*crate::environment::MACHINE_ID as u16 - 1),
+                true,
+            )
+            .expect("Failed to initialize ethernet RPC")
         } else {
             // Default is Shmem, even if transport unspecified
-            Arc::new(Mutex::new(
-                crate::transport::shmem::init_shmem_rpc(true)
-                    .expect("Failed to initialize shmem RPC"),
-            ))
+            crate::transport::shmem::init_shmem_rpc(true).expect("Failed to initialize shmem RPC")
         };
 
         let mut per_process_base_pages = ArrayVec::new();

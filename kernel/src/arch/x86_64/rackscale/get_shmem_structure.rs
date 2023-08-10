@@ -65,7 +65,6 @@ pub(crate) fn rpc_get_shmem_structure(
     let mut res_data = [0u8; core::mem::size_of::<[u64; MAX_PROCESSES]>()];
     CLIENT_STATE
         .rpc_client
-        .lock()
         .call(
             KernelRpc::GetShmemStructure as RPCType,
             &[&req_data],

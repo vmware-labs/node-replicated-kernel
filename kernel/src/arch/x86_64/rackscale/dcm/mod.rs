@@ -120,7 +120,6 @@ impl From<RPCType> for DCMOps {
 unsafe_abomonate!(DCMOps);
 
 lazy_static! {
-    pub(crate) static ref DCM_CLIENT: Arc<Mutex<Client>> = Arc::new(Mutex::new(
-        init_ethernet_rpc(IpAddress::v4(172, 31, 0, 20), DCM_CLIENT_PORT, false).unwrap(),
-    ));
+    pub(crate) static ref DCM_CLIENT: Client =
+        init_ethernet_rpc(IpAddress::v4(172, 31, 0, 20), DCM_CLIENT_PORT, false).unwrap();
 }

@@ -31,7 +31,7 @@ pub(crate) fn rpc_get_hardware_threads(
     let mut res_data = [0u8; core::mem::size_of::<KResult<(u64, u64)>>() + 5 * 4096];
 
     // Call GetHardwareThreads() RPC
-    CLIENT_STATE.rpc_client.lock().call(
+    CLIENT_STATE.rpc_client.call(
         KernelRpc::GetHardwareThreads as RPCType,
         &[&[]],
         &mut [&mut res_data],

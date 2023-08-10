@@ -73,7 +73,7 @@ pub(crate) fn dcm_affinity_alloc(
     let mut res = AffinityAllocRes { can_satisfy: false };
 
     // Ask DCM to make sure we can safely take from the shmem allocators
-    DCM_CLIENT.lock().call(
+    DCM_CLIENT.call(
         DCMOps::AffinityAlloc as RPCType,
         unsafe { &[req.as_bytes()] },
         unsafe { &mut [res.as_mut_bytes()] },

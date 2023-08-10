@@ -36,7 +36,7 @@ pub(crate) fn rpc_delete(pid: usize, pathname: String) -> KResult<(u64, u64)> {
     let mut res_data = [0u8; core::mem::size_of::<KResult<(u64, u64)>>()];
 
     // Call RPC
-    CLIENT_STATE.rpc_client.lock().call(
+    CLIENT_STATE.rpc_client.call(
         KernelRpc::Delete as RPCType,
         &[&req_data, &pathname.as_bytes()],
         &mut [&mut res_data],

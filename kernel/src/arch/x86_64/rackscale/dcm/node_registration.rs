@@ -60,7 +60,6 @@ pub(crate) fn dcm_register_node(mid: MachineId, cores: u64, memslices: u64) -> b
     // Send call, get allocation response in return
     {
         DCM_CLIENT
-            .lock()
             .call(
                 DCMOps::RegisterNode as RPCType,
                 unsafe { &[req.as_bytes()] },

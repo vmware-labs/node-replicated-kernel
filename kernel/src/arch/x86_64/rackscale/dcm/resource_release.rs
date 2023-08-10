@@ -61,7 +61,6 @@ pub(crate) fn dcm_resource_release(mid: MachineId, pid: usize, is_core: bool) ->
     // Send call, get allocation response in return
     {
         DCM_CLIENT
-            .lock()
             .call(
                 DCMOps::ResourceRelease as RPCType,
                 unsafe { &[req.as_bytes()] },

@@ -42,7 +42,7 @@ pub(crate) fn rpc_mkdir<P: AsRef<[u8]> + Debug>(
     let mut res_data = [0u8; core::mem::size_of::<KResult<(u64, u64)>>()];
 
     // Call RPC
-    CLIENT_STATE.rpc_client.lock().call(
+    CLIENT_STATE.rpc_client.call(
         KernelRpc::MkDir as RPCType,
         &[&req_data, pathname.as_ref()],
         &mut [&mut res_data],

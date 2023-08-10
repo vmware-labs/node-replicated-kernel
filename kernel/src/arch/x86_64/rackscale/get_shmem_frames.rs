@@ -68,7 +68,6 @@ pub(crate) fn rpc_get_shmem_frames(pid: Option<Pid>, num_frames: usize) -> KResu
     }
     CLIENT_STATE
         .rpc_client
-        .lock()
         .call(
             KernelRpc::GetShmemFrames as RPCType,
             &[&req_data],

@@ -58,7 +58,7 @@ fn test_client_server_shmem_transport() {
     let client_receiver = Receiver::with_shared_queue(server_to_client_queue.clone());
     let client_transport = ShmemTransport::new(client_receiver, client_sender);
     let rpc_client_transport = Box::new(client_transport);
-    let mut client = Client::new(rpc_client_transport);
+    let client = Client::new(rpc_client_transport);
 
     // Connect to server
     client.connect(&[]).unwrap();

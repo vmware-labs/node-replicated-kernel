@@ -46,7 +46,7 @@ pub(crate) fn rpc_allocate_physical(pid: Pid, size: u64, affinity: u64) -> KResu
 
     // Create result buffer
     let mut res_data = [0u8; core::mem::size_of::<KResult<(u64, u64)>>()];
-    CLIENT_STATE.rpc_client.lock().call(
+    CLIENT_STATE.rpc_client.call(
         KernelRpc::AllocatePhysical as RPCType,
         &[&req_data],
         &mut [&mut res_data],

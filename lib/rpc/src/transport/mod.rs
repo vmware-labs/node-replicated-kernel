@@ -27,9 +27,17 @@ pub trait Transport {
     /// Send an RPC message to a remote node, non-blocking except to avoid partial send
     fn try_send_msg(&self, hdr: &RPCHeader, payload: &[&[u8]]) -> Result<bool, RPCError>;
 
-    /// Controller-side implementation for LITE join_cluster()
+    /// Client-side method to setup connection to server
     fn client_connect(&mut self) -> Result<(), RPCError>;
 
-    /// Client-side implementation for LITE join_cluster()
+    /// Server-side method to setup connection to client
     fn server_accept(&self) -> Result<(), RPCError>;
+
+    /// Round-trip message passing.
+    fn send_and_recv(
+        &self,
+        hdr: &mut RPCHeader,
+        send_payload: &[&[u8]],
+        recv_payload: &mut [&mut [u8]],
+    ) -> Result<(), RPCError>;
 }

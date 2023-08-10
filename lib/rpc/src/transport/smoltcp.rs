@@ -179,7 +179,7 @@ impl TCPTransport<'_> {
         }
     }
 
-    fn recv_msg(
+    fn internal_recv_msg(
         &self,
         hdr: &mut RPCHeader,
         payload: &mut [&mut [u8]],
@@ -282,7 +282,7 @@ impl Transport for TCPTransport<'_> {
 
     fn recv_msg(&self, hdr: &mut RPCHeader, payload: &mut [&mut [u8]]) -> Result<(), RPCError> {
         trace!("recv_msg");
-        self.recv_msg(hdr, payload, false)?;
+        self.internal_recv_msg(hdr, payload, false)?;
         Ok(())
     }
 
@@ -292,7 +292,17 @@ impl Transport for TCPTransport<'_> {
         payload: &mut [&mut [u8]],
     ) -> Result<bool, RPCError> {
         trace!("try_recv_msg");
-        self.recv_msg(hdr, payload, true)
+        self.internal_recv_msg(hdr, payload, true)
+    }
+
+    fn send_and_recv(
+        &self,
+        hdr: &mut RPCHeader,
+        send_payload: &[&[u8]],
+        recv_payload: &mut [&mut [u8]],
+    ) -> Result<(), RPCError> {
+        self.send_msg(hdr, send_payload)?;
+        self.recv_msg(hdr, recv_payload)
     }
 
     fn client_connect(&mut self) -> Result<(), RPCError> {

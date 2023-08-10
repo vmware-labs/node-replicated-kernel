@@ -36,16 +36,10 @@ impl Client {
         let data_in_len = data_in.iter().fold(0, |acc, x| acc + x.len());
         debug_assert!(data_in_len < MsgLen::MAX as usize);
 
-        // Create request header and send message. It is safe to create a mutable reference here
-        // because it is assumed there will only be one invocation of call() running at a time, and only
-        // the client has access to this field.
         let mut hdr = &mut self.hdr;
         hdr.msg_type = rpc_id;
         hdr.msg_len = data_in_len as MsgLen;
-        self.transport.send_msg(hdr, data_in)?;
-
-        // Receive the response
-        self.transport.recv_msg(hdr, data_out)?;
+        self.transport.send_and_recv(hdr, data_in, data_out)?;
         Ok(())
     }
 }

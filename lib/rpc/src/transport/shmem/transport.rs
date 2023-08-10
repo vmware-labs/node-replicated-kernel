@@ -140,6 +140,16 @@ impl<'a> Transport for ShmemTransport<'a> {
     fn server_accept(&self) -> Result<(), RPCError> {
         Ok(())
     }
+
+    fn send_and_recv(
+        &self,
+        hdr: &mut RPCHeader,
+        send_payload: &[&[u8]],
+        recv_payload: &mut [&mut [u8]],
+    ) -> Result<(), RPCError> {
+        self.send_msg(hdr, send_payload)?;
+        self.recv_msg(hdr, recv_payload)
+    }
 }
 
 #[cfg(test)]

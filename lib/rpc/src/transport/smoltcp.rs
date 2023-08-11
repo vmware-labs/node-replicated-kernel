@@ -54,8 +54,7 @@ impl TCPTransport<'_> {
 
         // Create the TCP socket
         let socket_tx_buffer = TcpSocketBuffer::new(sock_vec);
-        let mut tcp_socket = TcpSocket::new(socket_rx_buffer, socket_tx_buffer);
-        //tcp_socket.set_ack_delay(None);
+        let tcp_socket = TcpSocket::new(socket_rx_buffer, socket_tx_buffer);
 
         // Add socket to interface and record socket handle
         let server_handle = iface.lock().add_socket(tcp_socket);

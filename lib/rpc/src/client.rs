@@ -12,7 +12,7 @@ use crate::rpc::*;
 use crate::transport::Transport;
 
 pub struct Client {
-    transport: Arc<Mutex<Box<dyn Transport + Send + Sync>>>,
+    transport: Box<dyn Transport + Send + Sync>,
     hdrs: ArrayVec<Arc<Mutex<RPCHeader>>, MAX_INFLIGHT_MSGS>,
     msg_id: AtomicU8,
 }
@@ -25,7 +25,7 @@ impl Client {
         }
         Client {
             // Always lock transport first, then header
-            transport: Arc::new(Mutex::new(transport)),
+            transport,
             hdrs,
             msg_id: AtomicU8::new(0),
         }
@@ -36,20 +36,18 @@ impl Client {
         let data_in_len = data_in.iter().fold(0, |acc, x| acc + x.len());
         debug_assert!(data_in_len < MsgLen::MAX as usize);
 
-        // Get client locks
-        let mut transport = self.transport.lock();
         // Doesn't matter what header we use -> we are accessing the Client mutably.
         let mut hdr = self.hdrs[0].lock();
 
         // Connect
-        transport.client_connect()?;
+        self.transport.client_connect()?;
 
         // Assemble header with connection data
         hdr.msg_type = RPC_TYPE_CONNECT;
         hdr.msg_len = data_in_len as MsgLen;
 
         // Send and receive response
-        transport.send_and_recv(&mut hdr, data_in, &mut [])
+        self.transport.send_and_recv(&mut hdr, data_in, &mut [])
     }
 
     /// Calls a remote RPC function with ID
@@ -67,7 +65,6 @@ impl Client {
         let msg_id = self.msg_id.fetch_add(1, Ordering::SeqCst);
 
         // Get client locks
-        let transport = self.transport.lock();
         let mut hdr = self.hdrs[msg_id as usize].lock();
 
         // Assemble header
@@ -76,6 +73,6 @@ impl Client {
         hdr.msg_len = data_in_len as MsgLen;
 
         // Send and receive message
-        transport.send_and_recv(&mut hdr, data_in, data_out)
+        self.transport.send_and_recv(&mut hdr, data_in, data_out)
     }
 }

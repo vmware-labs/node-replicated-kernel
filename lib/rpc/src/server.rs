@@ -90,24 +90,6 @@ impl<'t, 'a> Server<'a> {
         Ok(())
     }
 
-    /// Try to handle 1 RPC per client, if data is available (non-blocking if RPCs not available)
-    pub fn try_handle(&mut self) -> Result<bool, RPCError> {
-        match self.try_receive()? {
-            Some(rpc_id) => match self.handlers[rpc_id as usize] {
-                Some(func) => {
-                    func(&mut self.hdr, &mut self.data)?;
-                    self.reply()?;
-                    Ok(true)
-                }
-                None => {
-                    debug!("Invalid RPCType({}), ignoring", rpc_id);
-                    Ok(false)
-                }
-            },
-            None => Ok(false),
-        }
-    }
-
     /// Run the RPC server
     pub fn run_server(&mut self) -> Result<(), RPCError> {
         loop {
@@ -119,21 +101,8 @@ impl<'t, 'a> Server<'a> {
     fn receive(&mut self) -> Result<RPCType, RPCError> {
         // Receive request header
         self.transport
-            .recv_msg(&mut self.hdr, &mut [&mut self.data])?;
+            .recv_msg(&mut self.hdr, None, &mut [&mut self.data])?;
         Ok(self.hdr.msg_type)
-    }
-
-    /// receives next RPC call with RPC ID
-    fn try_receive(&mut self) -> Result<Option<RPCType>, RPCError> {
-        // Receive request header
-        if !self
-            .transport
-            .try_recv_msg(&mut self.hdr, &mut [&mut self.data])?
-        {
-            return Ok(None);
-        }
-
-        Ok(Some(self.hdr.msg_type))
     }
 
     /// Replies an RPC call with results

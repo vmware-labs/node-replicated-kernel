@@ -70,18 +70,12 @@ impl<'a> Transport for ShmemTransport<'a> {
         Ok(())
     }
 
-    fn try_send_msg(&self, hdr: &RPCHeader, payload: &[&[u8]]) -> Result<bool, RPCError> {
-        let mut pointers: [&[u8]; 7] = [&[1]; 7];
-        pointers[0] = unsafe { &hdr.as_bytes()[..] };
-        let mut index = 1;
-        for d in payload {
-            pointers[index] = d;
-            index += 1;
-        }
-        Ok(self.tx.try_send(&pointers[..payload.len() + 1]))
-    }
-
-    fn recv_msg(&self, hdr: &mut RPCHeader, payload: &mut [&mut [u8]]) -> Result<(), RPCError> {
+    fn recv_msg(
+        &self,
+        hdr: &mut RPCHeader,
+        recipient_id: Option<MsgId>,
+        payload: &mut [&mut [u8]],
+    ) -> Result<(), RPCError> {
         if payload.is_empty() {
             self.rx.recv(&mut [unsafe { &mut hdr.as_mut_bytes()[..] }]);
             return Ok(());
@@ -106,38 +100,11 @@ impl<'a> Transport for ShmemTransport<'a> {
         Ok(())
     }
 
-    fn try_recv_msg(
-        &self,
-        hdr: &mut RPCHeader,
-        payload: &mut [&mut [u8]],
-    ) -> Result<bool, RPCError> {
-        let mut pointers: [&mut [u8]; 7] = [
-            &mut [1],
-            &mut [1],
-            &mut [1],
-            &mut [1],
-            &mut [1],
-            &mut [1],
-            &mut [1],
-        ];
-        pointers[0] = unsafe { &mut hdr.as_mut_bytes()[..] };
-        let mut index = 1;
-        let num_out = payload.len() + 1;
-        for p in payload {
-            pointers[index] = p;
-            index += 1;
-        }
-        match self.rx.try_recv(&mut pointers[..num_out]) {
-            Ok(_) => Ok(true),
-            Err(_) => Ok(false),
-        }
-    }
-
     fn client_connect(&mut self) -> Result<(), RPCError> {
         Ok(())
     }
 
-    fn server_accept(&self) -> Result<(), RPCError> {
+    fn server_accept(&mut self) -> Result<(), RPCError> {
         Ok(())
     }
 
@@ -148,7 +115,7 @@ impl<'a> Transport for ShmemTransport<'a> {
         recv_payload: &mut [&mut [u8]],
     ) -> Result<(), RPCError> {
         self.send_msg(hdr, send_payload)?;
-        self.recv_msg(hdr, recv_payload)
+        self.recv_msg(hdr, Some(hdr.msg_id), recv_payload)
     }
 }
 

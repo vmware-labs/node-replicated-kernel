@@ -114,9 +114,7 @@ pub(crate) fn run() {
     // Start running the RPC server
     log::info!("Starting RPC server for client {:?}!", mid);
     loop {
-        let _handled = server
-            .try_handle()
-            .expect("Controller failed to handle RPC");
+        let _handled = server.handle().expect("Controller failed to handle RPC");
     }
 }
 
@@ -156,7 +154,7 @@ pub(crate) fn poll_interface() {
             }
         }
 
-        let _ = server.try_handle();
+        let _ = server.handle();
     }
 }
 

@@ -40,6 +40,12 @@ pub struct RPCHeader {
 pub const HDR_LEN: usize = core::mem::size_of::<RPCHeader>();
 
 impl RPCHeader {
+    pub fn copy_from(&mut self, from: RPCHeader) {
+        self.msg_id = from.msg_id;
+        self.msg_type = from.msg_type;
+        self.msg_len = from.msg_len;
+    }
+
     /// # Safety
     /// - `self` must be valid RPCHeader
     #[inline(always)]

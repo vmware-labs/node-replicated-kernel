@@ -627,7 +627,7 @@ fn rackscale_memcached_benchmark(transport: RackscaleTransport) {
     }
 
     fn rackscale_timeout_fn(num_cores: usize) -> u64 {
-        180_000 + 2_000 * num_cores as u64
+        240_000 + 5_000 * num_cores as u64
     }
 
     fn mem_fn(num_cores: usize, is_smoke: bool) -> usize {

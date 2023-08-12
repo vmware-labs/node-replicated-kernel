@@ -24,7 +24,7 @@ use crate::memory::vspace::TlbFlushHandle;
 use crate::memory::{kernel_vaddr_to_paddr, paddr_to_kernel_vaddr, PAddr, VAddr};
 use crate::nr::{Op, NR_LOG};
 use crate::nrproc::NrProcess;
-use crate::process::MAX_PROCESSES;
+use crate::process::{KernArcBuffer, MAX_PROCESSES};
 
 /// Types of shared structures the client can request
 #[derive(Debug, Eq, PartialEq, PartialOrd, Clone, Copy)]

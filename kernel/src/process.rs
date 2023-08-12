@@ -754,7 +754,8 @@ impl SliceAccess for &mut [u8] {
 /// while we copy the data in the file (and hence end up with inconsistent
 /// replicas).
 ///
-/// e.g., Any buffer that goes in the NR/CNR logs should be [`KernArcBuffer`].
+/// e.g., Any buffer that goes in the NR/CNR logs should be [`KernArcBuffer`],
+/// and for rackscale, [`KernArcBuffer`] must be allocated in shared memory.
 #[derive(PartialEq, Clone, Debug)]
 pub(crate) struct KernArcBuffer {
     pub buffer: Arc<[u8]>,
@@ -775,10 +776,31 @@ impl TryFrom<&[u8]> for KernArcBuffer {
 
     /// Converts a user-slice to a kernel slice.
     fn try_from(slice: &[u8]) -> KResult<Self> {
+        #[cfg(feature = "rackscale")]
+        let affinity = {
+            // We want to allocate the kernel arc in shared memory
+            let pcm = per_core_mem();
+            let affinity = pcm.physical_memory.borrow().affinity;
+            // Use local shared affinity for now
+            pcm.set_mem_affinity(local_shmem_affinity())
+                .expect("Can't change affinity");
+            affinity
+        };
+
         // TODO: Panics on OOM, need a `try_new_uninit_slice()` https://github.com/rust-lang/rust/issues/63291
         let mut buffer = Arc::<[u8]>::new_uninit_slice(slice.len());
         let data = Arc::get_mut(&mut buffer).unwrap(); // not shared yet, no panic!
         MaybeUninit::write_slice(data, slice);
+
+        #[cfg(feature = "rackscale")]
+        {
+            // Restore affinity
+            if affinity != local_shmem_affinity() {
+                let pcm = per_core_mem();
+                pcm.set_mem_affinity(affinity)
+                    .expect("Can't change affinity");
+            }
+        };
 
         let buffer = unsafe {
             // Safety:
@@ -971,15 +993,18 @@ impl UserSlice {
 }
 
 impl SliceAccess for UserSlice {
+    // For rackscale, everything in the box must be in shared memory
     fn read_slice<'a>(&'a self, f: Box<dyn Fn(&'a [u8]) -> KResult<()>>) -> KResult<()> {
         nrproc::NrProcess::<ArchProcess>::userspace_exec_slice(self, f)
     }
 
+    // For rackscale, buffer must be in shared memory
     fn write_slice(&mut self, buffer: &[u8]) -> KResult<()> {
         nrproc::NrProcess::<ArchProcess>::write_to_userspace(self, buffer)?;
         Ok(())
     }
 
+    // For rackscale, the buffer must be in shared memory
     fn write_subslice(&mut self, buffer: &[u8], offset: usize) -> KResult<()> {
         if self.len() < (offset + buffer.len()) {
             return Err(KError::InvalidOffset);

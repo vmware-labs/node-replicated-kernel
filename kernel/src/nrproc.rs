@@ -24,6 +24,9 @@ use crate::process::{
     Eid, Executor, Pid, Process, SliceAccess, UserSlice, MAX_FRAMES_PER_PROCESS, MAX_PROCESSES,
 };
 
+#[cfg(feature = "rackscale")]
+use crate::{arch::kcb::per_core_mem, memory::shmem_affinity::local_shmem_affinity};
+
 /// The tokens per core to access the process replicas.
 #[thread_local]
 pub(crate) static PROCESS_TOKEN: Once<ArrayVec<ReplicaToken, { MAX_PROCESSES }>> = Once::new();
@@ -426,6 +429,7 @@ impl<P: Process> NrProcess<P> {
         }
     }
 
+    // For rackscale, kbuf must be allocated in shared memory
     pub(crate) fn write_to_userspace(to: &mut UserSlice, kbuf: &[u8]) -> Result<(), KError> {
         let node = *crate::environment::NODE_ID;
         let pid = to.pid;
@@ -441,6 +445,7 @@ impl<P: Process> NrProcess<P> {
         }
     }
 
+    // For rackscale, everything in the box must be allocated in shared memory
     #[cfg(feature = "rackscale")]
     pub(crate) fn userspace_exec_slice_mut(
         on: UserSlice,
@@ -459,6 +464,7 @@ impl<P: Process> NrProcess<P> {
         }
     }
 
+    // For rackscale, everything in the box must be allocated in shared memory
     pub(crate) fn userspace_exec_slice<'a>(
         on: &'a UserSlice,
         f: Box<dyn Fn(&'a [u8]) -> KResult<()>>,
@@ -495,14 +501,38 @@ where
                 Ok(ProcessResult::Resolved(paddr, rights))
             }
             ProcessOp::ReadSlice(uslice) => {
+                #[cfg(feature = "rackscale")]
+                let affinity = {
+                    // We want to allocate the kernel arc in shared memory
+                    let pcm = per_core_mem();
+                    let affinity = pcm.physical_memory.borrow().affinity;
+                    // Use local shared affinity for now
+                    pcm.set_mem_affinity(local_shmem_affinity())
+                        .expect("Can't change affinity");
+                    affinity
+                };
+
                 // We're going to copy what we read into this thing
                 // TODO(panic+oom): need `try_new_uninit_slice` https://github.com/rust-lang/rust/issues/63291
                 let mut buffer = Arc::<[u8]>::new_uninit_slice(uslice.len());
                 let data = Arc::get_mut(&mut buffer).unwrap();
-                uslice.with_slice(&*self.process, |ubuf| {
+                let ret = uslice.with_slice(&*self.process, |ubuf| {
                     MaybeUninit::write_slice(data, ubuf);
                     Ok(())
-                })?;
+                });
+
+                #[cfg(feature = "rackscale")]
+                {
+                    // Restore affinity
+                    if affinity != local_shmem_affinity() {
+                        let pcm = per_core_mem();
+                        pcm.set_mem_affinity(affinity)
+                            .expect("Can't change affinity");
+                    }
+                };
+                // restore memory affinity before exiting
+                ret?;
+
                 let buffer = unsafe {
                     // Safety: `assume_init`
                     // - Plain-old-data, that we just copied into `buffer` above
@@ -514,12 +544,44 @@ where
                 Ok(ProcessResult::ReadSlice(buffer))
             }
             ProcessOp::ReadString(uslice) => {
+                #[cfg(feature = "rackscale")]
+                let affinity = {
+                    // We want to allocate the kernel arc in shared memory
+                    let pcm = per_core_mem();
+                    let affinity = pcm.physical_memory.borrow().affinity;
+                    // Use local shared affinity for now
+                    pcm.set_mem_affinity(local_shmem_affinity())
+                        .expect("Can't change affinity");
+                    affinity
+                };
+
                 let mut kbuf = Vec::try_with_capacity(uslice.len())?;
-                uslice.with_slice(&*self.process, |ubuf| {
+                let ret1 = uslice.with_slice(&*self.process, |ubuf| {
                     kbuf.extend_from_slice(ubuf);
                     Ok(())
-                })?;
-                Ok(ProcessResult::ReadString(String::from_utf8(kbuf)?))
+                });
+
+                // This deny is needed so it compiles without rackscale.
+                #[deny(clippy::let_and_return)]
+                let ret = match ret1 {
+                    Ok(()) => match String::from_utf8(kbuf) {
+                        Ok(str) => Ok(ProcessResult::ReadString(str)),
+                        Err(e) => Err(KError::from(e)),
+                    },
+                    Err(e) => Err(e),
+                };
+
+                #[cfg(feature = "rackscale")]
+                {
+                    // Restore affinity before exiting even in error case
+                    if affinity != local_shmem_affinity() {
+                        let pcm = per_core_mem();
+                        pcm.set_mem_affinity(affinity)
+                            .expect("Can't change affinity");
+                    }
+                };
+
+                ret
             }
             ProcessOp::WriteSlice(uslice, kbuf) => {
                 if uslice.len() != kbuf.len() {

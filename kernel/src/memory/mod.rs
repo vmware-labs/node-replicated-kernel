@@ -102,7 +102,15 @@ impl KernelAllocator {
                 {
                     let affinity = { pcm.physical_memory.borrow().affinity };
                     if is_shmem_affinity(affinity) {
-                        panic!("MapBig not yet supported for shmem allocation");
+                        // Treating as type MemManager
+                        log::warn!("MapBig not supported for Rackscale.");
+                        let f = {
+                            let mut pmanager = pcm.try_mem_manager()?;
+                            pmanager.allocate_large_page()?
+                        };
+                        return unsafe {
+                            Ok(ptr::NonNull::new_unchecked(f.kernel_vaddr().as_mut_ptr()))
+                        };
                     }
                 }
                 // Big objects are mapped into the kernel address space

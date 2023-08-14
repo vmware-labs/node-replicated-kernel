@@ -8,7 +8,7 @@ license = "MIT OR Apache-2.0"
 [dependencies]
 x86 = { version = "0.52", features = ["unstable"] }
 abomonation = { git="https://github.com/hunhoffe/abomonation.git", branch="no-std", default-features = false }
-bitflags = "1.2"
+bitflags = "2.4"
 core2 = { version = "0.3", default-features = false, features = [ "alloc" ] }
 serde = { version = "1.0", default-features = false, features = ["derive", "alloc"] }
 serde_cbor = { version = "0.11", default-features = false, features = ["alloc"] }

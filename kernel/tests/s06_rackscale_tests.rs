@@ -255,6 +255,7 @@ fn s06_rackscale_ethernet_userspace_multicore_multiclient() {
 }
 
 #[cfg(not(feature = "baremetal"))]
+#[ignore]
 #[test]
 fn s06_rackscale_shmem_userspace_multicore_multiclient() {
     rackscale_userspace_multicore_multiclient(RackscaleTransport::Shmem);

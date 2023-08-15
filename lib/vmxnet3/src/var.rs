@@ -877,6 +877,7 @@ impl DevQueue for RxQueue {
 
         let mut idx = self.pidx_tail0;
         let mut available = 0; // Completed descriptors
+        #[cfg(debug_assertions)]
         let mut expect_sop = true;
         let mut completed_gen = rxc.vxcr_gen;
         loop {

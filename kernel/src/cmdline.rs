@@ -315,7 +315,7 @@ mod test {
 
     #[test]
     fn parse_args_empty() {
-        let ba = CommandLineArguments::from_str("");
+        let ba = CommandLineArguments::from_str("").expect("failed to parse cmdline");
         assert_eq!(ba.log_filter, "info");
         assert_eq!(ba.init_binary, "init");
         assert_eq!(ba.init_args, "");
@@ -323,7 +323,7 @@ mod test {
 
     #[test]
     fn parse_args_nrk() {
-        let ba = CommandLineArguments::from_str("./nrk");
+        let ba = CommandLineArguments::from_str("./nrk").expect("failed to parse cmdline");
         assert_eq!(ba.log_filter, "info");
         assert_eq!(ba.init_binary, "init");
         assert_eq!(ba.init_args, "");
@@ -331,7 +331,7 @@ mod test {
 
     #[test]
     fn parse_args_basic() {
-        let ba = CommandLineArguments::from_str("./kernel");
+        let ba = CommandLineArguments::from_str("./kernel").expect("failed to parse cmdline");
         assert_eq!(ba.log_filter, "info");
         assert_eq!(ba.init_binary, "init");
         assert_eq!(ba.init_args, "");
@@ -339,7 +339,8 @@ mod test {
 
     #[test]
     fn parse_args_log() {
-        let ba = CommandLineArguments::from_str("./kernel log=error");
+        let ba =
+            CommandLineArguments::from_str("./kernel log=error").expect("failed to parse cmdline");
         assert_eq!(ba.log_filter, "error");
         assert_eq!(ba.init_binary, "init");
         assert_eq!(ba.init_args, "");
@@ -347,7 +348,8 @@ mod test {
 
     #[test]
     fn parse_args_init() {
-        let ba = CommandLineArguments::from_str("./kernel init=file log=trace");
+        let ba = CommandLineArguments::from_str("./kernel init=file log=trace")
+            .expect("failed to parse cmdline");
         assert_eq!(ba.log_filter, "trace");
         assert_eq!(ba.init_binary, "file");
         assert_eq!(ba.init_args, "");
@@ -355,7 +357,8 @@ mod test {
 
     #[test]
     fn parse_args_initargs() {
-        let ba = CommandLineArguments::from_str("./kernel initargs=0");
+        let ba =
+            CommandLineArguments::from_str("./kernel initargs=0").expect("failed to parse cmdline");
         assert_eq!(ba.log_filter, "info");
         assert_eq!(ba.init_binary, "init");
         assert_eq!(ba.init_args, "0");
@@ -365,7 +368,7 @@ mod test {
     fn parse_args_leveldb() {
         let args = "./kernel log=warn init=dbbench.bin initargs=3 appcmd='--threads=1 --benchmarks=fillseq,readrandom --reads=100000 --num=50000 --value_size=65535'";
 
-        let ba = CommandLineArguments::from_str(args);
+        let ba = CommandLineArguments::from_str(args).expect("failed to parse cmdline");
         assert_eq!(ba.log_filter, "warn");
         assert_eq!(ba.init_binary, "dbbench.bin");
         assert_eq!(ba.init_args, "3");
@@ -375,7 +378,7 @@ mod test {
     #[test]
     fn parse_args_fxmark() {
         let args = "log=debug initargs=1X1XmixX0";
-        let ba = CommandLineArguments::from_str(args);
+        let ba = CommandLineArguments::from_str(args).expect("failed to parse cmdline");
         assert_eq!(ba.log_filter, "debug");
         assert_eq!(ba.init_binary, "init");
         assert_eq!(ba.init_args, "1X1XmixX0");
@@ -384,7 +387,7 @@ mod test {
     #[test]
     fn parse_args_empty_literal_quotes() {
         let args = "./kernel initargs='\"\"' log=debug";
-        let ba = CommandLineArguments::from_str(args);
+        let ba = CommandLineArguments::from_str(args).expect("failed to parse cmdline");
         assert_eq!(ba.log_filter, "debug");
         assert_eq!(ba.init_args, "\"\"");
     }
@@ -392,7 +395,7 @@ mod test {
     #[test]
     fn parse_args_empty_literal() {
         let args = "./kernel initargs='' log=debug";
-        let ba = CommandLineArguments::from_str(args);
+        let ba = CommandLineArguments::from_str(args).expect("failed to parse cmdline");
         assert_eq!(ba.log_filter, "debug");
         assert_eq!(ba.init_args, "");
     }
@@ -401,14 +404,13 @@ mod test {
     fn parse_args_invalid() {
         let args = "./kernel initg='asdf' log=debug";
         let ba = CommandLineArguments::from_str(args);
-        assert_eq!(ba.log_filter, "debug");
-        assert_eq!(ba.init_args, "");
+        assert!(ba.is_err());
     }
 
     #[test]
     fn parse_args_invalid2() {
         let args = "./sadf init='asdf' log=debug";
-        let ba = CommandLineArguments::from_str(args);
+        let ba = CommandLineArguments::from_str(args).expect("failed to parse cmdline");
         assert_eq!(ba.log_filter, "debug");
         assert_eq!(ba.init_args, "");
     }
@@ -417,51 +419,50 @@ mod test {
     fn parse_args_invalid3() {
         let args = "./kernel init=---  as-s- log=debug";
         let ba = CommandLineArguments::from_str(args);
-        assert_eq!(ba.log_filter, "debug");
-        assert_eq!(ba.init_args, "");
+        assert!(ba.is_err());
     }
 
     #[test]
     fn parse_log_level_complex() {
         let args = "./kernel log='gdbstub=trace,nrk::arch::gdb=trace'";
-        let ba = CommandLineArguments::from_str(args);
+        let ba = CommandLineArguments::from_str(args).expect("failed to parse cmdline");
         assert_eq!(ba.log_filter, "gdbstub=trace,nrk::arch::gdb=trace");
     }
 
     #[test]
     fn parse_test() {
         let args = "./kernel test=userspace";
-        let ba = CommandLineArguments::from_str(args);
+        let ba = CommandLineArguments::from_str(args).expect("failed to parse cmdline");
         assert_eq!(ba.test, Some("userspace"));
     }
 
     #[test]
     fn parse_machine_id() {
         let args = "./kernel mid=3";
-        let ba = CommandLineArguments::from_str(args);
+        let ba = CommandLineArguments::from_str(args).expect("failed to parse cmdline");
         assert_eq!(ba.machine_id, 3);
 
         let args = "./kernel mid='44'";
-        let ba = CommandLineArguments::from_str(args);
+        let ba = CommandLineArguments::from_str(args).expect("failed to parse cmdline");
         assert_eq!(ba.machine_id, 44);
 
         let args = "./kernel mid=a";
-        let ba = CommandLineArguments::from_str(args);
+        let ba = CommandLineArguments::from_str(args).expect("failed to parse cmdline");
         assert_eq!(ba.machine_id, 0);
     }
 
     #[test]
     fn parse_workers() {
         let args = "./kernel workers=3";
-        let ba = CommandLineArguments::from_str(args);
+        let ba = CommandLineArguments::from_str(args).expect("failed to parse cmdline");
         assert_eq!(ba.workers, 3);
 
         let args = "./kernel workers='44'";
-        let ba = CommandLineArguments::from_str(args);
+        let ba = CommandLineArguments::from_str(args).expect("failed to parse cmdline");
         assert_eq!(ba.workers, 44);
 
         let args = "./kernel workers=a";
-        let ba = CommandLineArguments::from_str(args);
+        let ba = CommandLineArguments::from_str(args).expect("failed to parse cmdline");
         assert_eq!(ba.workers, 1);
     }
 }

@@ -12,6 +12,7 @@ use logos::Logos;
 use kpi::system::MachineId;
 
 use crate::arch::memory::paddr_to_kernel_vaddr;
+use crate::error::{KError, KResult};
 use crate::memory::PAddr;
 
 /// Definition to parse the kernel command-line arguments.
@@ -148,7 +149,9 @@ impl CommandLineArguments {
     /// Parse command line argument and initialize the logging infrastructure.
     ///
     /// Example: If args is './kernel log=trace' -> sets level to Level::Trace
-    pub(crate) fn from_str(args: &'static str) -> Self {
+    pub(crate) fn from_str(args: &'static str) -> KResult<Self> {
+        use klogger::sprint;
+
         // The args argument will be a physical address slice that
         // goes away once we switch to a process address space
         // make sure we translate it into a kernel virtual address:
@@ -217,8 +220,8 @@ impl CommandLineArguments {
                         prev = CmdToken::Error;
                     }
                     _ => {
-                        error!("Invalid cmd arguments: {} (skipped {})", args, slice);
-                        continue;
+                        sprint!("Invalid cmd arguments: {} (skipped {})\r\n", args, slice);
+                        return Err(KError::InvalidCmdLineOptions);
                     }
                 },
                 CmdToken::KVSeparator => {
@@ -230,8 +233,8 @@ impl CommandLineArguments {
                         && prev != CmdToken::MachineId
                         && prev != CmdToken::Workers
                     {
-                        error!("Malformed args (unexpected equal sign) in {}", args);
-                        continue;
+                        sprint!("Malformed args (unexpected equal sign) in {}\r\n", args);
+                        return Err(KError::MalformedCmdLine);
                     }
                 }
                 CmdToken::LiteralString => {
@@ -268,14 +271,18 @@ impl CommandLineArguments {
                             prev = CmdToken::Error;
                         }
                         _ => {
-                            error!("Invalid cmd arguments: {} (skipped {})", args, slice);
+                            sprint!("Invalid cmd arguments: {} (skipped {})\r\n", args, slice);
                             continue;
                         }
                     }
                 }
                 CmdToken::Error => {
-                    error!("Ignored '{}' while parsing cmd args: {}", slice, args);
-                    continue;
+                    sprint!(
+                        "Malformed commandline! Encoutered '{}' while parsing cmd args: {}\r\n",
+                        slice,
+                        args
+                    );
+                    return Err(KError::MalformedCmdLine);
                 }
             }
         }
@@ -283,20 +290,22 @@ impl CommandLineArguments {
         #[cfg(not(feature = "shmem"))]
         {
             if parsed_args.mode != Mode::Native && parsed_args.transport == Transport::Shmem {
-                panic!("kernel feature 'shmem' must be present to use shmem as an RPC transport");
+                sprint!("kernel feature 'shmem' must be present to use shmem as an RPC transport");
+                return Err(KError::InvalidCmdLineOptions);
             }
         }
 
         #[cfg(not(feature = "ethernet"))]
         {
             if parsed_args.mode != Mode::Native && parsed_args.transport == Transport::Ethernet {
-                panic!(
+                sprint!(
                     "kernel feature 'ethernet' must be present to use ethernet as an RPC transport"
                 );
+                return Err(KError::InvalidCmdLineOptions);
             }
         }
 
-        parsed_args
+        Ok(parsed_args)
     }
 }
 

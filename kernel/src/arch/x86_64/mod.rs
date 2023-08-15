@@ -249,6 +249,7 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
 
     // Very early init:
     sprint!("\r\n");
+    sprint!("NRK booting on x86_64...\r\n");
     enable_sse();
     enable_fsgsbase();
     unsafe {
@@ -276,7 +277,14 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
         //   memory for us
         unsafe { transmute::<u64, &'static KernelArgs>(argc as u64) };
     // Parse the command line arguments:
-    let cmdline = CommandLineArguments::from_str(kernel_args.command_line);
+    let cmdline = match CommandLineArguments::from_str(kernel_args.command_line) {
+        Ok(cmdline) => cmdline,
+        Err(err) => {
+            sprint!("Parsing the commandline failed ({err}). Halting...\r\n");
+            halt();
+        }
+    };
+
     // Initialize cmdline arguments as global
     crate::CMDLINE.call_once(move || cmdline);
     // Initialize kernel arguments as global

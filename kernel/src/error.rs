@@ -173,6 +173,10 @@ pub enum KError {
     TryFromIntError,
     /// The provided file-descriptor value was too big (>= MAX_FILES_PER_PROCESS)
     FileDescriptorTooLarge,
+    /// The command line was malformed
+    MalformedCmdLine,
+    /// The command line had invalid option configurations
+    InvalidCmdLineOptions,
     /// Rackscale: Unable to convert message ID to valid RPC type (faulty message?)
     InvalidRpcType,
     /// Rackscale: Unable to perform DCM transaction (faulty message?)

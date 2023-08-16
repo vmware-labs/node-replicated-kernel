@@ -100,14 +100,6 @@ impl<'a> Transport for ShmemTransport<'a> {
         Ok(())
     }
 
-    fn client_connect(&mut self) -> Result<(), RPCError> {
-        Ok(())
-    }
-
-    fn server_accept(&mut self) -> Result<(), RPCError> {
-        Ok(())
-    }
-
     fn send_and_recv(
         &self,
         hdr: &mut RPCHeader,

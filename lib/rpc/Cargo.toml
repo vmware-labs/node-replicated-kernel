@@ -19,3 +19,6 @@ vmxnet3 = { path = "../vmxnet3" }
 
 [features]
 std = []
+
+[dev-dependencies]
+env_logger = "0.9"

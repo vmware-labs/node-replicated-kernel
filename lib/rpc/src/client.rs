@@ -39,9 +39,6 @@ impl Client {
         // Doesn't matter what header we use -> we are accessing the Client mutably.
         let mut hdr = self.hdrs[0].lock();
 
-        // Connect
-        self.transport.client_connect()?;
-
         // Assemble header with connection data
         hdr.msg_type = RPC_TYPE_CONNECT;
         hdr.msg_len = data_in_len as MsgLen;

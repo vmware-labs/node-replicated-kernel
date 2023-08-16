@@ -3,6 +3,8 @@
 
 #![cfg_attr(not(any(test, feature = "std")), no_std)]
 #![feature(allocator_api)]
+#![feature(new_uninit)]
+#![feature(maybe_uninit_write_slice)]
 
 #[cfg(any(test, feature = "std"))]
 extern crate std;

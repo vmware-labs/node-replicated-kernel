@@ -1,8 +1,8 @@
 pub mod shmem;
-mod smoltcp;
+pub mod tcp;
 
-pub use self::smoltcp::TCPTransport;
 pub use shmem::transport::ShmemTransport;
+pub use tcp::transport::TCPTransport;
 
 use crate::rpc::{MsgId, RPCError, RPCHeader};
 
@@ -21,12 +21,6 @@ pub trait Transport {
 
     /// Send an RPC message to a remote node, blocking
     fn send_msg(&self, hdr: &RPCHeader, payload: &[&[u8]]) -> Result<(), RPCError>;
-
-    /// Client-side method to setup connection to server
-    fn client_connect(&mut self) -> Result<(), RPCError>;
-
-    /// Server-side method to setup connection to client
-    fn server_accept(&mut self) -> Result<(), RPCError>;
 
     /// Round-trip message passing.
     fn send_and_recv(

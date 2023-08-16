@@ -58,8 +58,6 @@ impl<'t, 'a> Server<'a> {
     where
         'c: 'a,
     {
-        self.transport.server_accept()?;
-
         // Receive registration information
         self.receive()?;
 

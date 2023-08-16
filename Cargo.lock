@@ -1647,6 +1647,7 @@ dependencies = [
  "abomonation",
  "arrayvec",
  "core2",
+ "env_logger 0.9.0",
  "lazy_static",
  "log",
  "rawtime",

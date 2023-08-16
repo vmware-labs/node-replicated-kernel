@@ -33,6 +33,7 @@ impl<'a, D: for<'d> Device<'d>> TCPTransport<'a, D> {
     pub fn new(
         server_ip: Option<IpAddress>,
         server_port: u16,
+        client_port: u16,
         iface: Arc<Mutex<Interface<'a, D>>>,
     ) -> Result<TCPTransport<'a, D>, RPCError> {
         lazy_static::initialize(&rawtime::BOOT_TIME_ANCHOR);
@@ -63,7 +64,7 @@ impl<'a, D: for<'d> Device<'d>> TCPTransport<'a, D> {
             server_handle,
             server_ip,
             server_port,
-            client_port: 10110,
+            client_port,
             recv_hdr: Arc::new(Mutex::new(None)),
             send_lock: AtomicBool::new(false),
         })
@@ -100,11 +101,8 @@ impl<'a, D: for<'d> Device<'d>> TCPTransport<'a, D> {
                         trace!("send_slice failed... trying again?");
                     }
                 }
-            }
 
-            // Poll the interface only if we must in order to have space in the send buffer
-            {
-                match self.iface.lock().poll(Instant::from_millis(
+                match iface.poll(Instant::from_millis(
                     rawtime::duration_since_boot().as_millis() as i64,
                 )) {
                     Ok(_) => {}
@@ -151,11 +149,7 @@ impl<'a, D: for<'d> Device<'d>> TCPTransport<'a, D> {
                         debug!("recv_slice failed... trying again?");
                     }
                 }
-            }
-
-            // Poll the interface only if we must in order to have space in the recv buffer
-            {
-                match self.iface.lock().poll(Instant::from_millis(
+                match iface.poll(Instant::from_millis(
                     rawtime::duration_since_boot().as_millis() as i64,
                 )) {
                     Ok(_) => {}
@@ -361,9 +355,10 @@ impl<'a, D: for<'d> Device<'d>> Transport for TCPTransport<'a, D> {
         }
 
         // Connect to server, poll until connection is complete
-        {
-            loop {
-                match self.iface.lock().poll(Instant::from_millis(
+        loop {
+            {
+                let mut iface = self.iface.lock();
+                match iface.poll(Instant::from_millis(
                     rawtime::duration_since_boot().as_millis() as i64,
                 )) {
                     Ok(_) => {}
@@ -371,14 +366,17 @@ impl<'a, D: for<'d> Device<'d>> Transport for TCPTransport<'a, D> {
                         warn!("poll error: {}", e);
                     }
                 }
-                let mut iface = self.iface.lock();
-                let socket = iface.get_socket::<TcpSocket>(self.server_handle);
 
+                let socket = iface.get_socket::<TcpSocket>(self.server_handle);
                 // Waiting for send/recv forces the TCP handshake to fully complete
                 if socket.is_active() && (socket.may_send() || socket.may_recv()) {
+                    //if socket.is_active() {
                     log::warn!("Connected to server, ready to send/recv data");
                     break;
                 }
+            }
+            for _ in 0..5 {
+                core::hint::spin_loop();
             }
         }
         Ok(())
@@ -397,20 +395,27 @@ impl<'a, D: for<'d> Device<'d>> Transport for TCPTransport<'a, D> {
 
         // Poll interface until connection is established
         loop {
-            match self.iface.lock().poll(Instant::from_millis(
-                rawtime::duration_since_boot().as_millis() as i64,
-            )) {
-                Ok(_) => {}
-                Err(e) => {
-                    warn!("poll error: {}", e);
+            {
+                let mut iface = self.iface.lock();
+                match iface.poll(Instant::from_millis(
+                    rawtime::duration_since_boot().as_millis() as i64,
+                )) {
+                    Ok(_) => {}
+                    Err(e) => {
+                        warn!("poll error: {}", e);
+                    }
+                }
+
+                let socket = iface.get_socket::<TcpSocket>(self.server_handle);
+                if socket.is_active() && (socket.may_send() || socket.may_recv()) {
+                    //if socket.is_active() {
+                    debug!("Connected to client!");
+                    break;
                 }
             }
 
-            let mut iface = self.iface.lock();
-            let socket = iface.get_socket::<TcpSocket>(self.server_handle);
-            if socket.is_active() && (socket.may_send() || socket.may_recv()) {
-                debug!("Connected to client!");
-                break;
+            for _ in 0..5 {
+                core::hint::spin_loop();
             }
         }
         Ok(())
@@ -446,7 +451,7 @@ mod tests {
             .ip_addrs(ip_addrs)
             .finalize();
 
-        TCPTransport::new(None, 10110, Arc::new(Mutex::new(iface)))
+        TCPTransport::new(None, 10111, 10110, Arc::new(Mutex::new(iface)))
             .expect("We should be able to initialize");
     }
 
@@ -468,7 +473,7 @@ mod tests {
         let client_iface = iface_arc.clone();
 
         let server_thread = std::thread::spawn(move || {
-            let mut server_transport = TCPTransport::new(None, 10111, server_iface)
+            let mut server_transport = TCPTransport::new(None, 10111, 10110, server_iface)
                 .expect("We should be able to initialize");
             server_transport
                 .server_accept()
@@ -477,9 +482,13 @@ mod tests {
 
         let client_thread = std::thread::spawn(move || {
             std::thread::sleep(std::time::Duration::from_secs(2));
-            let mut client_transport =
-                TCPTransport::new(Some(IpAddress::v4(127, 0, 0, 1)), 10111, client_iface)
-                    .expect("We should be able to initialize");
+            let mut client_transport = TCPTransport::new(
+                Some(IpAddress::v4(127, 0, 0, 1)),
+                10111,
+                10110,
+                client_iface,
+            )
+            .expect("We should be able to initialize");
             client_transport
                 .client_connect()
                 .expect("Client failed to connect to server");
@@ -507,7 +516,7 @@ mod tests {
         let client_iface = iface_arc.clone();
 
         let server_thread = std::thread::spawn(move || {
-            let mut server_transport = TCPTransport::new(None, 10111, server_iface)
+            let mut server_transport = TCPTransport::new(None, 10111, 10110, server_iface)
                 .expect("We should be able to initialize");
             server_transport
                 .server_accept()
@@ -537,9 +546,13 @@ mod tests {
 
         let client_thread = std::thread::spawn(move || {
             std::thread::sleep(std::time::Duration::from_secs(2));
-            let mut client_transport =
-                TCPTransport::new(Some(IpAddress::v4(127, 0, 0, 1)), 10111, client_iface)
-                    .expect("We should be able to initialize");
+            let mut client_transport = TCPTransport::new(
+                Some(IpAddress::v4(127, 0, 0, 1)),
+                10111,
+                10110,
+                client_iface,
+            )
+            .expect("We should be able to initialize");
             client_transport
                 .client_connect()
                 .expect("Client failed to connect to server");
@@ -582,7 +595,7 @@ mod tests {
         let client_iface = iface_arc.clone();
 
         let server_thread = std::thread::spawn(move || {
-            let mut server_transport = TCPTransport::new(None, 10111, server_iface)
+            let mut server_transport = TCPTransport::new(None, 10111, 10110, server_iface)
                 .expect("We should be able to initialize");
             server_transport
                 .server_accept()
@@ -612,9 +625,13 @@ mod tests {
 
         let client_thread = std::thread::spawn(move || {
             std::thread::sleep(std::time::Duration::from_secs(2));
-            let mut client_transport =
-                TCPTransport::new(Some(IpAddress::v4(127, 0, 0, 1)), 10111, client_iface)
-                    .expect("We should be able to initialize");
+            let mut client_transport = TCPTransport::new(
+                Some(IpAddress::v4(127, 0, 0, 1)),
+                10111,
+                10110,
+                client_iface,
+            )
+            .expect("We should be able to initialize");
             client_transport
                 .client_connect()
                 .expect("Client failed to connect to server");
@@ -637,6 +654,160 @@ mod tests {
         });
 
         client_thread.join().unwrap();
+        server_thread.join().unwrap();
+    }
+
+    #[test]
+    fn test_multi_client_server() {
+        // from smoltcp loopback example
+        let device = Loopback::new(Medium::Ethernet);
+        let neighbor_cache = NeighborCache::new(BTreeMap::new());
+        let ip_addrs = [IpCidr::new(IpAddress::v4(127, 0, 0, 1), 8)];
+        let sock_vec = Vec::with_capacity(1);
+        let iface = InterfaceBuilder::new(device, sock_vec)
+            .hardware_addr(EthernetAddress::default().into())
+            .neighbor_cache(neighbor_cache)
+            .ip_addrs(ip_addrs)
+            .finalize();
+        let iface_arc = Arc::new(Mutex::new(iface));
+
+        let server_iface = iface_arc.clone();
+        let client_iface = iface_arc.clone();
+        let client2_iface = iface_arc.clone();
+
+        let server_thread = std::thread::spawn(move || {
+            let mut server_transport = TCPTransport::new(None, 10111, 10110, server_iface.clone())
+                .expect("We should be able to initialize");
+            let mut server2_transport = TCPTransport::new(None, 10113, 10112, server_iface).expect(
+                "We should be able to initialize a second transport with the same interface",
+            );
+
+            server_transport
+                .server_accept()
+                .expect("Failed to accept client connection");
+            println!("Server1 done accepting");
+            server2_transport
+                .server_accept()
+                .expect("Failed to accept client connection");
+            println!("Server2 done accepting");
+
+            let mut hdr = RPCHeader::default();
+            let mut recv_buf = [0; 10];
+            for i in 0u8..10 {
+                server_transport
+                    .recv_msg(&mut hdr, None, &mut [&mut recv_buf])
+                    .expect("Failed to send message");
+
+                let msg_len = hdr.msg_len;
+                assert_eq!(msg_len, 5 as MsgLen);
+                for j in 0u8..5 {
+                    assert_eq!(recv_buf[j as usize], j * i);
+                }
+                for j in 5..10 {
+                    assert_eq!(recv_buf[j as usize], 0u8);
+                }
+                server2_transport
+                    .recv_msg(&mut hdr, None, &mut [&mut recv_buf])
+                    .expect("Failed to send message");
+
+                let msg_len = hdr.msg_len;
+                assert_eq!(msg_len, 5 as MsgLen);
+                for j in 0u8..5 {
+                    assert_eq!(recv_buf[j as usize], 1u8);
+                }
+                for j in 5..10 {
+                    assert_eq!(recv_buf[j as usize], 0u8);
+                }
+
+                hdr.msg_len = 2;
+                server_transport
+                    .send_msg(&hdr, &[&[i], &[i + 1]])
+                    .expect("Failed to send message");
+                server2_transport
+                    .send_msg(&hdr, &[&[i + 1], &[i + 2]])
+                    .expect("Failed to send message");
+            }
+        });
+
+        let client_thread = std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_secs(2));
+            let mut client_transport = TCPTransport::new(
+                Some(IpAddress::v4(127, 0, 0, 1)),
+                10111,
+                10110,
+                client_iface,
+            )
+            .expect("We should be able to initialize");
+            client_transport
+                .client_connect()
+                .expect("Client failed to connect to server");
+            println!("Client 1 connected");
+
+            let mut hdr = RPCHeader::default();
+            let mut recv_buf1 = [0; 1];
+            let mut recv_buf2 = [0; 1];
+            for i in 0u8..10 {
+                hdr.msg_len = 5;
+                println!("Client 1 before send");
+                client_transport
+                    .send_msg(&hdr, &[&[0 * i, 1 * i, 2 * i, 3 * i, 4 * i]])
+                    .expect("Failed to send message");
+                println!("Client 1 before recv");
+                client_transport
+                    .recv_msg(&mut hdr, None, &mut [&mut recv_buf1, &mut recv_buf2])
+                    .expect("Failed to recv message");
+                println!("Client 1 after recv");
+                assert_eq!(recv_buf1[0], i);
+                assert_eq!(recv_buf2[0], i + 1);
+            }
+        });
+
+        let client2_thread = std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_secs(2));
+            let mut client2_transport = TCPTransport::new(
+                Some(IpAddress::v4(127, 0, 0, 1)),
+                10113,
+                10112,
+                client2_iface,
+            )
+            .expect("We should be able to initialize");
+            client2_transport
+                .client_connect()
+                .expect("Client failed to connect to server");
+            println!("Client 2 connected");
+
+            let mut hdr = RPCHeader::default();
+            let mut recv_buf1 = [0; 1];
+            let mut recv_buf2 = [0; 1];
+            // Send 2, then receive 2
+            for i in 0u8..5 {
+                hdr.msg_len = 5;
+                println!("Client 2 before send1");
+                client2_transport
+                    .send_msg(&hdr, &[&[1, 1, 1, 1, 1]])
+                    .expect("Failed to send message");
+                println!("Client 2 before send2");
+                client2_transport
+                    .send_msg(&hdr, &[&[1, 1, 1, 1, 1]])
+                    .expect("Failed to send message");
+                println!("Client 2 before recv1");
+                client2_transport
+                    .recv_msg(&mut hdr, None, &mut [&mut recv_buf1, &mut recv_buf2])
+                    .expect("Failed to recv message");
+                assert_eq!(recv_buf1[0], (i * 2) + 1);
+                assert_eq!(recv_buf2[0], (i * 2) + 2);
+                println!("Client 2 before recv2");
+                client2_transport
+                    .recv_msg(&mut hdr, None, &mut [&mut recv_buf1, &mut recv_buf2])
+                    .expect("Failed to recv message");
+                println!("Client 2 after recv2");
+                assert_eq!(recv_buf1[0], (i * 2 + 1) + 1);
+                assert_eq!(recv_buf2[0], (i * 2 + 1) + 2);
+            }
+        });
+
+        client_thread.join().unwrap();
+        client2_thread.join().unwrap();
         server_thread.join().unwrap();
     }
 }

@@ -232,8 +232,14 @@ impl CommandLineArguments {
                         && prev != CmdToken::Test
                         && prev != CmdToken::MachineId
                         && prev != CmdToken::Workers
+                        && prev != CmdToken::Mode
+                        && prev != CmdToken::Transport
                     {
-                        sprint!("Malformed args (unexpected equal sign) in {}\r\n", args);
+                        sprint!(
+                            "Malformed args (unexpected equal sign) in `{}` previous token was {:?}\r\n",
+                            args,
+                            prev
+                        );
                         return Err(KError::MalformedCmdLine);
                     }
                 }

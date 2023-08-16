@@ -8,11 +8,10 @@ use log::{debug, trace, warn};
 use spin::Mutex;
 
 use smoltcp::iface::{Interface, SocketHandle};
+use smoltcp::phy::Device;
 use smoltcp::socket::{TcpSocket, TcpSocketBuffer};
 use smoltcp::time::Instant;
 use smoltcp::wire::IpAddress;
-
-use vmxnet3::smoltcp::DevQueuePhy;
 
 use crate::rpc::*;
 use crate::transport::Transport;
@@ -20,8 +19,8 @@ use crate::transport::Transport;
 const RX_BUF_LEN: usize = 8192;
 const TX_BUF_LEN: usize = 8192;
 
-pub struct TCPTransport<'a> {
-    iface: Arc<Mutex<Interface<'a, DevQueuePhy>>>,
+pub struct TCPTransport<'a, D: for<'d> Device<'d>> {
+    iface: Arc<Mutex<Interface<'a, D>>>,
     server_handle: SocketHandle,
     server_ip: Option<IpAddress>,
     server_port: u16,
@@ -30,12 +29,12 @@ pub struct TCPTransport<'a> {
     send_lock: AtomicBool,
 }
 
-impl TCPTransport<'_> {
+impl<'a, D: for<'d> Device<'d>> TCPTransport<'a, D> {
     pub fn new(
         server_ip: Option<IpAddress>,
         server_port: u16,
-        iface: Arc<Mutex<Interface<'_, DevQueuePhy>>>,
-    ) -> Result<TCPTransport<'_>, RPCError> {
+        iface: Arc<Mutex<Interface<'a, D>>>,
+    ) -> Result<TCPTransport<'a, D>, RPCError> {
         lazy_static::initialize(&rawtime::BOOT_TIME_ANCHOR);
         lazy_static::initialize(&rawtime::WALL_TIME_ANCHOR);
 
@@ -273,7 +272,7 @@ impl TCPTransport<'_> {
     }
 }
 
-impl Transport for TCPTransport<'_> {
+impl<'a, D: for<'d> Device<'d>> Transport for TCPTransport<'a, D> {
     fn max_send(&self) -> usize {
         RX_BUF_LEN
     }
@@ -348,10 +347,13 @@ impl Transport for TCPTransport<'_> {
             let (socket, cx) = iface.get_socket_and_context::<TcpSocket>(self.server_handle);
 
             // TODO: add timeout?? with error returned if timeout occurs?
-            socket
-                .connect(cx, (ip, self.server_port), self.client_port)
-                .map_err(|_| RPCError::ClientConnectError)?;
-            trace!(
+            let ret = socket.connect(cx, (ip, self.server_port), self.client_port);
+            //.map_err(|e| { log::error!("{:?}", e); RPCError::ClientConnectError})?;
+            match ret {
+                Ok(_) => {}
+                Err(e) => log::warn!("Connection error: {:?}", e),
+            }
+            log::warn!(
                 "Attempting to connect to server {}:{}",
                 ip,
                 self.server_port
@@ -374,7 +376,7 @@ impl Transport for TCPTransport<'_> {
 
                 // Waiting for send/recv forces the TCP handshake to fully complete
                 if socket.is_active() && (socket.may_send() || socket.may_recv()) {
-                    trace!("Connected to server, ready to send/recv data");
+                    log::warn!("Connected to server, ready to send/recv data");
                     break;
                 }
             }
@@ -412,5 +414,229 @@ impl Transport for TCPTransport<'_> {
             }
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use alloc::collections::BTreeMap;
+    use alloc::sync::Arc;
+
+    use smoltcp::iface::{InterfaceBuilder, NeighborCache};
+    use smoltcp::phy::{Loopback, Medium};
+    use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr};
+    use spin::Mutex;
+
+    use crate::rpc::MsgLen;
+    use crate::transport::RPCHeader;
+    use crate::transport::TCPTransport;
+    use crate::transport::Transport;
+
+    #[test]
+    fn test_initialization() {
+        // from smoltcp loopback example
+        let device = Loopback::new(Medium::Ethernet);
+        let mut neighbor_cache_entries = [None; 8];
+        let neighbor_cache = NeighborCache::new(&mut neighbor_cache_entries[..]);
+        let ip_addrs = [IpCidr::new(IpAddress::v4(127, 0, 0, 1), 8)];
+        let mut sockets: [_; 2] = Default::default();
+        let iface = InterfaceBuilder::new(device, &mut sockets[..])
+            .hardware_addr(EthernetAddress::default().into())
+            .neighbor_cache(neighbor_cache)
+            .ip_addrs(ip_addrs)
+            .finalize();
+
+        TCPTransport::new(None, 10110, Arc::new(Mutex::new(iface)))
+            .expect("We should be able to initialize");
+    }
+
+    #[test]
+    fn test_connect() {
+        // from smoltcp loopback example
+        let device = Loopback::new(Medium::Ethernet);
+        let neighbor_cache = NeighborCache::new(BTreeMap::new());
+        let ip_addrs = [IpCidr::new(IpAddress::v4(127, 0, 0, 1), 8)];
+        let sock_vec = Vec::with_capacity(1);
+        let iface = InterfaceBuilder::new(device, sock_vec)
+            .hardware_addr(EthernetAddress::default().into())
+            .neighbor_cache(neighbor_cache)
+            .ip_addrs(ip_addrs)
+            .finalize();
+        let iface_arc = Arc::new(Mutex::new(iface));
+
+        let server_iface = iface_arc.clone();
+        let client_iface = iface_arc.clone();
+
+        let server_thread = std::thread::spawn(move || {
+            let mut server_transport = TCPTransport::new(None, 10111, server_iface)
+                .expect("We should be able to initialize");
+            server_transport
+                .server_accept()
+                .expect("Failed to accept client connection");
+        });
+
+        let client_thread = std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_secs(2));
+            let mut client_transport =
+                TCPTransport::new(Some(IpAddress::v4(127, 0, 0, 1)), 10111, client_iface)
+                    .expect("We should be able to initialize");
+            client_transport
+                .client_connect()
+                .expect("Client failed to connect to server");
+        });
+
+        client_thread.join().unwrap();
+        server_thread.join().unwrap();
+    }
+
+    #[test]
+    fn test_send_recv() {
+        // from smoltcp loopback example
+        let device = Loopback::new(Medium::Ethernet);
+        let neighbor_cache = NeighborCache::new(BTreeMap::new());
+        let ip_addrs = [IpCidr::new(IpAddress::v4(127, 0, 0, 1), 8)];
+        let sock_vec = Vec::with_capacity(1);
+        let iface = InterfaceBuilder::new(device, sock_vec)
+            .hardware_addr(EthernetAddress::default().into())
+            .neighbor_cache(neighbor_cache)
+            .ip_addrs(ip_addrs)
+            .finalize();
+        let iface_arc = Arc::new(Mutex::new(iface));
+
+        let server_iface = iface_arc.clone();
+        let client_iface = iface_arc.clone();
+
+        let server_thread = std::thread::spawn(move || {
+            let mut server_transport = TCPTransport::new(None, 10111, server_iface)
+                .expect("We should be able to initialize");
+            server_transport
+                .server_accept()
+                .expect("Failed to accept client connection");
+
+            let mut hdr = RPCHeader::default();
+            let mut recv_buf = [0; 10];
+            for i in 0u8..10 {
+                server_transport
+                    .recv_msg(&mut hdr, None, &mut [&mut recv_buf])
+                    .expect("Failed to send message");
+                let msg_len = hdr.msg_len;
+                assert_eq!(msg_len, 5 as MsgLen);
+                for j in 0u8..5 {
+                    assert_eq!(recv_buf[j as usize], j * i);
+                }
+                for j in 5..10 {
+                    assert_eq!(recv_buf[j as usize], 0u8);
+                }
+
+                hdr.msg_len = 2;
+                server_transport
+                    .send_msg(&hdr, &[&[i], &[i + 1]])
+                    .expect("Failed to send message");
+            }
+        });
+
+        let client_thread = std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_secs(2));
+            let mut client_transport =
+                TCPTransport::new(Some(IpAddress::v4(127, 0, 0, 1)), 10111, client_iface)
+                    .expect("We should be able to initialize");
+            client_transport
+                .client_connect()
+                .expect("Client failed to connect to server");
+
+            let mut hdr = RPCHeader::default();
+            let mut recv_buf1 = [0; 1];
+            let mut recv_buf2 = [0; 1];
+            for i in 0u8..10 {
+                hdr.msg_len = 5;
+                client_transport
+                    .send_msg(&hdr, &[&[0 * i, 1 * i, 2 * i, 3 * i, 4 * i]])
+                    .expect("Failed to send message");
+                client_transport
+                    .recv_msg(&mut hdr, None, &mut [&mut recv_buf1, &mut recv_buf2])
+                    .expect("Failed to recv message");
+                assert_eq!(recv_buf1[0], i);
+                assert_eq!(recv_buf2[0], i + 1);
+            }
+        });
+
+        client_thread.join().unwrap();
+        server_thread.join().unwrap();
+    }
+
+    #[test]
+    fn test_send_and_recv() {
+        // from smoltcp loopback example
+        let device = Loopback::new(Medium::Ethernet);
+        let neighbor_cache = NeighborCache::new(BTreeMap::new());
+        let ip_addrs = [IpCidr::new(IpAddress::v4(127, 0, 0, 1), 8)];
+        let sock_vec = Vec::with_capacity(1);
+        let iface = InterfaceBuilder::new(device, sock_vec)
+            .hardware_addr(EthernetAddress::default().into())
+            .neighbor_cache(neighbor_cache)
+            .ip_addrs(ip_addrs)
+            .finalize();
+        let iface_arc = Arc::new(Mutex::new(iface));
+
+        let server_iface = iface_arc.clone();
+        let client_iface = iface_arc.clone();
+
+        let server_thread = std::thread::spawn(move || {
+            let mut server_transport = TCPTransport::new(None, 10111, server_iface)
+                .expect("We should be able to initialize");
+            server_transport
+                .server_accept()
+                .expect("Failed to accept client connection");
+
+            let mut hdr = RPCHeader::default();
+            let mut recv_buf = [0; 10];
+            for i in 0u8..10 {
+                server_transport
+                    .recv_msg(&mut hdr, None, &mut [&mut recv_buf])
+                    .expect("Failed to send message");
+                let msg_len = hdr.msg_len;
+                assert_eq!(msg_len, 5 as MsgLen);
+                for j in 0u8..5 {
+                    assert_eq!(recv_buf[j as usize], j * i);
+                }
+                for j in 5..10 {
+                    assert_eq!(recv_buf[j as usize], 0u8);
+                }
+
+                hdr.msg_len = 2;
+                server_transport
+                    .send_msg(&hdr, &[&[i], &[i + 1]])
+                    .expect("Failed to send message");
+            }
+        });
+
+        let client_thread = std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_secs(2));
+            let mut client_transport =
+                TCPTransport::new(Some(IpAddress::v4(127, 0, 0, 1)), 10111, client_iface)
+                    .expect("We should be able to initialize");
+            client_transport
+                .client_connect()
+                .expect("Client failed to connect to server");
+
+            let mut hdr = RPCHeader::default();
+            let mut recv_buf1 = [0; 1];
+            let mut recv_buf2 = [0; 1];
+            for i in 0u8..10 {
+                hdr.msg_len = 5;
+                client_transport
+                    .send_and_recv(
+                        &mut hdr,
+                        &[&[0 * i, 1 * i, 2 * i, 3 * i, 4 * i]],
+                        &mut [&mut recv_buf1, &mut recv_buf2],
+                    )
+                    .expect("Failed to send and recv");
+                assert_eq!(recv_buf1[0], i);
+                assert_eq!(recv_buf2[0], i + 1);
+            }
+        });
+
+        client_thread.join().unwrap();
+        server_thread.join().unwrap();
     }
 }

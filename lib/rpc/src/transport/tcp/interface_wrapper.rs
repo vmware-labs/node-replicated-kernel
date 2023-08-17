@@ -98,12 +98,7 @@ impl MultichannelSocket {
             if let Some(ref mut task) = *send_task_opt {
                 // Attempt to send until end of data array
                 if let Ok(bytes_sent) = socket.send_slice(&(task.buf[task.offset..])) {
-                    log::debug!(
-                        "socket {:?} sent [{:?}-{:?}]",
-                        socket,
-                        task.offset,
-                        task.offset + bytes_sent
-                    );
+                    log::debug!("sent [{:?}-{:?}]", task.offset, task.offset + bytes_sent);
                     task.offset += bytes_sent;
 
                     if task.offset == task.buf.len() {
@@ -197,12 +192,7 @@ impl MultichannelSocket {
                     socket.recv_slice(&mut recv_buf[task.offset..task.offset + data_remaining])
                 {
                     if bytes_recv > 0 {
-                        log::debug!(
-                            "socket {:?} recv [{:?}-{:?}]",
-                            socket,
-                            task.offset,
-                            task.offset + bytes_recv
-                        );
+                        log::debug!("recv [{:?}-{:?}]", task.offset, task.offset + bytes_recv);
 
                         if !started {
                             started = true;
@@ -348,7 +338,7 @@ impl<'a, D: for<'d> Device<'d>> InterfaceWrapper<'a, D> {
     }
 
     fn make_progress(&self, state: &mut InterfaceState<D>) {
-        log::debug!("make_progress()");
+        log::trace!("make_progress()");
 
         match state.iface.poll(Instant::from_millis(
             rawtime::duration_since_boot().as_millis() as i64,
@@ -434,6 +424,7 @@ mod tests {
     use smoltcp::iface::{InterfaceBuilder, NeighborCache};
     use smoltcp::phy::{Loopback, Medium};
     use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr};
+    use spin::Mutex;
 
     use crate::rpc::{RPCHeader, HDR_LEN};
     use crate::transport::tcp::interface_wrapper::InterfaceWrapper;
@@ -595,57 +586,36 @@ mod tests {
             .ip_addrs(ip_addrs)
             .finalize();
 
+        let num_send_channels = 3u8;
         let interface_wrapper = InterfaceWrapper::new(iface);
         let client_id = interface_wrapper
-            .add_socket(Some((IpAddress::v4(127, 0, 0, 1), 10110)), 10111, 3)
+            .add_socket(
+                Some((IpAddress::v4(127, 0, 0, 1), 10110)),
+                10111,
+                num_send_channels as usize,
+            )
             .expect("Failed to add client socket");
         let _server_id = interface_wrapper
             .add_socket(None, 10110, 1)
             .expect("Failed to add server socket");
 
         let send_data = [0u8; 10];
-        let mut buffer0 = Arc::<[u8]>::new_uninit_slice(send_data.len());
-        let data = Arc::get_mut(&mut buffer0).unwrap(); // not shared yet, no panic!
-        MaybeUninit::write_slice(data, &send_data);
+        for i in 0..num_send_channels {
+            let mut buffer = Arc::<[u8]>::new_uninit_slice(send_data.len());
+            let data = Arc::get_mut(&mut buffer).unwrap(); // not shared yet, no panic!
+            MaybeUninit::write_slice(data, &send_data);
 
-        let buffer0 = unsafe {
-            // Safety:
-            // - Length == send_data.len(): see above
-            // - All initialized: plain-old-data, wrote all of slice, see above
-            buffer0.assume_init()
-        };
+            let buffer = unsafe {
+                // Safety:
+                // - Length == send_data.len(): see above
+                // - All initialized: plain-old-data, wrote all of slice, see above
+                buffer.assume_init()
+            };
 
-        let mut buffer1 = Arc::<[u8]>::new_uninit_slice(send_data.len());
-        let data = Arc::get_mut(&mut buffer1).unwrap(); // not shared yet, no panic!
-        MaybeUninit::write_slice(data, &send_data);
-
-        let buffer1 = unsafe {
-            // Safety:
-            // - Length == send_data.len(): see above
-            // - All initialized: plain-old-data, wrote all of slice, see above
-            buffer1.assume_init()
-        };
-
-        let mut buffer2 = Arc::<[u8]>::new_uninit_slice(send_data.len());
-        let data = Arc::get_mut(&mut buffer2).unwrap(); // not shared yet, no panic!
-        MaybeUninit::write_slice(data, &send_data);
-
-        let buffer2 = unsafe {
-            // Safety:
-            // - Length == send_data.len(): see above
-            // - All initialized: plain-old-data, wrote all of slice, see above
-            buffer2.assume_init()
-        };
-
-        interface_wrapper
-            .send_msg(client_id, 0, buffer0)
-            .expect("Failed to send.");
-        interface_wrapper
-            .send_msg(client_id, 1, buffer1)
-            .expect("Failed to send.");
-        interface_wrapper
-            .send_msg(client_id, 2, buffer2)
-            .expect("Failed to send.");
+            interface_wrapper
+                .send_msg(client_id, i, buffer)
+                .expect("Failed to send.");
+        }
     }
 
     #[test]
@@ -770,4 +740,283 @@ mod tests {
             assert_eq!(response[i], 3);
         }
     }
+
+    #[test]
+    fn test_recv_anychannel() {
+        setup();
+
+        // from smoltcp loopback example
+        let device = Loopback::new(Medium::Ethernet);
+        let mut neighbor_cache_entries = [None; 8];
+        let neighbor_cache = NeighborCache::new(&mut neighbor_cache_entries[..]);
+        let ip_addrs = [IpCidr::new(IpAddress::v4(127, 0, 0, 1), 8)];
+        let mut sockets: [_; 4] = Default::default();
+        let iface = InterfaceBuilder::new(device, &mut sockets[..])
+            .hardware_addr(EthernetAddress::default().into())
+            .neighbor_cache(neighbor_cache)
+            .ip_addrs(ip_addrs)
+            .finalize();
+
+        let num_send_channels = 3u8;
+
+        let interface_wrapper = InterfaceWrapper::new(iface);
+        let client_id = interface_wrapper
+            .add_socket(
+                Some((IpAddress::v4(127, 0, 0, 1), 10110)),
+                10111,
+                num_send_channels as usize,
+            )
+            .expect("Failed to add client socket");
+        let server_id = interface_wrapper
+            .add_socket(None, 10110, 1)
+            .expect("Failed to add server socket");
+
+        for i in 0..num_send_channels {
+            let hdr = RPCHeader {
+                msg_id: i,
+                msg_type: 10,
+                msg_len: 6,
+            };
+            let hdr_bytes = unsafe { hdr.as_bytes() };
+            let mut send_data = [3u8; 10];
+            for i in 0..HDR_LEN {
+                send_data[i] = hdr_bytes[i];
+            }
+
+            for j in HDR_LEN..send_data.len() {
+                send_data[j] = i;
+            }
+
+            let mut buffer = Arc::<[u8]>::new_uninit_slice(send_data.len());
+            let data = Arc::get_mut(&mut buffer).unwrap(); // not shared yet, no panic!
+            MaybeUninit::write_slice(data, &send_data);
+
+            let buffer = unsafe {
+                // Safety:
+                // - Length == send_data.len(): see above
+                // - All initialized: plain-old-data, wrote all of slice, see above
+                buffer.assume_init()
+            };
+
+            interface_wrapper
+                .send_msg(client_id, i, buffer)
+                .expect("Failed to send.");
+        }
+
+        for i in 0..num_send_channels {
+            let response = {
+                let recv_buffer = Arc::<[u8]>::new_uninit_slice(10);
+                let recv_buffer = unsafe {
+                    // Safety:
+                    // - It's not initialized, but recv will initialize it. This is not ideal, but it works.
+                    recv_buffer.assume_init()
+                };
+
+                interface_wrapper
+                    .recv_msg(server_id, 0, recv_buffer)
+                    .expect("Failed to receive")
+            };
+            for j in HDR_LEN..10 {
+                assert_eq!(response[j], i);
+            }
+        }
+    }
+
+    #[test]
+    fn test_recv_anychannel_concurrent() {
+        setup();
+
+        // from smoltcp loopback example
+        let device = Loopback::new(Medium::Ethernet);
+        let neighbor_cache = NeighborCache::new(BTreeMap::new());
+        let ip_addrs = [IpCidr::new(IpAddress::v4(127, 0, 0, 1), 8)];
+        let sock_vec = Vec::with_capacity(1);
+        let iface = InterfaceBuilder::new(device, sock_vec)
+            .hardware_addr(EthernetAddress::default().into())
+            .neighbor_cache(neighbor_cache)
+            .ip_addrs(ip_addrs)
+            .finalize();
+
+        let num_client_channels = 5u8;
+
+        let interface_wrapper = Arc::new(InterfaceWrapper::new(iface));
+        let client_id = interface_wrapper
+            .add_socket(
+                Some((IpAddress::v4(127, 0, 0, 1), 10110)),
+                10111,
+                num_client_channels as usize,
+            )
+            .expect("Failed to add client socket");
+        let server_id = interface_wrapper
+            .add_socket(None, 10110, 1)
+            .expect("Failed to add server socket");
+
+        let mut threads = Vec::new();
+        for i in 0u8..num_client_channels {
+            let my_interface_wrapper = interface_wrapper.clone();
+            threads.push(thread::spawn(move || {
+                // Setup for send
+                let hdr = RPCHeader {
+                    msg_id: i,
+                    msg_type: 10,
+                    msg_len: 6,
+                };
+                let hdr_bytes = unsafe { hdr.as_bytes() };
+                let mut send_data = [3u8; 10];
+                for j in 0..HDR_LEN {
+                    send_data[j] = hdr_bytes[j];
+                }
+                for j in HDR_LEN..send_data.len() {
+                    send_data[j] = i;
+                }
+                let mut buffer = Arc::<[u8]>::new_uninit_slice(send_data.len());
+                let data = Arc::get_mut(&mut buffer).unwrap(); // not shared yet, no panic!
+                MaybeUninit::write_slice(data, &send_data);
+
+                let buffer = unsafe {
+                    // Safety:
+                    // - Length == send_data.len(): see above
+                    // - All initialized: plain-old-data, wrote all of slice, see above
+                    buffer.assume_init()
+                };
+
+                my_interface_wrapper
+                    .send_msg(client_id, i, buffer)
+                    .expect("Failed to send.");
+            }));
+        }
+
+        for _i in 0u8..num_client_channels {
+            let response = {
+                let recv_buffer = Arc::<[u8]>::new_uninit_slice(10);
+                let recv_buffer = unsafe {
+                    // Safety:
+                    // - It's not initialized, but recv will initialize it. This is not ideal, but it works.
+                    recv_buffer.assume_init()
+                };
+
+                interface_wrapper
+                    .recv_msg(server_id, 0, recv_buffer)
+                    .expect("Failed to receive")
+            };
+            let hdr = RPCHeader::from_bytes(&response[0..HDR_LEN]);
+            log::warn!("HDR ID IS: {:?}", hdr);
+            for j in HDR_LEN..10 {
+                assert_eq!(response[j], hdr.msg_id);
+            }
+        }
+
+        for t in threads {
+            t.join().unwrap();
+        }
+    }
+
+    #[test]
+    fn test_recv_multi_concurrent() {
+        setup();
+
+        // from smoltcp loopback example
+        let device = Loopback::new(Medium::Ethernet);
+        let neighbor_cache = NeighborCache::new(BTreeMap::new());
+        let ip_addrs = [IpCidr::new(IpAddress::v4(127, 0, 0, 1), 8)];
+        let sock_vec = Vec::with_capacity(1);
+        let iface = InterfaceBuilder::new(device, sock_vec)
+            .hardware_addr(EthernetAddress::default().into())
+            .neighbor_cache(neighbor_cache)
+            .ip_addrs(ip_addrs)
+            .finalize();
+
+        let num_channels = 5u8;
+
+        let interface_wrapper = Arc::new(InterfaceWrapper::new(iface));
+        let client_id = interface_wrapper
+            .add_socket(
+                Some((IpAddress::v4(127, 0, 0, 1), 10110)),
+                10111,
+                num_channels as usize,
+            )
+            .expect("Failed to add client socket");
+        let server_id = interface_wrapper
+            .add_socket(None, 10110, num_channels as usize)
+            .expect("Failed to add server socket");
+
+        let mut threads = Vec::new();
+        for i in 0u8..num_channels {
+            let my_interface_wrapper = interface_wrapper.clone();
+            threads.push(thread::spawn(move || {
+                // Setup for send
+                let hdr = RPCHeader {
+                    msg_id: i,
+                    msg_type: 10,
+                    msg_len: 6,
+                };
+                let hdr_bytes = unsafe { hdr.as_bytes() };
+                let mut send_data = [3u8; 10];
+                for j in 0..HDR_LEN {
+                    send_data[j] = hdr_bytes[j];
+                }
+                for j in HDR_LEN..send_data.len() {
+                    send_data[j] = i;
+                }
+                let mut buffer = Arc::<[u8]>::new_uninit_slice(send_data.len());
+                let data = Arc::get_mut(&mut buffer).unwrap(); // not shared yet, no panic!
+                MaybeUninit::write_slice(data, &send_data);
+
+                let buffer = unsafe {
+                    // Safety:
+                    // - Length == send_data.len(): see above
+                    // - All initialized: plain-old-data, wrote all of slice, see above
+                    buffer.assume_init()
+                };
+
+                my_interface_wrapper
+                    .send_msg(client_id, i, buffer)
+                    .expect("Failed to send.");
+            }));
+        }
+
+        let receiving = Arc::new(Mutex::new(0));
+
+        for i in 0u8..num_channels {
+            let my_interface_wrapper = interface_wrapper.clone();
+            let my_receiving = receiving.clone();
+            threads.push(thread::spawn(move || {
+                loop {
+                    {
+                        let mut local_receiving = my_receiving.lock();
+                        if *local_receiving < num_channels {
+                            *local_receiving += 1;
+                        } else {
+                            break;
+                        }
+                    }
+
+                    let response = {
+                        let recv_buffer = Arc::<[u8]>::new_uninit_slice(10);
+                        let recv_buffer = unsafe {
+                            // Safety:
+                            // - It's not initialized, but recv will initialize it. This is not ideal, but it works.
+                            recv_buffer.assume_init()
+                        };
+
+                        my_interface_wrapper
+                            .recv_msg(server_id, i, recv_buffer)
+                            .expect("Failed to receive")
+                    };
+                    let hdr = RPCHeader::from_bytes(&response[0..HDR_LEN]);
+                    for j in HDR_LEN..10 {
+                        assert_eq!(response[j], hdr.msg_id);
+                    }
+                }
+            }));
+        }
+
+        for t in threads {
+            t.join().unwrap();
+        }
+    }
+
+    // TODO: add test for not anychannel recv
+
+    // TODO: add tests for multi socket
 }

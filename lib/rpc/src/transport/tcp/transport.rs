@@ -20,8 +20,9 @@ impl<'a, D: for<'d> Device<'d>> TCPTransport<'a, D> {
         local_port: u16,
         server_address: Option<(IpAddress, u16)>,
         interface_wrapper: InterfaceWrapper<'a, D>,
+        max_inflight: usize,
     ) -> Result<TCPTransport<'a, D>, RPCError> {
-        let socket_id = interface_wrapper.add_socket(server_address, local_port)?;
+        let socket_id = interface_wrapper.add_socket(server_address, local_port, max_inflight)?;
         Ok(TCPTransport {
             interface_wrapper,
             socket_id,

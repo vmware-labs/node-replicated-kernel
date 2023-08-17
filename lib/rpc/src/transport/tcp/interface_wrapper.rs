@@ -21,18 +21,41 @@ pub(crate) const TX_BUF_LEN: usize = 8192;
 const MAX_SOCKETS: usize = 16;
 pub(crate) type SocketId = usize;
 
+struct InterfaceState<'a, D: for<'d> Device<'d>> {
+    iface: Interface<'a, D>,
+    handles: ArrayVec<SocketHandle, MAX_SOCKETS>,
+}
+
+struct SocketTask {
+    offset: usize,
+    buf: Arc<[u8]>,
+}
+
+struct SocketState {
+    send_task: Arc<Mutex<Option<SocketTask>>>,
+    send_doorbell: AtomicBool,
+    recv_task: Arc<Mutex<Option<SocketTask>>>,
+    recv_doorbell: AtomicBool,
+    finished_recv: Arc<Mutex<Option<Arc<[u8]>>>>,
+}
+
+impl SocketState {
+    fn new() -> SocketState {
+        SocketState {
+            send_task: Arc::new(Mutex::new(None)),
+            send_doorbell: AtomicBool::new(false),
+            recv_task: Arc::new(Mutex::new(None)),
+            recv_doorbell: AtomicBool::new(false),
+            finished_recv: Arc::new(Mutex::new(None)),
+        }
+    }
+}
+
 pub struct InterfaceWrapper<'a, D: for<'d> Device<'d>> {
-    // These could probably be bundled together
-    // since both are only accessed in add_socket* and make_progress
-    pub iface: Arc<Mutex<Interface<'a, D>>>,
-    pub handles: Arc<Mutex<ArrayVec<SocketHandle, MAX_SOCKETS>>>,
+    // This is data that is only used during socket setup or make progress.
+    iface_state: Arc<Mutex<InterfaceState<'a, D>>>,
 
-    pub send_bufs: ArrayVec<Arc<Mutex<Option<(usize, Arc<[u8]>)>>>, MAX_SOCKETS>,
-    pub send_doorbells: ArrayVec<AtomicBool, MAX_SOCKETS>,
-
-    pub recv_bufs: ArrayVec<Arc<Mutex<Option<(usize, Arc<[u8]>)>>>, MAX_SOCKETS>,
-    pub finished_recv_bufs: ArrayVec<Arc<Mutex<Option<Arc<[u8]>>>>, MAX_SOCKETS>,
-    pub recv_doorbells: ArrayVec<AtomicBool, MAX_SOCKETS>,
+    socket_state: ArrayVec<SocketState, MAX_SOCKETS>,
 }
 
 impl<'a, D: for<'d> Device<'d>> InterfaceWrapper<'a, D> {
@@ -40,32 +63,17 @@ impl<'a, D: for<'d> Device<'d>> InterfaceWrapper<'a, D> {
         lazy_static::initialize(&rawtime::BOOT_TIME_ANCHOR);
         lazy_static::initialize(&rawtime::WALL_TIME_ANCHOR);
 
-        let mut send_bufs = ArrayVec::new();
-        let mut send_doorbells = ArrayVec::new();
-        let mut recv_bufs = ArrayVec::new();
-        let mut finished_recv_bufs = ArrayVec::new();
-        let mut recv_doorbells = ArrayVec::new();
+        let mut socket_state = ArrayVec::new();
         for _ in 0..MAX_SOCKETS {
-            send_bufs.push(Arc::new(Mutex::new(None)));
-            send_doorbells.push(AtomicBool::new(false));
-            recv_bufs.push(Arc::new(Mutex::new(None)));
-            finished_recv_bufs.push(Arc::new(Mutex::new(None)));
-            recv_doorbells.push(AtomicBool::new(false));
+            socket_state.push(SocketState::new());
         }
 
         InterfaceWrapper {
-            iface: Arc::new(Mutex::new(iface)),
-
-            handles: Arc::new(Mutex::new(ArrayVec::new())),
-
-            send_bufs,
-            send_doorbells,
-
-            recv_bufs,
-            finished_recv_bufs,
-            recv_doorbells,
-            //recv_hdr: Arc::new(Mutex::new(None)),
-            //send_lock: AtomicBool::new(false),
+            iface_state: Arc::new(Mutex::new(InterfaceState {
+                iface,
+                handles: ArrayVec::new(),
+            })),
+            socket_state,
         }
     }
 
@@ -91,25 +99,25 @@ impl<'a, D: for<'d> Device<'d>> InterfaceWrapper<'a, D> {
         let socket_tx_buffer = TcpSocketBuffer::new(sock_vec);
         let mut tcp_socket = TcpSocket::new(socket_rx_buffer, socket_tx_buffer);
 
+        // If the socket is a listening socket, listen
         if server_addr.is_none() {
             tcp_socket
                 .listen(local_port)
                 .map_err(|_| RPCError::ServerListenError)?;
         }
 
-        // Add socket to interface and record socket handle
-        let handle = self.iface.lock().add_socket(tcp_socket);
-
         // Add to servere handles
         let socket_id = {
-            let mut handles = self.handles.lock();
-            let id = handles.len();
-            handles.push(handle);
+            let mut state = self.iface_state.lock();
+
+            // Add socket to interface and record socket handle
+            let handle = state.iface.add_socket(tcp_socket);
+            let id = state.handles.len();
+            state.handles.push(handle);
 
             if let Some(addr) = server_addr {
-                // Add socket to interface and record socket handle
-                let mut iface = self.iface.lock();
-                let (socket, cx) = iface.get_socket_and_context::<TcpSocket>(handle);
+                // If the socket is a connecting socket, connect
+                let (socket, cx) = state.iface.get_socket_and_context::<TcpSocket>(handle);
 
                 // TODO: add timeout?? with error returned if timeout occurs?
                 if let Err(e) = socket.connect(cx, addr, local_port) {
@@ -125,24 +133,24 @@ impl<'a, D: for<'d> Device<'d>> InterfaceWrapper<'a, D> {
     fn wait_for_doorbell(&self, doorbell: &AtomicBool) -> Result<(), RPCError> {
         log::trace!("wait_for_doorbell()");
         loop {
-            let try_iface = self.iface.try_lock();
+            let try_state = self.iface_state.try_lock();
             if doorbell
                 .compare_exchange(true, false, Ordering::SeqCst, Ordering::SeqCst)
                 .is_ok()
             {
                 break;
             }
-            if let Some(mut iface) = try_iface {
-                self.make_progress(&mut *iface);
+            if let Some(mut state) = try_state {
+                self.make_progress(&mut *state);
             }
         }
         Ok(())
     }
 
-    fn make_progress(&self, iface: &mut Interface<'a, D>) {
+    fn make_progress(&self, state: &mut InterfaceState<D>) {
         log::trace!("make_progress()");
 
-        match iface.poll(Instant::from_millis(
+        match state.iface.poll(Instant::from_millis(
             rawtime::duration_since_boot().as_millis() as i64,
         )) {
             Ok(_) => {}
@@ -152,28 +160,29 @@ impl<'a, D: for<'d> Device<'d>> InterfaceWrapper<'a, D> {
         }
 
         // Try to make some progress
-        let handles = self.handles.lock();
-        for i in 0..handles.len() {
-            let socket = iface.get_socket::<TcpSocket>(handles[i]);
+        for i in 0..state.handles.len() {
+            let handle = state.handles[i];
+            let socket = state.iface.get_socket::<TcpSocket>(handle);
+            let socket_state = &self.socket_state[i];
 
             // If this socket can send, send any outgoing data.
             if socket.can_send() {
-                let mut send_buf_opt = self.send_bufs[i].lock(); // TODO: make this a try-lock
-                if let Some((mut offset, send_buf)) = &*send_buf_opt {
+                let mut send_task_opt = socket_state.send_task.lock(); // TODO: make this a try-lock
+                if let Some(ref mut task) = *send_task_opt {
                     // Attempt to send until end of data array
-                    if let Ok(bytes_sent) = socket.send_slice(&send_buf[offset..]) {
+                    if let Ok(bytes_sent) = socket.send_slice(&(task.buf[task.offset..])) {
                         log::debug!(
                             "socket {:?} sent [{:?}-{:?}]",
                             i,
-                            offset,
-                            offset + bytes_sent
+                            task.offset,
+                            task.offset + bytes_sent
                         );
-                        offset += bytes_sent;
+                        task.offset += bytes_sent;
 
-                        if offset == send_buf.len() {
+                        if task.offset == task.buf.len() {
                             // We finished sending the send buf, so let it go
-                            *send_buf_opt = None;
-                            self.send_doorbells[i].store(true, Ordering::SeqCst);
+                            *send_task_opt = None;
+                            socket_state.send_doorbell.store(true, Ordering::SeqCst);
                         }
                     }
                 }
@@ -182,21 +191,22 @@ impl<'a, D: for<'d> Device<'d>> InterfaceWrapper<'a, D> {
             // If this socket can recv, recv any incoming data.
             if socket.may_recv() {
                 let mut finished = false;
-                let mut recv_buf_opt = self.recv_bufs[i].lock(); // TODO: make this a try-lock
-                if let Some((mut offset, recv_buf_arc)) = &mut *recv_buf_opt {
+                let mut recv_task_opt = socket_state.recv_task.lock(); // TODO: make this a try-lock
+                if let Some(ref mut task) = *recv_task_opt {
                     // Attempt to receive until end of data array
-                    let recv_buf = Arc::get_mut(recv_buf_arc).unwrap();
-                    if let Ok(bytes_recv) = socket.recv_slice(&mut recv_buf[offset..]) {
+                    //let mut offset = task.offset;
+                    let recv_buf = Arc::get_mut(&mut task.buf).unwrap();
+                    if let Ok(bytes_recv) = socket.recv_slice(&mut recv_buf[task.offset..]) {
                         if bytes_recv > 0 {
                             log::debug!(
                                 "socket {:?} recv [{:?}-{:?}]",
                                 i,
-                                offset,
-                                offset + bytes_recv
+                                task.offset,
+                                task.offset + bytes_recv
                             );
 
-                            offset += bytes_recv;
-                            if offset == recv_buf.len() {
+                            task.offset += bytes_recv;
+                            if task.offset == recv_buf.len() {
                                 finished = true;
                             }
                         }
@@ -205,44 +215,52 @@ impl<'a, D: for<'d> Device<'d>> InterfaceWrapper<'a, D> {
 
                 if finished {
                     // We finished receiving into the recv buf, so let it go
-                    let mut finished_opt = self.finished_recv_bufs[i].lock();
-                    let (_, recv_buf_arc) = recv_buf_opt.as_ref().unwrap();
-                    *finished_opt = Some(recv_buf_arc.clone());
-                    *recv_buf_opt = None;
-                    self.recv_doorbells[i].store(true, Ordering::SeqCst);
+                    let mut finished_opt = socket_state.finished_recv.lock();
+                    let task = recv_task_opt.as_ref().unwrap();
+                    *finished_opt = Some(task.buf.clone());
+                    *recv_task_opt = None;
+                    socket_state.recv_doorbell.store(true, Ordering::SeqCst);
                 }
             }
         }
     }
 
     pub fn send(&self, socket_id: SocketId, send_buf: Arc<[u8]>) -> Result<(), RPCError> {
+        let state = &self.socket_state[socket_id];
         {
-            let mut send_buf_option = self.send_bufs[socket_id].lock();
-            *send_buf_option = Some((0, send_buf));
+            let mut send_task_option = state.send_task.lock();
+            *send_task_option = Some(SocketTask {
+                offset: 0,
+                buf: send_buf,
+            });
         }
-        self.wait_for_doorbell(&self.send_doorbells[socket_id])?;
+        self.wait_for_doorbell(&state.send_doorbell)?;
         Ok(())
     }
 
     pub fn recv(&self, socket_id: SocketId, recv_buf: Arc<[u8]>) -> Result<Arc<[u8]>, RPCError> {
+        let state = &self.socket_state[socket_id];
         {
-            let mut recv_buf_option = self.recv_bufs[socket_id].lock();
-            *recv_buf_option = Some((0, recv_buf));
+            let mut recv_task_option = state.recv_task.lock();
+            *recv_task_option = Some(SocketTask {
+                offset: 0,
+                buf: recv_buf,
+            });
         }
 
-        self.wait_for_doorbell(&self.recv_doorbells[socket_id])?;
-        let mut populated_recv_buf = self.finished_recv_bufs[socket_id].lock();
+        self.wait_for_doorbell(&state.recv_doorbell)?;
+        let mut populated_finished_recv = state.finished_recv.lock();
 
         // Get a new reference
-        let my_recv_buf = if let Some(buf) = &*populated_recv_buf {
+        let my_finished_recv = if let Some(buf) = &*populated_finished_recv {
             buf.clone()
         } else {
             panic!("There should be a receive buffer if the flag was set!");
         };
 
         // Drop old reference
-        *populated_recv_buf = None;
-        Ok(my_recv_buf)
+        *populated_finished_recv = None;
+        Ok(my_finished_recv)
     }
 }
 

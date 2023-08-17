@@ -30,6 +30,7 @@ pub type MsgId = u8;
 pub const MAX_INFLIGHT_MSGS: usize = 256; // Max # of MsgIds
 pub type MsgLen = u16;
 
+// TODO: remove copy/clone
 #[derive(Debug, Default, Copy, Clone)]
 #[repr(C, packed)]
 pub struct RPCHeader {
@@ -40,6 +41,7 @@ pub struct RPCHeader {
 pub const HDR_LEN: usize = core::mem::size_of::<RPCHeader>();
 
 impl RPCHeader {
+    // TODO: remove copy from??
     pub fn copy_from(&mut self, from: RPCHeader) {
         self.msg_id = from.msg_id;
         self.msg_type = from.msg_type;
@@ -62,5 +64,45 @@ impl RPCHeader {
         ::core::slice::from_raw_parts((self as *const RPCHeader) as *const u8, HDR_LEN)
             .try_into()
             .expect("slice with incorrect length")
+    }
+
+    /// # Safety
+    /// - bytes must be HDR_LEN long.
+    #[inline(always)]
+    pub fn from_bytes(bytes: &[u8]) -> RPCHeader {
+        RPCHeader {
+            msg_id: bytes[0],
+            msg_type: bytes[1],
+            // TODO: this is a bit architecture specific
+            msg_len: ((bytes[3] as u16) << 8) | (bytes[2] as u16),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::rpc::RPCHeader;
+
+    #[test]
+    fn test_hdr_serialization() {
+        let orig_id = 5;
+        let orig_type = 10;
+        let orig_len = 251;
+        let hdr = RPCHeader {
+            msg_id: orig_id,
+            msg_type: orig_type,
+            msg_len: orig_len,
+        };
+
+        let bytes = unsafe { hdr.as_bytes() };
+        let hdr2 = RPCHeader::from_bytes(bytes);
+
+        let new_id = hdr2.msg_id;
+        let new_type = hdr2.msg_type;
+        let new_len = hdr2.msg_len;
+
+        assert_eq!(orig_id, new_id);
+        assert_eq!(orig_type, new_type);
+        assert_eq!(orig_len, new_len);
     }
 }

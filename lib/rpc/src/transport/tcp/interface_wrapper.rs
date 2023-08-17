@@ -22,7 +22,7 @@ const MAX_SOCKETS: usize = 16;
 pub(crate) type SocketId = usize;
 
 /// Max number of inflight-messages per socket
-const MAX_CHANNELS: usize = MsgId::MAX as usize + 1;
+const MAX_CHANNELS: usize = MAX_INFLIGHT_MSGS;
 
 struct InterfaceState<'a, D: for<'d> Device<'d>> {
     iface: Interface<'a, D>,
@@ -35,39 +35,56 @@ struct SocketTask {
 }
 
 struct SocketState {
-    // TODO: this could be a read/write lock, as it's only written to once.
+    /* general state */
+    // TODO: this could be a read/write lock, as it's only written to once. Could also make just arc.
     num_channels: Arc<Mutex<usize>>,
 
+    /* send state */
+    // TODO: this could be a read/write lock, as it's only written to once. Could also make just arc.
+    /// What channel to check for send in next. Useful for in-progress sends,
+    /// but also for round-robin sending across channels in make_progress()
     send_channel: Arc<Mutex<usize>>,
-
     send_tasks: ArrayVec<Arc<Mutex<Option<SocketTask>>>, MAX_CHANNELS>,
     send_doorbells: ArrayVec<AtomicBool, MAX_CHANNELS>,
 
-    // TODO: support receive channels
-    recv_task: Arc<Mutex<Option<SocketTask>>>,
-    recv_doorbell: AtomicBool,
-    finished_recv: Arc<Mutex<Option<Arc<[u8]>>>>,
+    /* recv state */
+    recv_in_progress: Arc<Mutex<Option<(usize, usize)>>>, // (channel, data_remaining)
+    any_recv: Arc<Mutex<Option<usize>>>,
+    recv_tasks: ArrayVec<Arc<Mutex<Option<SocketTask>>>, MAX_CHANNELS>,
+    recv_doorbells: ArrayVec<AtomicBool, MAX_CHANNELS>,
+    finished_recvs: ArrayVec<Arc<Mutex<Option<Arc<[u8]>>>>, MAX_CHANNELS>,
 }
 
 impl SocketState {
     fn new() -> SocketState {
         let mut send_tasks = ArrayVec::new();
         let mut send_doorbells = ArrayVec::new();
+
+        let mut recv_tasks = ArrayVec::new();
+        let mut recv_doorbells = ArrayVec::new();
+        let mut finished_recvs = ArrayVec::new();
+
         for _ in 0..MAX_CHANNELS {
             send_tasks.push(Arc::new(Mutex::new(None)));
             send_doorbells.push(AtomicBool::new(false));
+
+            recv_tasks.push(Arc::new(Mutex::new(None)));
+            recv_doorbells.push(AtomicBool::new(false));
+            finished_recvs.push(Arc::new(Mutex::new(None)));
         }
 
         SocketState {
             num_channels: Arc::new(Mutex::new(0)),
-            send_channel: Arc::new(Mutex::new(0)),
 
+            send_channel: Arc::new(Mutex::new(0)),
             send_tasks,
             send_doorbells,
 
-            recv_task: Arc::new(Mutex::new(None)),
-            recv_doorbell: AtomicBool::new(false),
-            finished_recv: Arc::new(Mutex::new(None)),
+            any_recv: Arc::new(Mutex::new(None)),
+            recv_in_progress: Arc::new(Mutex::new(None)),
+            recv_tasks,
+            recv_doorbells,
+            finished_recvs,
         }
     }
 }
@@ -154,6 +171,10 @@ impl<'a, D: for<'d> Device<'d>> InterfaceWrapper<'a, D> {
             // on this socket before it's initialized.
             let mut socket_channels = self.socket_state[id].num_channels.lock();
             *socket_channels = num_channels;
+            if server_addr.is_none() {
+                let mut any_recv = self.socket_state[id].any_recv.lock();
+                *any_recv = Some(0);
+            }
 
             id
         };
@@ -191,15 +212,16 @@ impl<'a, D: for<'d> Device<'d>> InterfaceWrapper<'a, D> {
         }
 
         // Try to make some progress
-        for i in 0..state.handles.len() {
-            let handle = state.handles[i];
+        for socket_id in 0..state.handles.len() {
+            let handle = state.handles[socket_id];
             let socket = state.iface.get_socket::<TcpSocket>(handle);
-            let socket_state = &self.socket_state[i];
+            let socket_state = &self.socket_state[socket_id];
+            let num_channels = *socket_state.num_channels.lock();
 
             // If this socket can send, send any outgoing data.
+            // TODO: remove this extra block?
             {
                 let mut start_channel_id = socket_state.send_channel.lock();
-                let num_channels = *socket_state.num_channels.lock();
                 let mut current_channel_id = *start_channel_id;
                 while socket.can_send() {
                     let mut send_task_opt = socket_state.send_tasks[current_channel_id].lock(); // TODO: make this a try-lock
@@ -208,7 +230,7 @@ impl<'a, D: for<'d> Device<'d>> InterfaceWrapper<'a, D> {
                         if let Ok(bytes_sent) = socket.send_slice(&(task.buf[task.offset..])) {
                             log::debug!(
                                 "socket {:?} sent [{:?}-{:?}]",
-                                i,
+                                socket_id,
                                 task.offset,
                                 task.offset + bytes_sent
                             );
@@ -242,23 +264,85 @@ impl<'a, D: for<'d> Device<'d>> InterfaceWrapper<'a, D> {
             }
 
             // If this socket can recv, recv any incoming data.
-            if socket.may_recv() {
+            let mut any_recv = socket_state.any_recv.lock();
+            let mut in_progress = socket_state.recv_in_progress.lock();
+            while socket.may_recv() {
+                let (channel_id, mut data_remaining) = if let Some((channel_id, data_remaining)) =
+                    *in_progress
+                {
+                    // We know what to do if there's a message partially received
+                    (channel_id, data_remaining)
+                } else {
+                    // If a message is not partially received, we need to choose the channel to receive from
+                    // Let's first seek if we can peek a message header.
+                    if let Ok(hdr_ptr) = socket.peek(HDR_LEN) {
+                        if hdr_ptr.len() == HDR_LEN {
+                            let hdr = RPCHeader::from_bytes(hdr_ptr);
+                            log::trace!("Peeked header msg_id={:?}", hdr);
+
+                            let channel = if let Some(channel_id) = *any_recv {
+                                // If any recv, choose the next channel based on index, first to have recv buffer
+                                // If no buffer available, break.
+                                let mut recv_channel = None;
+                                for channel_offset in 0..num_channels {
+                                    let current_channel =
+                                        (channel_id + channel_offset) % num_channels;
+                                    if (*socket_state.recv_tasks[current_channel].lock()).is_some()
+                                    {
+                                        recv_channel = Some(current_channel);
+                                        break;
+                                    }
+                                }
+                                if let Some(available_recv_channel) = recv_channel {
+                                    available_recv_channel
+                                } else {
+                                    break;
+                                }
+                            } else {
+                                hdr.msg_id as usize
+                            };
+                            (channel, HDR_LEN + hdr.msg_len as usize)
+                        } else {
+                            break;
+                        }
+                    } else {
+                        // If we can't peek, there's not actually data we need to worry about.
+                        break;
+                    }
+                };
+
                 let mut finished = false;
-                let mut recv_task_opt = socket_state.recv_task.lock(); // TODO: make this a try-lock
+                let mut started = false;
+                let mut recv_task_opt = socket_state.recv_tasks[channel_id].lock(); // TODO: make this a try-lock
                 if let Some(ref mut task) = *recv_task_opt {
                     // Attempt to receive until end of data array
+                    let buf_len = task.buf.len();
                     let recv_buf = Arc::get_mut(&mut task.buf).unwrap();
-                    if let Ok(bytes_recv) = socket.recv_slice(&mut recv_buf[task.offset..]) {
+
+                    // Check to see if receive buffer has enough space to receive the messsage
+                    if buf_len - task.offset < data_remaining {
+                        panic!("Not enough room in receive buffer ({:?}) for incoming message with {:?} bytes to be received", 
+                        buf_len, task.offset + data_remaining);
+                    }
+
+                    if let Ok(bytes_recv) =
+                        socket.recv_slice(&mut recv_buf[task.offset..task.offset + data_remaining])
+                    {
                         if bytes_recv > 0 {
                             log::debug!(
                                 "socket {:?} recv [{:?}-{:?}]",
-                                i,
+                                socket_id,
                                 task.offset,
                                 task.offset + bytes_recv
                             );
 
+                            if !started {
+                                started = true;
+                            }
+
                             task.offset += bytes_recv;
-                            if task.offset == recv_buf.len() {
+                            data_remaining -= bytes_recv;
+                            if data_remaining == 0 {
                                 finished = true;
                             }
                         }
@@ -267,17 +351,25 @@ impl<'a, D: for<'d> Device<'d>> InterfaceWrapper<'a, D> {
 
                 if finished {
                     // We finished receiving into the recv buf, so let it go
-                    let mut finished_opt = socket_state.finished_recv.lock();
+                    let mut finished_opt = socket_state.finished_recvs[channel_id].lock();
                     let task = recv_task_opt.as_ref().unwrap();
                     *finished_opt = Some(task.buf.clone());
                     *recv_task_opt = None;
-                    socket_state.recv_doorbell.store(true, Ordering::SeqCst);
+                    socket_state.recv_doorbells[channel_id].store(true, Ordering::SeqCst);
+
+                    // If any receive, aim to receive round-robin style.
+                    if let Some(channel_id) = *any_recv {
+                        *any_recv = Some((channel_id + 1) % num_channels);
+                    }
+                } else if started {
+                    // We started reading a message but didn't finish - we need to record progress.
+                    *in_progress = Some((channel_id, data_remaining));
                 }
             }
         }
     }
 
-    pub fn send(
+    pub fn send_msg(
         &self,
         socket_id: SocketId,
         msg_id: MsgId,
@@ -296,18 +388,24 @@ impl<'a, D: for<'d> Device<'d>> InterfaceWrapper<'a, D> {
         Ok(())
     }
 
-    pub fn recv(&self, socket_id: SocketId, recv_buf: Arc<[u8]>) -> Result<Arc<[u8]>, RPCError> {
-        let state = &self.socket_state[socket_id];
+    pub fn recv_msg(
+        &self,
+        socket_id: SocketId,
+        msg_id: MsgId,
+        recv_buf: Arc<[u8]>,
+    ) -> Result<Arc<[u8]>, RPCError> {
+        let channel_id = msg_id as usize;
+        let socket_state = &self.socket_state[socket_id];
         {
-            let mut recv_task_option = state.recv_task.lock();
+            let mut recv_task_option = socket_state.recv_tasks[channel_id].lock();
             *recv_task_option = Some(SocketTask {
                 offset: 0,
                 buf: recv_buf,
             });
         }
 
-        self.wait_for_doorbell(&state.recv_doorbell)?;
-        let mut populated_finished_recv = state.finished_recv.lock();
+        self.wait_for_doorbell(&socket_state.recv_doorbells[channel_id])?;
+        let mut populated_finished_recv = socket_state.finished_recvs[channel_id].lock();
 
         // Get a new reference
         let my_finished_recv = if let Some(buf) = &*populated_finished_recv {
@@ -334,6 +432,7 @@ mod tests {
     use smoltcp::phy::{Loopback, Medium};
     use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr};
 
+    use crate::rpc::{RPCHeader, HDR_LEN};
     use crate::transport::tcp::interface_wrapper::InterfaceWrapper;
 
     static INIT: Once = Once::new();
@@ -473,7 +572,7 @@ mod tests {
         };
 
         interface_wrapper
-            .send(client_id, 0, buffer)
+            .send_msg(client_id, 0, buffer)
             .expect("Failed to send.");
     }
 
@@ -536,13 +635,13 @@ mod tests {
         };
 
         interface_wrapper
-            .send(client_id, 0, buffer0)
+            .send_msg(client_id, 0, buffer0)
             .expect("Failed to send.");
         interface_wrapper
-            .send(client_id, 1, buffer1)
+            .send_msg(client_id, 1, buffer1)
             .expect("Failed to send.");
         interface_wrapper
-            .send(client_id, 2, buffer2)
+            .send_msg(client_id, 2, buffer2)
             .expect("Failed to send.");
     }
 
@@ -554,7 +653,7 @@ mod tests {
         let device = Loopback::new(Medium::Ethernet);
         let neighbor_cache = NeighborCache::new(BTreeMap::new());
         let ip_addrs = [IpCidr::new(IpAddress::v4(127, 0, 0, 1), 8)];
-        let mut sock_vec = Vec::with_capacity(1);
+        let sock_vec = Vec::with_capacity(1);
         let iface = InterfaceBuilder::new(device, sock_vec)
             .hardware_addr(EthernetAddress::default().into())
             .neighbor_cache(neighbor_cache)
@@ -593,7 +692,7 @@ mod tests {
                 };
 
                 my_interface_wrapper
-                    .send(client_id, i, buffer)
+                    .send_msg(client_id, i, buffer)
                     .expect("Failed to send.");
             }));
         }
@@ -627,7 +726,16 @@ mod tests {
             .add_socket(None, 10110, 1)
             .expect("Failed to add server socket");
 
-        let send_data = [3u8; 10];
+        let hdr = RPCHeader {
+            msg_id: 0,
+            msg_type: 10,
+            msg_len: 6,
+        };
+        let hdr_bytes = unsafe { hdr.as_bytes() };
+        let mut send_data = [3u8; 10];
+        for i in 0..HDR_LEN {
+            send_data[i] = hdr_bytes[i];
+        }
         let mut send_buffer = Arc::<[u8]>::new_uninit_slice(send_data.len());
         let data = Arc::get_mut(&mut send_buffer).unwrap(); // not shared yet, no panic!
         MaybeUninit::write_slice(data, &send_data);
@@ -640,7 +748,7 @@ mod tests {
         };
 
         interface_wrapper
-            .send(client_id, 0, send_buffer)
+            .send_msg(client_id, 0, send_buffer)
             .expect("Failed to send.");
 
         let response = {
@@ -652,10 +760,10 @@ mod tests {
             };
 
             interface_wrapper
-                .recv(server_id, recv_buffer)
+                .recv_msg(server_id, 0, recv_buffer)
                 .expect("Failed to receive")
         };
-        for i in 0..10 {
+        for i in HDR_LEN..10 {
             assert_eq!(response[i], 3);
         }
     }

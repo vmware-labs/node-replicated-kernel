@@ -19,3 +19,14 @@ pub mod client;
 pub mod rpc;
 pub mod server;
 pub mod transport;
+
+// Setup test logging.
+#[cfg(test)]
+pub(crate) mod test {
+    use std::sync::Once;
+    pub(crate) static INIT: Once = Once::new();
+
+    pub(crate) fn setup_test_logging() {
+        INIT.call_once(env_logger::init);
+    }
+}

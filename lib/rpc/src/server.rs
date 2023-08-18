@@ -98,7 +98,7 @@ impl<'t, 'a> Server<'a> {
     fn receive(&mut self) -> Result<RPCType, RPCError> {
         // Receive request header
         self.transport
-            .recv_msg(&mut self.hdr, None, &mut [&mut self.data])?;
+            .recv_msg(&mut self.hdr, 0, &mut [&mut self.data])?;
         Ok(self.hdr.msg_type)
     }
 

@@ -7,7 +7,7 @@ use arrayvec::ArrayVec;
 use core::sync::atomic::{AtomicBool, Ordering};
 use spin::Mutex;
 
-use smoltcp::iface::{Interface, SocketHandle};
+use smoltcp::iface::{Context, Interface, SocketHandle};
 use smoltcp::phy::Device;
 use smoltcp::socket::{TcpSocket, TcpSocketBuffer};
 use smoltcp::time::Instant;
@@ -37,6 +37,7 @@ struct SocketTask {
 struct MultichannelSocket {
     /* general state */
     num_channels: Arc<Mutex<usize>>,
+    connect_data: Arc<Mutex<Option<((IpAddress, u16), u16)>>>,
 
     /* send state */
     /// What channel to check for send in next. Useful for in-progress sends,
@@ -73,6 +74,7 @@ impl MultichannelSocket {
 
         MultichannelSocket {
             num_channels: Arc::new(Mutex::new(0)),
+            connect_data: Arc::new(Mutex::new(None)),
 
             send_channel: Arc::new(Mutex::new(0)),
             send_tasks,
@@ -86,7 +88,17 @@ impl MultichannelSocket {
         }
     }
 
-    fn socket_send(&self, socket: &mut TcpSocket) {
+    fn connect(&self, cx: &mut Context, socket: &mut TcpSocket) {
+        // TODO: add timeout?? with error returned if timeout occurs?
+        if let Some((addr, local_port)) = *self.connect_data.lock() {
+            if let Err(e) = socket.connect(cx, addr, local_port) {
+                log::error!("Failed to connect client socket: {:?}", e);
+                //return Err(RPCError::TransportError);
+            }
+        }
+    }
+
+    fn send(&self, socket: &mut TcpSocket) {
         let num_channels = *self.num_channels.lock();
         let mut start_channel_id = self.send_channel.lock();
         let mut current_channel_id = *start_channel_id;
@@ -125,7 +137,7 @@ impl MultichannelSocket {
         *start_channel_id = current_channel_id;
     }
 
-    fn socket_recv(&self, socket: &mut TcpSocket) {
+    fn recv(&self, socket: &mut TcpSocket) {
         let num_channels = *self.num_channels.lock();
         let mut any_recv = self.any_recv.lock();
         let mut in_progress = self.recv_in_progress.lock();
@@ -293,14 +305,14 @@ impl<'a, D: for<'d> Device<'d>> InterfaceWrapper<'a, D> {
             state.handles.push(handle);
 
             if let Some(addr) = server_addr {
-                // If the socket is a connecting socket, connect
-                let (socket, cx) = state.iface.get_socket_and_context::<TcpSocket>(handle);
-
-                // TODO: add timeout?? with error returned if timeout occurs?
-                if let Err(e) = socket.connect(cx, addr, local_port) {
-                    log::error!("Failed to connect client socket: {:?}", e);
-                    return Err(RPCError::TransportError);
+                {
+                    let mut connect_data = self.sockets[id].connect_data.lock();
+                    *connect_data = Some((addr, local_port));
                 }
+
+                // If the socket is a connecting socket, connect
+                let (tcpsocket, cx) = state.iface.get_socket_and_context::<TcpSocket>(handle);
+                self.sockets[id].connect(cx, tcpsocket);
             }
 
             // Do this why we hold the iface_state lock, so that no one tries to make progress
@@ -311,7 +323,6 @@ impl<'a, D: for<'d> Device<'d>> InterfaceWrapper<'a, D> {
                 let mut any_recv = self.sockets[id].any_recv.lock();
                 *any_recv = Some(0);
             }
-
             id
         };
 
@@ -353,10 +364,15 @@ impl<'a, D: for<'d> Device<'d>> InterfaceWrapper<'a, D> {
             let mut tcpsocket = state.iface.get_socket::<TcpSocket>(handle);
             let multisocket = &self.sockets[socket_id];
 
-            // If this socket can send, send any outgoing data.
-            multisocket.socket_send(&mut tcpsocket);
-            // If this socket can recv, recv any incoming data.
-            multisocket.socket_recv(&mut tcpsocket);
+            if tcpsocket.is_open() {
+                // If this socket can send, send any outgoing data.
+                multisocket.send(&mut tcpsocket);
+                // If this socket can recv, recv any incoming data.
+                multisocket.recv(&mut tcpsocket);
+            } else {
+                let (tcpsocket, cx) = state.iface.get_socket_and_context::<TcpSocket>(handle);
+                multisocket.connect(cx, tcpsocket);
+            }
         }
     }
 
@@ -417,7 +433,6 @@ mod tests {
     use alloc::collections::BTreeMap;
     use alloc::sync::Arc;
     use core::mem::MaybeUninit;
-    use std::sync::Once;
     use std::thread;
 
     use smoltcp::iface::{InterfaceBuilder, NeighborCache};
@@ -426,17 +441,12 @@ mod tests {
     use spin::Mutex;
 
     use crate::rpc::{RPCHeader, HDR_LEN};
+    use crate::test::setup_test_logging;
     use crate::transport::tcp::interface_wrapper::InterfaceWrapper;
-
-    static INIT: Once = Once::new();
-
-    fn setup() {
-        INIT.call_once(env_logger::init);
-    }
 
     #[test]
     fn test_initialization() {
-        setup();
+        setup_test_logging();
 
         // from smoltcp loopback example
         let device = Loopback::new(Medium::Ethernet);
@@ -455,7 +465,7 @@ mod tests {
 
     #[test]
     fn test_add_server_socket() {
-        setup();
+        setup_test_logging();
 
         // from smoltcp loopback example
         let device = Loopback::new(Medium::Ethernet);
@@ -477,7 +487,7 @@ mod tests {
 
     #[test]
     fn test_add_client_socket() {
-        setup();
+        setup_test_logging();
 
         // from smoltcp loopback example
         let device = Loopback::new(Medium::Ethernet);
@@ -499,7 +509,7 @@ mod tests {
 
     #[test]
     fn test_add_socket_multi() {
-        setup();
+        setup_test_logging();
 
         // from smoltcp loopback example
         let device = Loopback::new(Medium::Ethernet);
@@ -530,7 +540,7 @@ mod tests {
 
     #[test]
     fn test_send() {
-        setup();
+        setup_test_logging();
 
         // from smoltcp loopback example
         let device = Loopback::new(Medium::Ethernet);
@@ -571,7 +581,7 @@ mod tests {
 
     #[test]
     fn test_send_multichannel() {
-        setup();
+        setup_test_logging();
 
         // from smoltcp loopback example
         let device = Loopback::new(Medium::Ethernet);
@@ -619,7 +629,7 @@ mod tests {
 
     #[test]
     fn test_send_multichannel_concurrent() {
-        setup();
+        setup_test_logging();
 
         // from smoltcp loopback example
         let device = Loopback::new(Medium::Ethernet);
@@ -676,7 +686,7 @@ mod tests {
 
     #[test]
     fn test_recv() {
-        setup();
+        setup_test_logging();
 
         // from smoltcp loopback example
         let device = Loopback::new(Medium::Ethernet);
@@ -742,7 +752,7 @@ mod tests {
 
     #[test]
     fn test_recv_anychannel() {
-        setup();
+        setup_test_logging();
 
         // from smoltcp loopback example
         let device = Loopback::new(Medium::Ethernet);
@@ -823,7 +833,7 @@ mod tests {
 
     #[test]
     fn test_recv_anychannel_concurrent() {
-        setup();
+        setup_test_logging();
 
         // from smoltcp loopback example
         let device = Loopback::new(Medium::Ethernet);
@@ -899,7 +909,6 @@ mod tests {
                     .expect("Failed to receive")
             };
             let hdr = RPCHeader::from_bytes(&response[0..HDR_LEN]);
-            log::warn!("HDR ID IS: {:?}", hdr);
             for j in HDR_LEN..10 {
                 assert_eq!(response[j], hdr.msg_id);
             }
@@ -912,7 +921,7 @@ mod tests {
 
     #[test]
     fn test_recv_multi_concurrent() {
-        setup();
+        setup_test_logging();
 
         // from smoltcp loopback example
         let device = Loopback::new(Medium::Ethernet);
@@ -1017,7 +1026,7 @@ mod tests {
 
     #[test]
     fn test_recv_multisocket_multichannel_concurrent() {
-        setup();
+        setup_test_logging();
 
         let num_sockets = 3u8;
         let num_channels = 3u8;
@@ -1037,7 +1046,6 @@ mod tests {
 
         let mut threads = Vec::new();
         for socket in 0u8..num_sockets {
-            log::warn!("Added client socket {:?}", socket);
             let client_id = interface_wrapper
                 .add_socket(
                     Some((IpAddress::v4(127, 0, 0, 1), 10110 + socket as u16)),
@@ -1073,11 +1081,9 @@ mod tests {
                         buffer.assume_init()
                     };
 
-                    log::warn!("client {:?} about to send message {:?}", socket, i);
                     my_interface_wrapper
                         .send_msg(client_id, i, buffer)
                         .expect("Failed to send.");
-                    log::warn!("client {:?} send message {:?}", socket, i);
                 }));
             }
         }
@@ -1086,7 +1092,6 @@ mod tests {
             let server_id = interface_wrapper
                 .add_socket(None, 10110 + socket as u16, num_channels as usize)
                 .expect("Failed to add server socket");
-            log::warn!("Added server socket {:?}", socket);
 
             let receiving = Arc::new(Mutex::new(0));
             for i in 0u8..num_channels {
@@ -1099,7 +1104,6 @@ mod tests {
                             if *local_receiving < num_channels {
                                 *local_receiving += 1;
                             } else {
-                                log::warn!("============== Socket {:?} done!!", socket);
                                 break;
                             }
                         }
@@ -1112,11 +1116,9 @@ mod tests {
                                 recv_buffer.assume_init()
                             };
 
-                            log::warn!("server {:?} about to recv message", socket);
                             let ret = my_interface_wrapper
                                 .recv_msg(server_id, i, recv_buffer)
                                 .expect("Failed to receive");
-                            log::warn!("server {:?} recv message", socket);
                             ret
                         };
                         let hdr = RPCHeader::from_bytes(&response[0..HDR_LEN]);
@@ -1132,6 +1134,4 @@ mod tests {
             t.join().unwrap();
         }
     }
-
-    // TODO: add tests for multi socket
 }

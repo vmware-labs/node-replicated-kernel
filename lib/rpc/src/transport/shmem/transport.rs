@@ -73,7 +73,7 @@ impl<'a> Transport for ShmemTransport<'a> {
     fn recv_msg(
         &self,
         hdr: &mut RPCHeader,
-        _recipient_id: Option<MsgId>,
+        _recipient_id: MsgId,
         payload: &mut [&mut [u8]],
     ) -> Result<(), RPCError> {
         if payload.is_empty() {
@@ -107,7 +107,7 @@ impl<'a> Transport for ShmemTransport<'a> {
         recv_payload: &mut [&mut [u8]],
     ) -> Result<(), RPCError> {
         self.send_msg(hdr, send_payload)?;
-        self.recv_msg(hdr, Some(hdr.msg_id), recv_payload)
+        self.recv_msg(hdr, hdr.msg_id, recv_payload)
     }
 }
 

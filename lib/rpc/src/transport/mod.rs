@@ -15,7 +15,7 @@ pub trait Transport {
     fn recv_msg(
         &self,
         hdr: &mut RPCHeader,
-        recipient_id: Option<MsgId>,
+        recipient_id: MsgId,
         payload: &mut [&mut [u8]],
     ) -> Result<(), RPCError>;
 

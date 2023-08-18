@@ -79,6 +79,7 @@ pub(crate) fn dcm_resource_alloc(
         DCM_CLIENT
             .call(
                 DCMOps::ResourceAlloc as RPCType,
+                *crate::environment::CORE_ID as u8,
                 unsafe { &[req.as_bytes()] },
                 unsafe { &mut [res.as_mut_bytes()] },
             )

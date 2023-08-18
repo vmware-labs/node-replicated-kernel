@@ -63,6 +63,7 @@ pub(crate) fn dcm_resource_release(mid: MachineId, pid: usize, is_core: bool) ->
         DCM_CLIENT
             .call(
                 DCMOps::ResourceRelease as RPCType,
+                *crate::environment::CORE_ID as u8,
                 unsafe { &[req.as_bytes()] },
                 unsafe { &mut [res.as_mut_bytes()] },
             )

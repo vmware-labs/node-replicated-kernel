@@ -36,6 +36,7 @@ pub(crate) fn rpc_close(pid: usize, fd: FileDescriptor) -> KResult<(u64, u64)> {
     // Call Close() RPC
     CLIENT_STATE.rpc_client.call(
         KernelRpc::Close as RPCType,
+        *crate::environment::CORE_ID as u8,
         &[&req_data],
         &mut [&mut res_data],
     )?;

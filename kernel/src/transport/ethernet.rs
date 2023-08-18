@@ -7,11 +7,14 @@ use alloc::vec::Vec;
 
 use fallible_collections::FallibleVecGlobal;
 use lazy_static::lazy_static;
-use smoltcp::iface::{Interface, InterfaceBuilder, NeighborCache, Routes};
+use smoltcp::iface::{InterfaceBuilder, NeighborCache, Routes};
 use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr, Ipv4Address};
-use spin::Mutex;
 
 use kpi::KERNEL_BASE;
+
+use rpc::rpc::MsgId;
+use rpc::transport::tcp::interface_wrapper::InterfaceWrapper;
+
 use vmxnet3::pci::BarAccess;
 use vmxnet3::smoltcp::DevQueuePhy;
 use vmxnet3::vmx::VMXNet3;
@@ -23,12 +26,11 @@ use crate::memory::PAddr;
 use crate::pci::claim_device;
 
 lazy_static! {
-    pub(crate) static ref ETHERNET_IFACE: Arc<Mutex<Interface<'static, DevQueuePhy>>> =
+    pub(crate) static ref IFACE_WRAPPER: Arc<InterfaceWrapper<'static, DevQueuePhy>> =
         init_network().expect("Failed to create ethernet interface");
 }
 
-#[allow(unused)]
-pub(crate) fn init_network<'a>() -> KResult<Arc<Mutex<Interface<'a, DevQueuePhy>>>> {
+pub(crate) fn init_network<'a>() -> KResult<Arc<InterfaceWrapper<'a, DevQueuePhy>>> {
     const VMWARE_INC: u16 = 0x15ad;
     const VMXNET_DEV: u16 = 0x07b0;
     if let Some(vmxnet3_dev) = claim_device(VMWARE_INC, VMXNET_DEV) {
@@ -77,25 +79,25 @@ pub(crate) fn init_network<'a>() -> KResult<Arc<Mutex<Interface<'a, DevQueuePhy>
             .add_default_ipv4_route(Ipv4Address::new(172, 31, 0, 20))
             .unwrap();
 
-        // Create SocketSet w/ space for 1 socket
-        let mut sock_vec = Vec::try_with_capacity(1)?;
+        // Create SocketSet w/ space for at least 1 socket per core
+        let sock_vec = Vec::try_with_capacity(atopology::MACHINE_TOPOLOGY.num_threads())?;
         let iface = InterfaceBuilder::new(device, sock_vec)
             .ip_addrs(ip_addrs)
             .hardware_addr(ethernet_addr.into())
             .routes(routes)
             .neighbor_cache(neighbor_cache)
             .finalize();
-        Ok(Arc::new(Mutex::new(iface)))
+        Ok(Arc::new(InterfaceWrapper::new(iface)))
     } else {
         Err(KError::VMXNet3DeviceNotFound)
     }
 }
 
-#[cfg(feature = "rpc")]
 #[allow(unused)]
 pub(crate) fn init_ethernet_rpc(
-    server_ip: smoltcp::wire::IpAddress,
-    server_port: u16,
+    addr: Option<(smoltcp::wire::IpAddress, u16)>,
+    local_port: u16,
+    cores: MsgId,
     send_client_data: bool, // This field is used to indicate if init_client() should send ClientRegistrationRequest
 ) -> KResult<rpc::client::Client> {
     use crate::arch::rackscale::registration::initialize_client;
@@ -104,7 +106,7 @@ pub(crate) fn init_ethernet_rpc(
     use rpc::transport::TCPTransport;
 
     let rpc_transport = Box::new(
-        TCPTransport::new(Some(server_ip), server_port, Arc::clone(&ETHERNET_IFACE))
+        TCPTransport::new(addr, local_port, Arc::clone(&IFACE_WRAPPER), cores)
             .map_err(|err| KError::RackscaleRPCError { err })?,
     );
     let mut client = Client::new(rpc_transport);

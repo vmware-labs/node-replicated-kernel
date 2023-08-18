@@ -21,7 +21,7 @@ use rpc::server::{RPCHandler, RegistrationHandler, Server};
 use rpc::transport::TCPTransport;
 
 use crate::error::{KError, KResult};
-use crate::transport::ethernet::{init_ethernet_rpc, ETHERNET_IFACE};
+use crate::transport::ethernet::init_ethernet_rpc;
 
 pub(crate) mod affinity_alloc;
 pub(crate) mod node_registration;
@@ -120,6 +120,11 @@ impl From<RPCType> for DCMOps {
 unsafe_abomonate!(DCMOps);
 
 lazy_static! {
-    pub(crate) static ref DCM_CLIENT: Client =
-        init_ethernet_rpc(IpAddress::v4(172, 31, 0, 20), DCM_CLIENT_PORT, false).unwrap();
+    pub(crate) static ref DCM_CLIENT: Client = init_ethernet_rpc(
+        Some((IpAddress::v4(172, 31, 0, 20), DCM_CLIENT_PORT)),
+        DCM_CLIENT_PORT,
+        atopology::MACHINE_TOPOLOGY.num_threads() as u8,
+        false
+    )
+    .unwrap();
 }

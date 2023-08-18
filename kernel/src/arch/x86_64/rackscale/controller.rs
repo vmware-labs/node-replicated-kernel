@@ -17,7 +17,7 @@ use crate::arch::rackscale::dcm::{
 };
 use crate::arch::MAX_MACHINES;
 use crate::cmdline::Transport;
-use crate::transport::ethernet::ETHERNET_IFACE;
+use crate::transport::ethernet::IFACE_WRAPPER;
 use crate::transport::shmem::create_shmem_transport;
 
 use super::*;
@@ -40,7 +40,8 @@ pub(crate) fn run() {
             TCPTransport::new(
                 None,
                 CONTROLLER_PORT_BASE + mid as u16 - 1,
-                Arc::clone(&ETHERNET_IFACE),
+                Arc::clone(&IFACE_WRAPPER),
+                1, // TODO: should be shared later?
             )
             .expect("Failed to create TCP transport"),
         );
@@ -113,15 +114,15 @@ pub(crate) fn run() {
 
     // Start running the RPC server
     log::info!("Starting RPC server for client {:?}!", mid);
-    loop {
-        let _handled = server.handle().expect("Controller failed to handle RPC");
-    }
+    server
+        .run_server(0)
+        .expect("Controller failed to handle RPC from client");
 }
 
 pub(crate) fn poll_interface() {
     // Create RPC server connecting to DCM
     let transport = Box::try_new(
-        TCPTransport::new(None, DCM_SERVER_PORT, Arc::clone(&ETHERNET_IFACE))
+        TCPTransport::new(None, DCM_SERVER_PORT, Arc::clone(&IFACE_WRAPPER), 1)
             .expect("Failed to create TCP transport"),
     )
     .expect("Out of memory during init");
@@ -144,18 +145,7 @@ pub(crate) fn poll_interface() {
     // Now that server is ready, the clients may be accepted.
     DCMServerReady.store(true, Ordering::SeqCst);
 
-    loop {
-        match ETHERNET_IFACE.lock().poll(Instant::from_millis(
-            rawtime::duration_since_boot().as_millis() as i64,
-        )) {
-            Ok(_) => {}
-            Err(e) => {
-                log::warn!("poll error: {}", e);
-            }
-        }
-
-        let _ = server.handle();
-    }
+    server.run_server(0).expect("Failed to handle RPC from DCM");
 }
 
 fn register_rpcs(server: &mut Server) {

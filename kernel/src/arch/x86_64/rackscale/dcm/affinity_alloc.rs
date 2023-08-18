@@ -75,6 +75,7 @@ pub(crate) fn dcm_affinity_alloc(
     // Ask DCM to make sure we can safely take from the shmem allocators
     DCM_CLIENT.call(
         DCMOps::AffinityAlloc as RPCType,
+        *crate::environment::CORE_ID as u8,
         unsafe { &[req.as_bytes()] },
         unsafe { &mut [res.as_mut_bytes()] },
     )?;

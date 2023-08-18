@@ -46,8 +46,12 @@ impl ClientState {
             .map_or(false, |c| c.transport == Transport::Ethernet)
         {
             crate::transport::ethernet::init_ethernet_rpc(
-                smoltcp::wire::IpAddress::v4(172, 31, 0, 11),
-                CONTROLLER_PORT_BASE + (*crate::environment::MACHINE_ID as u16 - 1),
+                Some((
+                    smoltcp::wire::IpAddress::v4(172, 31, 0, 11),
+                    CONTROLLER_PORT_BASE + (*crate::environment::MACHINE_ID as u16 - 1),
+                )),
+                CONTROLLER_PORT_BASE,
+                atopology::MACHINE_TOPOLOGY.num_threads() as u8,
                 true,
             )
             .expect("Failed to initialize ethernet RPC")

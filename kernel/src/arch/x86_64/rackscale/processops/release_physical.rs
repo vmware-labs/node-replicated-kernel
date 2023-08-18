@@ -56,6 +56,7 @@ pub(crate) fn rpc_release_physical(pid: Pid, frame_id: u64) -> KResult<(u64, u64
     let mut res_data = [0u8; core::mem::size_of::<KResult<(u64, u64)>>()];
     CLIENT_STATE.rpc_client.call(
         KernelRpc::ReleasePhysical as RPCType,
+        *crate::environment::CORE_ID as u8,
         &[&req_data],
         &mut [&mut res_data],
     )?;

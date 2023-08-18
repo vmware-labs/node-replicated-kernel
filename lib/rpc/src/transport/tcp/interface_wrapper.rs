@@ -36,11 +36,9 @@ struct SocketTask {
 
 struct MultichannelSocket {
     /* general state */
-    // TODO: this could be a read/write lock, as it's only written to once. Could also make just arc.
     num_channels: Arc<Mutex<usize>>,
 
     /* send state */
-    // TODO: this could be a read/write lock, as it's only written to once. Could also make just arc.
     /// What channel to check for send in next. Useful for in-progress sends,
     /// but also for round-robin sending across channels in make_progress()
     send_channel: Arc<Mutex<usize>>,
@@ -362,6 +360,7 @@ impl<'a, D: for<'d> Device<'d>> InterfaceWrapper<'a, D> {
         }
     }
 
+    // TODO: msg_id must be equal to the header msg_id
     pub fn send_msg(
         &self,
         socket_id: SocketId,
@@ -1016,7 +1015,123 @@ mod tests {
         }
     }
 
-    // TODO: add test for not anychannel recv
+    #[test]
+    fn test_recv_multisocket_multichannel_concurrent() {
+        setup();
+
+        let num_sockets = 3u8;
+        let num_channels = 3u8;
+
+        // from smoltcp loopback example
+        let device = Loopback::new(Medium::Ethernet);
+        let neighbor_cache = NeighborCache::new(BTreeMap::new());
+        let ip_addrs = [IpCidr::new(IpAddress::v4(127, 0, 0, 1), 8)];
+        let sock_vec = Vec::with_capacity(num_sockets as usize * num_channels as usize);
+        let iface = InterfaceBuilder::new(device, sock_vec)
+            .hardware_addr(EthernetAddress::default().into())
+            .neighbor_cache(neighbor_cache)
+            .ip_addrs(ip_addrs)
+            .finalize();
+
+        let interface_wrapper = Arc::new(InterfaceWrapper::new(iface));
+
+        let mut threads = Vec::new();
+        for socket in 0u8..num_sockets {
+            log::warn!("Added client socket {:?}", socket);
+            let client_id = interface_wrapper
+                .add_socket(
+                    Some((IpAddress::v4(127, 0, 0, 1), 10110 + socket as u16)),
+                    10110 + num_sockets as u16 + socket as u16,
+                    num_channels as usize,
+                )
+                .expect("Failed to add client socket");
+            for i in 0u8..num_channels {
+                let my_interface_wrapper = interface_wrapper.clone();
+                threads.push(thread::spawn(move || {
+                    // Setup for send
+                    let hdr = RPCHeader {
+                        msg_id: i,
+                        msg_type: 10,
+                        msg_len: 6,
+                    };
+                    let hdr_bytes = unsafe { hdr.as_bytes() };
+                    let mut send_data = [3u8; 10];
+                    for j in 0..HDR_LEN {
+                        send_data[j] = hdr_bytes[j];
+                    }
+                    for j in HDR_LEN..send_data.len() {
+                        send_data[j] = i;
+                    }
+                    let mut buffer = Arc::<[u8]>::new_uninit_slice(send_data.len());
+                    let data = Arc::get_mut(&mut buffer).unwrap(); // not shared yet, no panic!
+                    MaybeUninit::write_slice(data, &send_data);
+
+                    let buffer = unsafe {
+                        // Safety:
+                        // - Length == send_data.len(): see above
+                        // - All initialized: plain-old-data, wrote all of slice, see above
+                        buffer.assume_init()
+                    };
+
+                    log::warn!("client {:?} about to send message {:?}", socket, i);
+                    my_interface_wrapper
+                        .send_msg(client_id, i, buffer)
+                        .expect("Failed to send.");
+                    log::warn!("client {:?} send message {:?}", socket, i);
+                }));
+            }
+        }
+
+        for socket in 0u8..num_sockets {
+            let server_id = interface_wrapper
+                .add_socket(None, 10110 + socket as u16, num_channels as usize)
+                .expect("Failed to add server socket");
+            log::warn!("Added server socket {:?}", socket);
+
+            let receiving = Arc::new(Mutex::new(0));
+            for i in 0u8..num_channels {
+                let my_interface_wrapper = interface_wrapper.clone();
+                let my_receiving = receiving.clone();
+                threads.push(thread::spawn(move || {
+                    loop {
+                        {
+                            let mut local_receiving = my_receiving.lock();
+                            if *local_receiving < num_channels {
+                                *local_receiving += 1;
+                            } else {
+                                log::warn!("============== Socket {:?} done!!", socket);
+                                break;
+                            }
+                        }
+
+                        let response = {
+                            let recv_buffer = Arc::<[u8]>::new_uninit_slice(10);
+                            let recv_buffer = unsafe {
+                                // Safety:
+                                // - It's not initialized, but recv will initialize it. This is not ideal, but it works.
+                                recv_buffer.assume_init()
+                            };
+
+                            log::warn!("server {:?} about to recv message", socket);
+                            let ret = my_interface_wrapper
+                                .recv_msg(server_id, i, recv_buffer)
+                                .expect("Failed to receive");
+                            log::warn!("server {:?} recv message", socket);
+                            ret
+                        };
+                        let hdr = RPCHeader::from_bytes(&response[0..HDR_LEN]);
+                        for j in HDR_LEN..10 {
+                            assert_eq!(response[j], hdr.msg_id);
+                        }
+                    }
+                }));
+            }
+        }
+
+        for t in threads {
+            t.join().unwrap();
+        }
+    }
 
     // TODO: add tests for multi socket
 }

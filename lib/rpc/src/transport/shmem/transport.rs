@@ -5,8 +5,6 @@ use super::{Receiver, Sender};
 use crate::rpc::*;
 use crate::transport::Transport;
 
-use super::queue_mpmc::QUEUE_ENTRY_SIZE;
-
 pub struct ShmemTransport<'a> {
     rx: Receiver<'a>,
     tx: Sender<'a>,
@@ -48,17 +46,16 @@ impl<'a> ShmemTransport<'a> {
 }
 
 impl<'a> Transport for ShmemTransport<'a> {
-    /// Maximum per-send payload size
-    fn max_send(&self) -> usize {
-        QUEUE_ENTRY_SIZE
+    fn max_inflight_msgs(&self) -> MsgId {
+        1
     }
 
-    /// Maximum per-send payload size
-    fn max_recv(&self) -> usize {
-        QUEUE_ENTRY_SIZE
-    }
-
-    fn send_msg(&self, hdr: &RPCHeader, payload: &[&[u8]]) -> Result<(), RPCError> {
+    fn send_msg(
+        &self,
+        hdr: &RPCHeader,
+        _sender_id: MsgId,
+        payload: &[&[u8]],
+    ) -> Result<(), RPCError> {
         let mut pointers: [&[u8]; 7] = [&[1]; 7];
         pointers[0] = unsafe { &hdr.as_bytes()[..] };
         let mut index = 1;
@@ -106,8 +103,8 @@ impl<'a> Transport for ShmemTransport<'a> {
         send_payload: &[&[u8]],
         recv_payload: &mut [&mut [u8]],
     ) -> Result<(), RPCError> {
-        self.send_msg(hdr, send_payload)?;
-        self.recv_msg(hdr, hdr.msg_id, recv_payload)
+        self.send_msg(hdr, 0, send_payload)?;
+        self.recv_msg(hdr, 0, recv_payload)
     }
 }
 
@@ -115,6 +112,7 @@ impl<'a> Transport for ShmemTransport<'a> {
 mod tests {
     use super::*;
     use crate::transport::shmem::allocator::ShmemAllocator;
+    use crate::transport::shmem::queue_mpmc::QUEUE_ENTRY_SIZE;
     use crate::transport::shmem::Queue;
     use std::alloc::{alloc, Layout};
     use std::sync::Arc;

@@ -7,13 +7,14 @@ use core::mem::MaybeUninit;
 use smoltcp::phy::Device;
 use smoltcp::wire::IpAddress;
 
-use super::interface_wrapper::{InterfaceWrapper, SocketId, RX_BUF_LEN, TX_BUF_LEN};
+use super::interface_wrapper::{InterfaceWrapper, SocketId};
 use crate::rpc::*;
 use crate::transport::Transport;
 
 pub struct TCPTransport<'a, D: for<'d> Device<'d>> {
     interface_wrapper: Arc<InterfaceWrapper<'a, D>>,
     socket_id: SocketId,
+    max_inflight_msgs: MsgId,
 }
 
 impl<'a, D: for<'d> Device<'d>> TCPTransport<'a, D> {
@@ -21,26 +22,29 @@ impl<'a, D: for<'d> Device<'d>> TCPTransport<'a, D> {
         server_address: Option<(IpAddress, u16)>,
         local_port: u16,
         interface_wrapper: Arc<InterfaceWrapper<'a, D>>,
-        max_inflight: usize,
+        max_inflight_msgs: MsgId,
     ) -> Result<TCPTransport<'a, D>, RPCError> {
-        let socket_id = interface_wrapper.add_socket(server_address, local_port, max_inflight)?;
+        let socket_id =
+            interface_wrapper.add_socket(server_address, local_port, max_inflight_msgs as usize)?;
         Ok(TCPTransport {
             interface_wrapper,
             socket_id,
+            max_inflight_msgs,
         })
     }
 }
 
 impl<'a, D: for<'d> Device<'d>> Transport for TCPTransport<'a, D> {
-    fn max_send(&self) -> usize {
-        RX_BUF_LEN
+    fn max_inflight_msgs(&self) -> MsgId {
+        self.max_inflight_msgs
     }
 
-    fn max_recv(&self) -> usize {
-        TX_BUF_LEN
-    }
-
-    fn send_msg(&self, hdr: &RPCHeader, payload: &[&[u8]]) -> Result<(), RPCError> {
+    fn send_msg(
+        &self,
+        hdr: &RPCHeader,
+        sender_id: MsgId,
+        payload: &[&[u8]],
+    ) -> Result<(), RPCError> {
         // Calculate the data length
         let mut data_len = HDR_LEN;
         for p in payload {
@@ -69,7 +73,7 @@ impl<'a, D: for<'d> Device<'d>> Transport for TCPTransport<'a, D> {
         };
 
         self.interface_wrapper
-            .send_msg(self.socket_id, hdr.msg_id, buffer)
+            .send_msg(self.socket_id, sender_id, buffer)
     }
 
     fn recv_msg(
@@ -123,7 +127,7 @@ impl<'a, D: for<'d> Device<'d>> Transport for TCPTransport<'a, D> {
         send_payload: &[&[u8]],
         recv_payload: &mut [&mut [u8]],
     ) -> Result<(), RPCError> {
-        self.send_msg(hdr, send_payload)?;
+        self.send_msg(hdr, hdr.msg_id, send_payload)?;
         self.recv_msg(hdr, hdr.msg_id, recv_payload)
     }
 }
@@ -206,7 +210,7 @@ mod tests {
 
                     hdr.msg_len = 2;
                     server_transport
-                        .send_msg(&hdr, &[&[i], &[i + 1]])
+                        .send_msg(&hdr, 0, &[&[i], &[i + 1]])
                         .expect("Failed to send message");
                 }
             });
@@ -226,7 +230,7 @@ mod tests {
                 for i in 0u8..10 {
                     hdr.msg_len = 5;
                     client_transport
-                        .send_msg(&hdr, &[&[0 * i, 1 * i, 2 * i, 3 * i, 4 * i]])
+                        .send_msg(&hdr, 0, &[&[0 * i, 1 * i, 2 * i, 3 * i, 4 * i]])
                         .expect("Failed to send message");
                     client_transport
                         .recv_msg(&mut hdr, 0, &mut [&mut recv_buf1, &mut recv_buf2])
@@ -277,7 +281,7 @@ mod tests {
 
                     hdr.msg_len = 2;
                     server_transport
-                        .send_msg(&hdr, &[&[i], &[i + 1]])
+                        .send_msg(&hdr, 0, &[&[i], &[i + 1]])
                         .expect("Failed to send message");
                 }
             });
@@ -370,10 +374,10 @@ mod tests {
 
                     hdr.msg_len = 2;
                     server_transport
-                        .send_msg(&hdr, &[&[i], &[i + 1]])
+                        .send_msg(&hdr, 0, &[&[i], &[i + 1]])
                         .expect("Failed to send message");
                     server2_transport
-                        .send_msg(&hdr, &[&[i + 1], &[i + 2]])
+                        .send_msg(&hdr, 0, &[&[i + 1], &[i + 2]])
                         .expect("Failed to send message");
                 }
             });
@@ -393,7 +397,7 @@ mod tests {
                 for i in 0u8..10 {
                     hdr.msg_len = 5;
                     client_transport
-                        .send_msg(&hdr, &[&[0 * i, 1 * i, 2 * i, 3 * i, 4 * i]])
+                        .send_msg(&hdr, 0, &[&[0 * i, 1 * i, 2 * i, 3 * i, 4 * i]])
                         .expect("Failed to send message");
                     client_transport
                         .recv_msg(&mut hdr, 0, &mut [&mut recv_buf1, &mut recv_buf2])
@@ -419,10 +423,10 @@ mod tests {
                 for i in 0u8..5 {
                     hdr.msg_len = 5;
                     client2_transport
-                        .send_msg(&hdr, &[&[1, 1, 1, 1, 1]])
+                        .send_msg(&hdr, 0, &[&[1, 1, 1, 1, 1]])
                         .expect("Failed to send message");
                     client2_transport
-                        .send_msg(&hdr, &[&[1, 1, 1, 1, 1]])
+                        .send_msg(&hdr, 0, &[&[1, 1, 1, 1, 1]])
                         .expect("Failed to send message");
                     client2_transport
                         .recv_msg(&mut hdr, 0, &mut [&mut recv_buf1, &mut recv_buf2])
@@ -499,12 +503,12 @@ mod tests {
 
                     hdr1.msg_len = 2;
                     server_transport
-                        .send_msg(&hdr1, &[&[i], &[i + 1]])
+                        .send_msg(&hdr1, 0, &[&[i], &[i + 1]])
                         .expect("Failed to send message");
 
                     hdr2.msg_len = 2;
                     server2_transport
-                        .send_msg(&hdr2, &[&[i + 1], &[i + 2]])
+                        .send_msg(&hdr2, i, &[&[i + 1], &[i + 2]])
                         .expect("Failed to send message");
                 }
             });
@@ -524,7 +528,7 @@ mod tests {
                 for i in 0u8..10 {
                     hdr.msg_len = 5;
                     client_transport
-                        .send_msg(&hdr, &[&[0 * i, 1 * i, 2 * i, 3 * i, 4 * i]])
+                        .send_msg(&hdr, 0, &[&[0 * i, 1 * i, 2 * i, 3 * i, 4 * i]])
                         .expect("Failed to send message");
                     client_transport
                         .recv_msg(&mut hdr, 0, &mut [&mut recv_buf1, &mut recv_buf2])
@@ -551,11 +555,11 @@ mod tests {
                     hdr.msg_len = 5;
                     hdr.msg_id = 2 * i;
                     client2_transport
-                        .send_msg(&hdr, &[&[1, 1, 1, 1, 1]])
+                        .send_msg(&hdr, 2 * i, &[&[1, 1, 1, 1, 1]])
                         .expect("Failed to send message");
                     hdr.msg_id = 2 * i + 1;
                     client2_transport
-                        .send_msg(&hdr, &[&[1, 1, 1, 1, 1]])
+                        .send_msg(&hdr, 2 * i + 1, &[&[1, 1, 1, 1, 1]])
                         .expect("Failed to send message");
                     client2_transport
                         .recv_msg(&mut hdr, 2 * i, &mut [&mut recv_buf1, &mut recv_buf2])

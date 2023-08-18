@@ -2,8 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
 use alloc::boxed::Box;
+use alloc::sync::Arc;
 
 use arrayvec::ArrayVec;
+use spin::Mutex;
 
 use crate::rpc::*;
 use crate::transport::Transport;
@@ -17,8 +19,7 @@ pub type RegistrationHandler = fn(hdr: &mut RPCHeader, payload: &mut [u8]) -> Re
 pub struct Server<'a> {
     transport: Box<dyn Transport + Send + Sync + 'a>,
     handlers: ArrayVec<Option<&'a RPCHandler>, MAX_RPC_TYPE>,
-    hdr: RPCHeader,
-    data: [u8; 8192],
+    data: ArrayVec<Arc<Mutex<(RPCHeader, [u8; 8192])>>, MAX_INFLIGHT_MSGS>,
 }
 
 impl<'t, 'a> Server<'a> {
@@ -30,12 +31,16 @@ impl<'t, 'a> Server<'a> {
         for _ in 0..MAX_RPC_TYPE {
             handlers.push(None);
         }
+
+        let mut data = ArrayVec::new();
+        for _ in 0..MAX_INFLIGHT_MSGS {
+            data.push(Arc::new(Mutex::new((RPCHeader::default(), [0u8; 8192]))));
+        }
         // Initialize the server struct
         Server {
             transport,
             handlers,
-            hdr: RPCHeader::default(),
-            data: [0u8; 8192],
+            data,
         }
     }
 
@@ -58,27 +63,39 @@ impl<'t, 'a> Server<'a> {
     where
         'c: 'a,
     {
-        // Receive registration information
-        self.receive()?;
+        // Self is mutable so id doesn't really matter, choose zero artitrarily
+        let msg_id: MsgId = 0;
+        let (mut hdr, mut data) = &mut *self.data[msg_id as usize].lock();
 
-        func(&mut self.hdr, &mut self.data)?;
+        // Receive registration information
+        self.transport
+            .recv_msg(&mut hdr, msg_id, &mut [&mut data])?;
+
+        // TODO: make sure header is for right RPC type?
+        func(&mut hdr, &mut data)?;
 
         // No result for registration
-        let hdr = &mut self.hdr;
         hdr.msg_len = 0;
 
         // Send response
-        self.reply()?;
+        self.transport
+            .send_msg(&hdr, msg_id, &[&data[..hdr.msg_len as usize]])?;
         Ok(())
     }
 
     /// Handle 1 RPC per client
-    pub fn handle(&mut self) -> Result<(), RPCError> {
-        let rpc_id = self.receive()?;
-        match self.handlers[rpc_id as usize] {
+    pub fn handle(&self, msg_id: MsgId) -> Result<(), RPCError> {
+        let (mut hdr, mut data) = &mut *self.data[msg_id as usize].lock();
+
+        self.transport
+            .recv_msg(&mut hdr, msg_id, &mut [&mut data])?;
+        match self.handlers[hdr.msg_type as usize] {
             Some(func) => {
-                func(&mut self.hdr, &mut self.data)?;
-                self.reply()?
+                func(&mut hdr, &mut data)?;
+
+                // Send response
+                self.transport
+                    .send_msg(&hdr, msg_id, &[&data[..hdr.msg_len as usize]])?;
             }
             None => {
                 return Err(RPCError::NoHandlerForRPCType);
@@ -88,23 +105,9 @@ impl<'t, 'a> Server<'a> {
     }
 
     /// Run the RPC server
-    pub fn run_server(&mut self) -> Result<(), RPCError> {
+    pub fn run_server(&self, msg_id: MsgId) -> Result<(), RPCError> {
         loop {
-            self.handle()?;
+            self.handle(msg_id)?;
         }
-    }
-
-    /// receives next RPC call with RPC ID
-    fn receive(&mut self) -> Result<RPCType, RPCError> {
-        // Receive request header
-        self.transport
-            .recv_msg(&mut self.hdr, 0, &mut [&mut self.data])?;
-        Ok(self.hdr.msg_type)
-    }
-
-    /// Replies an RPC call with results
-    fn reply(&mut self) -> Result<(), RPCError> {
-        self.transport
-            .send_msg(&self.hdr, &[&self.data[..self.hdr.msg_len as usize]])
     }
 }

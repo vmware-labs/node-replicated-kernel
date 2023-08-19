@@ -134,16 +134,14 @@ impl<'a, D: for<'d> Device<'d>> Transport for TCPTransport<'a, D> {
 
 #[cfg(test)]
 mod tests {
-    use alloc::collections::BTreeMap;
     use alloc::sync::Arc;
 
-    use smoltcp::iface::{InterfaceBuilder, NeighborCache};
-    use smoltcp::phy::{Loopback, Medium};
-    use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr};
+    use smoltcp::wire::IpAddress;
     use std::thread;
 
     use crate::rpc::MsgLen;
     use crate::test::setup_test_logging;
+    use crate::transport::tcp::test::get_loopback_interface;
     use crate::transport::tcp::transport::InterfaceWrapper;
     use crate::transport::RPCHeader;
     use crate::transport::TCPTransport;
@@ -153,17 +151,7 @@ mod tests {
     fn test_initialization() {
         setup_test_logging();
 
-        // from smoltcp loopback example
-        let device = Loopback::new(Medium::Ethernet);
-        let mut neighbor_cache_entries = [None; 8];
-        let neighbor_cache = NeighborCache::new(&mut neighbor_cache_entries[..]);
-        let ip_addrs = [IpCidr::new(IpAddress::v4(127, 0, 0, 1), 8)];
-        let mut sockets: [_; 2] = Default::default();
-        let iface = InterfaceBuilder::new(device, &mut sockets[..])
-            .hardware_addr(EthernetAddress::default().into())
-            .neighbor_cache(neighbor_cache)
-            .ip_addrs(ip_addrs)
-            .finalize();
+        let iface = get_loopback_interface();
 
         let interface_wrapper = Arc::new(InterfaceWrapper::new(iface));
         TCPTransport::new(None, 10110, interface_wrapper, 1)
@@ -174,16 +162,7 @@ mod tests {
     fn test_send_recv() {
         setup_test_logging();
 
-        // from smoltcp loopback example
-        let device = Loopback::new(Medium::Ethernet);
-        let neighbor_cache = NeighborCache::new(BTreeMap::new());
-        let ip_addrs = [IpCidr::new(IpAddress::v4(127, 0, 0, 1), 8)];
-        let sock_vec = Vec::with_capacity(1);
-        let iface = InterfaceBuilder::new(device, sock_vec)
-            .hardware_addr(EthernetAddress::default().into())
-            .neighbor_cache(neighbor_cache)
-            .ip_addrs(ip_addrs)
-            .finalize();
+        let iface = get_loopback_interface();
 
         let interface_wrapper = Arc::new(InterfaceWrapper::new(iface));
         let server_interface_wrapper = interface_wrapper.clone();
@@ -246,16 +225,7 @@ mod tests {
     fn test_send_and_recv() {
         setup_test_logging();
 
-        // from smoltcp loopback example
-        let device = Loopback::new(Medium::Ethernet);
-        let neighbor_cache = NeighborCache::new(BTreeMap::new());
-        let ip_addrs = [IpCidr::new(IpAddress::v4(127, 0, 0, 1), 8)];
-        let sock_vec = Vec::with_capacity(1);
-        let iface = InterfaceBuilder::new(device, sock_vec)
-            .hardware_addr(EthernetAddress::default().into())
-            .neighbor_cache(neighbor_cache)
-            .ip_addrs(ip_addrs)
-            .finalize();
+        let iface = get_loopback_interface();
 
         let interface_wrapper = Arc::new(InterfaceWrapper::new(iface));
         let server_interface_wrapper = interface_wrapper.clone();
@@ -318,16 +288,7 @@ mod tests {
     fn test_multi_client_server() {
         setup_test_logging();
 
-        // from smoltcp loopback example
-        let device = Loopback::new(Medium::Ethernet);
-        let neighbor_cache = NeighborCache::new(BTreeMap::new());
-        let ip_addrs = [IpCidr::new(IpAddress::v4(127, 0, 0, 1), 8)];
-        let sock_vec = Vec::with_capacity(1);
-        let iface = InterfaceBuilder::new(device, sock_vec)
-            .hardware_addr(EthernetAddress::default().into())
-            .neighbor_cache(neighbor_cache)
-            .ip_addrs(ip_addrs)
-            .finalize();
+        let iface = get_loopback_interface();
         let interface_wrapper = Arc::new(InterfaceWrapper::new(iface));
 
         let server_iface_wrapper = interface_wrapper.clone();
@@ -447,16 +408,7 @@ mod tests {
     fn test_multi_client_server_channel() {
         setup_test_logging();
 
-        // from smoltcp loopback example
-        let device = Loopback::new(Medium::Ethernet);
-        let neighbor_cache = NeighborCache::new(BTreeMap::new());
-        let ip_addrs = [IpCidr::new(IpAddress::v4(127, 0, 0, 1), 8)];
-        let sock_vec = Vec::with_capacity(1);
-        let iface = InterfaceBuilder::new(device, sock_vec)
-            .hardware_addr(EthernetAddress::default().into())
-            .neighbor_cache(neighbor_cache)
-            .ip_addrs(ip_addrs)
-            .finalize();
+        let iface = get_loopback_interface();
         let interface_wrapper = Arc::new(InterfaceWrapper::new(iface));
 
         let server_iface_wrapper = interface_wrapper.clone();
@@ -502,11 +454,13 @@ mod tests {
                     }
 
                     hdr1.msg_len = 2;
+                    hdr2.msg_id = 0;
                     server_transport
                         .send_msg(&hdr1, 0, &[&[i], &[i + 1]])
                         .expect("Failed to send message");
 
                     hdr2.msg_len = 2;
+                    hdr2.msg_id = i;
                     server2_transport
                         .send_msg(&hdr2, i, &[&[i + 1], &[i + 2]])
                         .expect("Failed to send message");

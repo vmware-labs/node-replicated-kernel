@@ -1,12 +1,32 @@
 // Copyright © 2023 University of Colorado. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
-// Setup test logging.
+use std::collections::BTreeMap;
 use std::sync::Once;
-pub(crate) static INIT: Once = Once::new();
 
-pub(crate) fn setup_test_logging() {
+use smoltcp::iface::{Interface, InterfaceBuilder, NeighborCache};
+use smoltcp::phy::{Loopback, Medium};
+use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr};
+
+// Setup test logging.
+static INIT: Once = Once::new();
+
+fn setup_test_logging() {
     INIT.call_once(env_logger::init);
+}
+
+fn get_loopback_interface() -> Interface<'static, Loopback> {
+    // from smoltcp loopback example
+    let device = Loopback::new(Medium::Ethernet);
+    let neighbor_cache = NeighborCache::new(BTreeMap::new());
+    let ip_addrs = [IpCidr::new(IpAddress::v4(127, 0, 0, 1), 8)];
+    let sock_vec = Vec::with_capacity(8);
+    let iface = InterfaceBuilder::new(device, sock_vec)
+        .hardware_addr(EthernetAddress::default().into())
+        .neighbor_cache(neighbor_cache)
+        .ip_addrs(ip_addrs)
+        .finalize();
+    iface
 }
 
 #[test]
@@ -170,13 +190,10 @@ fn test_client_shmem_multithread() {
 
 #[test]
 fn test_client_server_tcp_transport() {
-    use std::collections::BTreeMap;
     use std::sync::Arc;
     use std::thread;
 
-    use smoltcp::iface::{InterfaceBuilder, NeighborCache};
-    use smoltcp::phy::{Loopback, Medium};
-    use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr};
+    use smoltcp::wire::IpAddress;
 
     use rpc::client::Client;
     use rpc::rpc::{RPCError, RPCHeader, RPCType};
@@ -186,16 +203,7 @@ fn test_client_server_tcp_transport() {
 
     setup_test_logging();
 
-    // from smoltcp loopback example
-    let device = Loopback::new(Medium::Ethernet);
-    let neighbor_cache = NeighborCache::new(BTreeMap::new());
-    let ip_addrs = [IpCidr::new(IpAddress::v4(127, 0, 0, 1), 8)];
-    let sock_vec = Vec::with_capacity(1);
-    let iface = InterfaceBuilder::new(device, sock_vec)
-        .hardware_addr(EthernetAddress::default().into())
-        .neighbor_cache(neighbor_cache)
-        .ip_addrs(ip_addrs)
-        .finalize();
+    let iface = get_loopback_interface();
 
     // Create interface wrapper
     let interface_wrapper = Arc::new(InterfaceWrapper::new(iface));
@@ -259,13 +267,10 @@ fn test_client_server_tcp_transport() {
 
 #[test]
 fn test_client_tcp_multithread() {
-    use std::collections::BTreeMap;
     use std::sync::Arc;
     use std::thread;
 
-    use smoltcp::iface::{InterfaceBuilder, NeighborCache};
-    use smoltcp::phy::{Loopback, Medium};
-    use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr};
+    use smoltcp::wire::IpAddress;
 
     use rpc::client::Client;
     use rpc::rpc::{RPCError, RPCHeader, RPCType};
@@ -275,16 +280,7 @@ fn test_client_tcp_multithread() {
 
     setup_test_logging();
 
-    // from smoltcp loopback example
-    let device = Loopback::new(Medium::Ethernet);
-    let neighbor_cache = NeighborCache::new(BTreeMap::new());
-    let ip_addrs = [IpCidr::new(IpAddress::v4(127, 0, 0, 1), 8)];
-    let sock_vec = Vec::with_capacity(1);
-    let iface = InterfaceBuilder::new(device, sock_vec)
-        .hardware_addr(EthernetAddress::default().into())
-        .neighbor_cache(neighbor_cache)
-        .ip_addrs(ip_addrs)
-        .finalize();
+    let iface = get_loopback_interface();
 
     // Create interface wrapper
     let interface_wrapper = Arc::new(InterfaceWrapper::new(iface));
@@ -354,13 +350,10 @@ fn test_client_tcp_multithread() {
 
 #[test]
 fn test_client_server_tcp_multithread() {
-    use std::collections::BTreeMap;
     use std::sync::Arc;
     use std::thread;
 
-    use smoltcp::iface::{InterfaceBuilder, NeighborCache};
-    use smoltcp::phy::{Loopback, Medium};
-    use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr};
+    use smoltcp::wire::IpAddress;
 
     use rpc::client::Client;
     use rpc::rpc::{RPCError, RPCHeader, RPCType};
@@ -372,16 +365,7 @@ fn test_client_server_tcp_multithread() {
 
     let num_channels = 10;
 
-    // from smoltcp loopback example
-    let device = Loopback::new(Medium::Ethernet);
-    let neighbor_cache = NeighborCache::new(BTreeMap::new());
-    let ip_addrs = [IpCidr::new(IpAddress::v4(127, 0, 0, 1), 8)];
-    let sock_vec = Vec::with_capacity(1);
-    let iface = InterfaceBuilder::new(device, sock_vec)
-        .hardware_addr(EthernetAddress::default().into())
-        .neighbor_cache(neighbor_cache)
-        .ip_addrs(ip_addrs)
-        .finalize();
+    let iface = get_loopback_interface();
 
     // Create interface wrapper
     let interface_wrapper = Arc::new(InterfaceWrapper::new(iface));
@@ -456,13 +440,10 @@ fn test_client_server_tcp_multithread() {
 
 #[test]
 fn test_multi_client_multi_server_tcp_multithread() {
-    use std::collections::BTreeMap;
     use std::sync::Arc;
     use std::thread;
 
-    use smoltcp::iface::{InterfaceBuilder, NeighborCache};
-    use smoltcp::phy::{Loopback, Medium};
-    use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr};
+    use smoltcp::wire::IpAddress;
 
     use rpc::client::Client;
     use rpc::rpc::{RPCError, RPCHeader, RPCType};
@@ -475,16 +456,7 @@ fn test_multi_client_multi_server_tcp_multithread() {
     let num_channels = 10;
     let num_client_server_pairs = 3;
 
-    // from smoltcp loopback example
-    let device = Loopback::new(Medium::Ethernet);
-    let neighbor_cache = NeighborCache::new(BTreeMap::new());
-    let ip_addrs = [IpCidr::new(IpAddress::v4(127, 0, 0, 1), 8)];
-    let sock_vec = Vec::with_capacity(1);
-    let iface = InterfaceBuilder::new(device, sock_vec)
-        .hardware_addr(EthernetAddress::default().into())
-        .neighbor_cache(neighbor_cache)
-        .ip_addrs(ip_addrs)
-        .finalize();
+    let iface = get_loopback_interface();
 
     // Create interface wrapper
     let interface_wrapper = Arc::new(InterfaceWrapper::new(iface));

@@ -430,36 +430,23 @@ impl<'a, D: for<'d> Device<'d>> InterfaceWrapper<'a, D> {
 
 #[cfg(test)]
 mod tests {
-    use alloc::collections::BTreeMap;
     use alloc::sync::Arc;
     use core::mem::MaybeUninit;
     use std::thread;
 
-    use smoltcp::iface::{InterfaceBuilder, NeighborCache};
-    use smoltcp::phy::{Loopback, Medium};
-    use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr};
+    use smoltcp::wire::IpAddress;
     use spin::Mutex;
 
     use crate::rpc::{RPCHeader, HDR_LEN};
     use crate::test::setup_test_logging;
     use crate::transport::tcp::interface_wrapper::InterfaceWrapper;
+    use crate::transport::tcp::test::get_loopback_interface;
 
     #[test]
-    fn test_initialization() {
+    fn test_instantiation() {
         setup_test_logging();
 
-        // from smoltcp loopback example
-        let device = Loopback::new(Medium::Ethernet);
-        let mut neighbor_cache_entries = [None; 8];
-        let neighbor_cache = NeighborCache::new(&mut neighbor_cache_entries[..]);
-        let ip_addrs = [IpCidr::new(IpAddress::v4(127, 0, 0, 1), 8)];
-        let mut sockets: [_; 2] = Default::default();
-        let iface = InterfaceBuilder::new(device, &mut sockets[..])
-            .hardware_addr(EthernetAddress::default().into())
-            .neighbor_cache(neighbor_cache)
-            .ip_addrs(ip_addrs)
-            .finalize();
-
+        let iface = get_loopback_interface();
         let _interface_wrapper = InterfaceWrapper::new(iface);
     }
 
@@ -467,18 +454,7 @@ mod tests {
     fn test_add_server_socket() {
         setup_test_logging();
 
-        // from smoltcp loopback example
-        let device = Loopback::new(Medium::Ethernet);
-        let mut neighbor_cache_entries = [None; 8];
-        let neighbor_cache = NeighborCache::new(&mut neighbor_cache_entries[..]);
-        let ip_addrs = [IpCidr::new(IpAddress::v4(127, 0, 0, 1), 8)];
-        let mut sockets: [_; 2] = Default::default();
-        let iface = InterfaceBuilder::new(device, &mut sockets[..])
-            .hardware_addr(EthernetAddress::default().into())
-            .neighbor_cache(neighbor_cache)
-            .ip_addrs(ip_addrs)
-            .finalize();
-
+        let iface = get_loopback_interface();
         let interface_wrapper = InterfaceWrapper::new(iface);
         interface_wrapper
             .add_socket(None, 10111, 1)
@@ -489,18 +465,7 @@ mod tests {
     fn test_add_client_socket() {
         setup_test_logging();
 
-        // from smoltcp loopback example
-        let device = Loopback::new(Medium::Ethernet);
-        let mut neighbor_cache_entries = [None; 8];
-        let neighbor_cache = NeighborCache::new(&mut neighbor_cache_entries[..]);
-        let ip_addrs = [IpCidr::new(IpAddress::v4(127, 0, 0, 1), 8)];
-        let mut sockets: [_; 2] = Default::default();
-        let iface = InterfaceBuilder::new(device, &mut sockets[..])
-            .hardware_addr(EthernetAddress::default().into())
-            .neighbor_cache(neighbor_cache)
-            .ip_addrs(ip_addrs)
-            .finalize();
-
+        let iface = get_loopback_interface();
         let interface_wrapper = InterfaceWrapper::new(iface);
         interface_wrapper
             .add_socket(Some((IpAddress::v4(127, 0, 0, 1), 10110)), 10111, 1)
@@ -511,17 +476,7 @@ mod tests {
     fn test_add_socket_multi() {
         setup_test_logging();
 
-        // from smoltcp loopback example
-        let device = Loopback::new(Medium::Ethernet);
-        let mut neighbor_cache_entries = [None; 8];
-        let neighbor_cache = NeighborCache::new(&mut neighbor_cache_entries[..]);
-        let ip_addrs = [IpCidr::new(IpAddress::v4(127, 0, 0, 1), 8)];
-        let mut sockets: [_; 4] = Default::default();
-        let iface = InterfaceBuilder::new(device, &mut sockets[..])
-            .hardware_addr(EthernetAddress::default().into())
-            .neighbor_cache(neighbor_cache)
-            .ip_addrs(ip_addrs)
-            .finalize();
+        let iface = get_loopback_interface();
 
         let interface_wrapper = InterfaceWrapper::new(iface);
         interface_wrapper
@@ -542,17 +497,7 @@ mod tests {
     fn test_send() {
         setup_test_logging();
 
-        // from smoltcp loopback example
-        let device = Loopback::new(Medium::Ethernet);
-        let mut neighbor_cache_entries = [None; 8];
-        let neighbor_cache = NeighborCache::new(&mut neighbor_cache_entries[..]);
-        let ip_addrs = [IpCidr::new(IpAddress::v4(127, 0, 0, 1), 8)];
-        let mut sockets: [_; 4] = Default::default();
-        let iface = InterfaceBuilder::new(device, &mut sockets[..])
-            .hardware_addr(EthernetAddress::default().into())
-            .neighbor_cache(neighbor_cache)
-            .ip_addrs(ip_addrs)
-            .finalize();
+        let iface = get_loopback_interface();
 
         let interface_wrapper = InterfaceWrapper::new(iface);
         let client_id = interface_wrapper
@@ -583,17 +528,7 @@ mod tests {
     fn test_send_multichannel() {
         setup_test_logging();
 
-        // from smoltcp loopback example
-        let device = Loopback::new(Medium::Ethernet);
-        let mut neighbor_cache_entries = [None; 8];
-        let neighbor_cache = NeighborCache::new(&mut neighbor_cache_entries[..]);
-        let ip_addrs = [IpCidr::new(IpAddress::v4(127, 0, 0, 1), 8)];
-        let mut sockets: [_; 4] = Default::default();
-        let iface = InterfaceBuilder::new(device, &mut sockets[..])
-            .hardware_addr(EthernetAddress::default().into())
-            .neighbor_cache(neighbor_cache)
-            .ip_addrs(ip_addrs)
-            .finalize();
+        let iface = get_loopback_interface();
 
         let num_send_channels = 3u8;
         let interface_wrapper = InterfaceWrapper::new(iface);
@@ -631,16 +566,7 @@ mod tests {
     fn test_send_multichannel_concurrent() {
         setup_test_logging();
 
-        // from smoltcp loopback example
-        let device = Loopback::new(Medium::Ethernet);
-        let neighbor_cache = NeighborCache::new(BTreeMap::new());
-        let ip_addrs = [IpCidr::new(IpAddress::v4(127, 0, 0, 1), 8)];
-        let sock_vec = Vec::with_capacity(1);
-        let iface = InterfaceBuilder::new(device, sock_vec)
-            .hardware_addr(EthernetAddress::default().into())
-            .neighbor_cache(neighbor_cache)
-            .ip_addrs(ip_addrs)
-            .finalize();
+        let iface = get_loopback_interface();
 
         let num_client_channels = 5u8;
 
@@ -688,17 +614,7 @@ mod tests {
     fn test_recv() {
         setup_test_logging();
 
-        // from smoltcp loopback example
-        let device = Loopback::new(Medium::Ethernet);
-        let mut neighbor_cache_entries = [None; 8];
-        let neighbor_cache = NeighborCache::new(&mut neighbor_cache_entries[..]);
-        let ip_addrs = [IpCidr::new(IpAddress::v4(127, 0, 0, 1), 8)];
-        let mut sockets: [_; 4] = Default::default();
-        let iface = InterfaceBuilder::new(device, &mut sockets[..])
-            .hardware_addr(EthernetAddress::default().into())
-            .neighbor_cache(neighbor_cache)
-            .ip_addrs(ip_addrs)
-            .finalize();
+        let iface = get_loopback_interface();
 
         let interface_wrapper = InterfaceWrapper::new(iface);
         let client_id = interface_wrapper
@@ -754,17 +670,7 @@ mod tests {
     fn test_recv_anychannel() {
         setup_test_logging();
 
-        // from smoltcp loopback example
-        let device = Loopback::new(Medium::Ethernet);
-        let mut neighbor_cache_entries = [None; 8];
-        let neighbor_cache = NeighborCache::new(&mut neighbor_cache_entries[..]);
-        let ip_addrs = [IpCidr::new(IpAddress::v4(127, 0, 0, 1), 8)];
-        let mut sockets: [_; 4] = Default::default();
-        let iface = InterfaceBuilder::new(device, &mut sockets[..])
-            .hardware_addr(EthernetAddress::default().into())
-            .neighbor_cache(neighbor_cache)
-            .ip_addrs(ip_addrs)
-            .finalize();
+        let iface = get_loopback_interface();
 
         let num_send_channels = 3u8;
 
@@ -835,16 +741,7 @@ mod tests {
     fn test_recv_anychannel_concurrent() {
         setup_test_logging();
 
-        // from smoltcp loopback example
-        let device = Loopback::new(Medium::Ethernet);
-        let neighbor_cache = NeighborCache::new(BTreeMap::new());
-        let ip_addrs = [IpCidr::new(IpAddress::v4(127, 0, 0, 1), 8)];
-        let sock_vec = Vec::with_capacity(1);
-        let iface = InterfaceBuilder::new(device, sock_vec)
-            .hardware_addr(EthernetAddress::default().into())
-            .neighbor_cache(neighbor_cache)
-            .ip_addrs(ip_addrs)
-            .finalize();
+        let iface = get_loopback_interface();
 
         let num_client_channels = 5u8;
 
@@ -923,16 +820,7 @@ mod tests {
     fn test_recv_multi_concurrent() {
         setup_test_logging();
 
-        // from smoltcp loopback example
-        let device = Loopback::new(Medium::Ethernet);
-        let neighbor_cache = NeighborCache::new(BTreeMap::new());
-        let ip_addrs = [IpCidr::new(IpAddress::v4(127, 0, 0, 1), 8)];
-        let sock_vec = Vec::with_capacity(1);
-        let iface = InterfaceBuilder::new(device, sock_vec)
-            .hardware_addr(EthernetAddress::default().into())
-            .neighbor_cache(neighbor_cache)
-            .ip_addrs(ip_addrs)
-            .finalize();
+        let iface = get_loopback_interface();
 
         let num_channels = 5u8;
 
@@ -1031,16 +919,7 @@ mod tests {
         let num_sockets = 3u8;
         let num_channels = 3u8;
 
-        // from smoltcp loopback example
-        let device = Loopback::new(Medium::Ethernet);
-        let neighbor_cache = NeighborCache::new(BTreeMap::new());
-        let ip_addrs = [IpCidr::new(IpAddress::v4(127, 0, 0, 1), 8)];
-        let sock_vec = Vec::with_capacity(num_sockets as usize * num_channels as usize);
-        let iface = InterfaceBuilder::new(device, sock_vec)
-            .hardware_addr(EthernetAddress::default().into())
-            .neighbor_cache(neighbor_cache)
-            .ip_addrs(ip_addrs)
-            .finalize();
+        let iface = get_loopback_interface();
 
         let interface_wrapper = Arc::new(InterfaceWrapper::new(iface));
 

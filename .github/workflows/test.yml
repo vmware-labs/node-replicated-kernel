@@ -52,7 +52,7 @@ jobs:
         run: cargo test --all-features
         working-directory: ./lib/vmxnet3
       - name: RPC tests
-        run: RUST_TEST_THREADS=1 cargo test --all-features -- --test-threads=1
+        run: RUST_LOG=debug RUST_TEST_THREADS=1 cargo test --all-features
         working-directory: ./lib/rpc
       - name: Build the documentation
         run: mdbook build

@@ -92,7 +92,7 @@ impl MultichannelSocket {
         // TODO: add timeout?? with error returned if timeout occurs?
         if let Some((addr, local_port)) = *self.connect_data.lock() {
             if let Err(e) = socket.connect(cx, addr, local_port) {
-                log::error!("Failed to connect client socket: {:?}", e);
+                panic!("Failed to connect client socket: {:?}", e);
                 //return Err(RPCError::TransportError);
             }
         }
@@ -174,6 +174,7 @@ impl MultichannelSocket {
                         } else {
                             hdr.msg_id as usize
                         };
+                        log::info!("Receiving header: {:?}", hdr);
                         (channel, HDR_LEN + hdr.msg_len as usize)
                     } else {
                         break;

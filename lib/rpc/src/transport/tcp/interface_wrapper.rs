@@ -1,4 +1,4 @@
-// Copyright © 2021 University of Colorado. All Rights Reserved.
+// Copyright © 2023 University of Colorado. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
 use alloc::sync::Arc;
@@ -29,7 +29,19 @@ struct InterfaceState<'a, D: for<'d> Device<'d>> {
     handles: ArrayVec<SocketHandle, MAX_SOCKETS>,
 }
 
-struct SocketTask {
+#[derive(Clone, Debug, PartialEq)]
+enum ChannelRecvState {
+    Clear,
+    Ready(Arc<[u8]>),
+    Partial {
+        buf: Arc<[u8]>,
+        offset: usize,
+        data_remaining: usize,
+    },
+    Received(Arc<[u8]>),
+}
+
+struct SendTask {
     offset: usize,
     buf: Arc<[u8]>,
 }
@@ -43,15 +55,13 @@ struct MultichannelSocket {
     /// What channel to check for send in next. Useful for in-progress sends,
     /// but also for round-robin sending across channels in make_progress()
     send_channel: Arc<Mutex<usize>>,
-    send_tasks: ArrayVec<Arc<Mutex<Option<SocketTask>>>, MAX_CHANNELS>,
+    send_tasks: ArrayVec<Arc<Mutex<Option<SendTask>>>, MAX_CHANNELS>,
     send_doorbells: ArrayVec<AtomicBool, MAX_CHANNELS>,
 
     /* recv state */
-    recv_in_progress: Arc<Mutex<Option<(usize, usize)>>>, // (channel, data_remaining)
-    any_recv: Arc<Mutex<Option<usize>>>,
-    recv_tasks: ArrayVec<Arc<Mutex<Option<SocketTask>>>, MAX_CHANNELS>,
+    recv_partial: Arc<Mutex<Option<usize>>>,
     recv_doorbells: ArrayVec<AtomicBool, MAX_CHANNELS>,
-    finished_recvs: ArrayVec<Arc<Mutex<Option<Arc<[u8]>>>>, MAX_CHANNELS>,
+    recv_states: ArrayVec<Arc<Mutex<ChannelRecvState>>, MAX_CHANNELS>,
 }
 
 impl MultichannelSocket {
@@ -59,17 +69,15 @@ impl MultichannelSocket {
         let mut send_tasks = ArrayVec::new();
         let mut send_doorbells = ArrayVec::new();
 
-        let mut recv_tasks = ArrayVec::new();
         let mut recv_doorbells = ArrayVec::new();
-        let mut finished_recvs = ArrayVec::new();
+        let mut recv_states = ArrayVec::new();
 
         for _ in 0..MAX_CHANNELS {
             send_tasks.push(Arc::new(Mutex::new(None)));
             send_doorbells.push(AtomicBool::new(false));
 
-            recv_tasks.push(Arc::new(Mutex::new(None)));
             recv_doorbells.push(AtomicBool::new(false));
-            finished_recvs.push(Arc::new(Mutex::new(None)));
+            recv_states.push(Arc::new(Mutex::new(ChannelRecvState::Clear)));
         }
 
         MultichannelSocket {
@@ -80,56 +88,192 @@ impl MultichannelSocket {
             send_tasks,
             send_doorbells,
 
-            any_recv: Arc::new(Mutex::new(None)),
-            recv_in_progress: Arc::new(Mutex::new(None)),
-            recv_tasks,
+            recv_partial: Arc::new(Mutex::new(None)),
             recv_doorbells,
-            finished_recvs,
+            recv_states,
         }
     }
 
     fn connect(&self, cx: &mut Context, socket: &mut TcpSocket) {
-        // TODO: add timeout?? with error returned if timeout occurs?
-        if let Some((addr, local_port)) = *self.connect_data.lock() {
+        if let Some((addr, local_port)) = *self
+            .connect_data
+            .try_lock()
+            .expect("We should be the only ones holding the mutex")
+        {
+            // TODO: timeout??
             if let Err(e) = socket.connect(cx, addr, local_port) {
                 panic!("Failed to connect client socket: {:?}", e);
-                //return Err(RPCError::TransportError);
             }
         }
     }
 
+    fn clear_receive_state(&self, channel: usize) -> Result<Arc<[u8]>, RPCError> {
+        let mut current_state = self.recv_states[channel].lock();
+        let buf = if let ChannelRecvState::Received(buf) = &*current_state {
+            buf.clone()
+        } else {
+            log::error!(
+                "This function should only be called if there is a result waiting to be cleared, \
+                indicated by the channel receive doorbell"
+            );
+            return Err(RPCError::TransportError);
+        };
+
+        // update the state and unset the doorbell
+        *current_state = ChannelRecvState::Clear;
+        self.recv_doorbells[channel].store(false, Ordering::SeqCst);
+        Ok(buf)
+    }
+
+    fn register_recv_buffer(&self, channel: usize, buf: Arc<[u8]>) -> Result<(), RPCError> {
+        let mut current_state = self.recv_states[channel].lock();
+
+        if let ChannelRecvState::Clear = &*current_state {
+            *current_state = ChannelRecvState::Ready(buf);
+        } else {
+            log::error!("This function should only be called if there is not a receive in progress on this channel.");
+            return Err(RPCError::TransportError);
+        }
+        Ok(())
+    }
+
+    fn initiate_partial_recv(&self, channel: usize, offset: usize, data_remaining: usize) -> bool {
+        if let Some(mut current_state) = self.recv_states[channel].try_lock() {
+            let buf = if let ChannelRecvState::Ready(buf) = &*current_state {
+                buf.clone()
+            } else {
+                return false;
+            };
+
+            // It's valid, so update the state and log the partial
+            *current_state = ChannelRecvState::Partial {
+                buf,
+                offset,
+                data_remaining,
+            };
+            let mut partial = self
+                .recv_partial
+                .try_lock()
+                .expect("We should be able to get lock on partial?");
+            *partial = Some(channel);
+            true
+        } else {
+            false
+        }
+    }
+
+    fn update_partial_recv(
+        &self,
+        socket: &mut TcpSocket,
+        channel: usize,
+    ) -> Result<bool, RPCError> {
+        let mut new_state = None;
+        let mut set_doorbell = false;
+        let mut current_state = self.recv_states[channel]
+            .try_lock()
+            .expect("We should be the only ones dealing with receive state for this channel");
+
+        if let ChannelRecvState::Partial {
+            buf,
+            offset,
+            data_remaining,
+        } = &mut *current_state
+        {
+            let buf_len = buf.len();
+            let recv_buf = Arc::get_mut(buf).unwrap();
+
+            // Check to see if receive buffer has enough space to receive the messsage
+            if buf_len - *offset < *data_remaining {
+                panic!(
+                    "Not enough room in receive buffer ({:?}) for incoming message with {:?} \
+                        bytes to be received",
+                    buf_len,
+                    *offset + *data_remaining
+                );
+            }
+
+            // Attempt to receive until end of data array
+            if let Ok(bytes_recv) =
+                socket.recv_slice(&mut recv_buf[*offset..*offset + *data_remaining])
+            {
+                if bytes_recv > 0 {
+                    log::debug!("recv [{:?}-{:?}]", *offset, *offset + bytes_recv);
+
+                    if *data_remaining - bytes_recv == 0 {
+                        let mut partial = self
+                            .recv_partial
+                            .try_lock()
+                            .expect("We should be able to check recv partial?");
+                        *partial = None;
+                        set_doorbell = true;
+                        new_state = Some(ChannelRecvState::Received(buf.clone()));
+                    } else {
+                        new_state = Some(ChannelRecvState::Partial {
+                            buf: buf.clone(),
+                            offset: *offset + bytes_recv,
+                            data_remaining: *data_remaining - bytes_recv,
+                        });
+                    }
+                } else {
+                    log::trace!(
+                        "This function should only be called if the channel is ready to receive"
+                    );
+                    return Err(RPCError::TransportError);
+                }
+            }
+        }
+
+        if let Some(my_new_state) = new_state {
+            *current_state = my_new_state;
+            if set_doorbell {
+                self.recv_doorbells[channel].store(true, Ordering::SeqCst);
+            }
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
     fn send(&self, socket: &mut TcpSocket) {
-        let num_channels = *self.num_channels.lock();
-        let mut start_channel_id = self.send_channel.lock();
+        let num_channels = *self
+            .num_channels
+            .try_lock()
+            .expect("Only one thread should by trying to send/recv at a time");
+        let mut start_channel_id = self
+            .send_channel
+            .try_lock()
+            .expect("Only one thread should by trying to send/recv at a time");
         let mut current_channel_id = *start_channel_id;
 
         while socket.can_send() {
-            let mut send_task_opt = self.send_tasks[current_channel_id].lock(); // TODO: make this a try-lock
-            if let Some(ref mut task) = *send_task_opt {
-                // Attempt to send until end of data array
-                if let Ok(bytes_sent) = socket.send_slice(&(task.buf[task.offset..])) {
-                    log::debug!("sent [{:?}-{:?}]", task.offset, task.offset + bytes_sent);
-                    task.offset += bytes_sent;
+            // Someone could be marshalling a send task, so we'll try_lock() and handle failure
+            if let Some(mut send_task_opt) = self.send_tasks[current_channel_id].try_lock() {
+                if let Some(ref mut task) = *send_task_opt {
+                    // Attempt to send until end of data array
+                    if let Ok(bytes_sent) = socket.send_slice(&(task.buf[task.offset..])) {
+                        log::debug!("sent [{:?}-{:?}]", task.offset, task.offset + bytes_sent);
+                        task.offset += bytes_sent;
 
-                    if task.offset == task.buf.len() {
-                        // We finished sending the send buf, so let it go
-                        *send_task_opt = None;
-                        self.send_doorbells[current_channel_id].store(true, Ordering::SeqCst);
-                        current_channel_id = (current_channel_id + 1) % num_channels;
+                        if task.offset == task.buf.len() {
+                            // We finished sending the send buf, so let it go
+                            *send_task_opt = None;
+                            self.send_doorbells[current_channel_id].store(true, Ordering::SeqCst);
+                            current_channel_id = (current_channel_id + 1) % num_channels;
 
-                        // We've tried to send with all sockets, so we're done even if socket.can_send() is still true
-                        if current_channel_id == *start_channel_id {
-                            break;
+                            // We've tried to send with all sockets, so we're done even if socket.can_send() is still true
+                            if current_channel_id == *start_channel_id {
+                                break;
+                            }
                         }
                     }
-                }
-            } else {
-                // If not work to do, move on to next channel.
-                current_channel_id = (current_channel_id + 1) % num_channels;
+                } else {
+                    // If not work to do, move on to next channel.
+                    current_channel_id = (current_channel_id + 1) % num_channels;
 
-                // We've tried to send with all sockets, so we're done even if socket.can_send() is still true
-                if current_channel_id == *start_channel_id {
-                    break;
+                    // We've tried to send with all sockets, so we're done even if socket.can_send() is still true
+                    if current_channel_id == *start_channel_id {
+                        break;
+                    }
                 }
             }
         }
@@ -137,104 +281,60 @@ impl MultichannelSocket {
         *start_channel_id = current_channel_id;
     }
 
-    fn recv(&self, socket: &mut TcpSocket) {
-        let num_channels = *self.num_channels.lock();
-        let mut any_recv = self.any_recv.lock();
-        let mut in_progress = self.recv_in_progress.lock();
-        while socket.may_recv() {
-            let (channel_id, mut data_remaining) = if let Some((channel_id, data_remaining)) =
-                *in_progress
-            {
-                // We know what to do if there's a message partially received
-                (channel_id, data_remaining)
+    fn recv(&self, socket: &mut TcpSocket) -> Result<(), RPCError> {
+        let mut progress = true;
+        while progress && socket.may_recv() {
+            progress = false;
+            let recv_partial = self
+                .recv_partial
+                .try_lock()
+                .expect("We should be able to lock partial??");
+            if let Some(channel) = *recv_partial {
+                drop(recv_partial);
+                progress = self.update_partial_recv(socket, channel)?;
             } else {
-                // If a message is not partially received, we need to choose the channel to receive from
-                // Let's first seek if we can peek a message header.
+                drop(recv_partial);
+                // If not partial, peek at the data and decide which channel to receive on.
                 if let Ok(hdr_ptr) = socket.peek(HDR_LEN) {
                     if hdr_ptr.len() == HDR_LEN {
                         let hdr = RPCHeader::from_bytes(hdr_ptr);
                         log::trace!("Peeked header msg_id={:?}", hdr);
+                        let msg_len = hdr.msg_len as usize;
 
-                        let channel = if let Some(channel_id) = *any_recv {
-                            // If any recv, choose the next channel based on index, first to have recv buffer
-                            // If no buffer available, break.
-                            let mut recv_channel = None;
-                            for channel_offset in 0..num_channels {
-                                let current_channel = (channel_id + channel_offset) % num_channels;
-                                if (*self.recv_tasks[current_channel].lock()).is_some() {
-                                    recv_channel = Some(current_channel);
-                                    break;
-                                }
-                            }
-                            if let Some(available_recv_channel) = recv_channel {
-                                available_recv_channel
-                            } else {
-                                break;
+                        let is_client = {
+                            self.connect_data
+                                .try_lock()
+                                .expect("We should be the only ones...")
+                                .is_some()
+                        };
+                        if is_client {
+                            // This indicates we are a client, so receive to the channel based on the message header.
+                            let msg_channel = hdr.msg_id as usize;
+                            if self.initiate_partial_recv(msg_channel, 0, msg_len + HDR_LEN) {
+                                progress = self.update_partial_recv(socket, msg_channel)?;
                             }
                         } else {
-                            hdr.msg_id as usize
-                        };
-                        log::info!("Receiving header: {:?}", hdr);
-                        (channel, HDR_LEN + hdr.msg_len as usize)
-                    } else {
-                        break;
-                    }
-                } else {
-                    // If we can't peek, there's not actually data we need to worry about.
-                    break;
-                }
-            };
-
-            let mut finished = false;
-            let mut started = false;
-            let mut recv_task_opt = self.recv_tasks[channel_id].lock(); // TODO: make this a try-lock
-            if let Some(ref mut task) = *recv_task_opt {
-                // Attempt to receive until end of data array
-                let buf_len = task.buf.len();
-                let recv_buf = Arc::get_mut(&mut task.buf).unwrap();
-
-                // Check to see if receive buffer has enough space to receive the messsage
-                if buf_len - task.offset < data_remaining {
-                    panic!("Not enough room in receive buffer ({:?}) for incoming message with {:?} bytes to be received", 
-                                buf_len, task.offset + data_remaining);
-                }
-
-                if let Ok(bytes_recv) =
-                    socket.recv_slice(&mut recv_buf[task.offset..task.offset + data_remaining])
-                {
-                    if bytes_recv > 0 {
-                        log::debug!("recv [{:?}-{:?}]", task.offset, task.offset + bytes_recv);
-
-                        if !started {
-                            started = true;
-                        }
-
-                        task.offset += bytes_recv;
-                        data_remaining -= bytes_recv;
-                        if data_remaining == 0 {
-                            finished = true;
+                            // This indicates we are a server, so we can receive on any channel.
+                            // Just iterate over the channels to find one in the ready state.
+                            let num_channels = *self
+                                .num_channels
+                                .try_lock()
+                                .expect("Only one thread should by trying to send/recv at a time");
+                            let mut current_channel = 0;
+                            while !self.initiate_partial_recv(current_channel, 0, msg_len + HDR_LEN)
+                                && current_channel < num_channels
+                            {
+                                current_channel += 1;
+                            }
+                            if current_channel < num_channels {
+                                progress = self.update_partial_recv(socket, current_channel)?;
+                            }
                         }
                     }
                 }
-            }
-
-            if finished {
-                // We finished receiving into the recv buf, so let it go
-                let mut finished_opt = self.finished_recvs[channel_id].lock();
-                let task = recv_task_opt.as_ref().unwrap();
-                *finished_opt = Some(task.buf.clone());
-                *recv_task_opt = None;
-                self.recv_doorbells[channel_id].store(true, Ordering::SeqCst);
-
-                // If any receive, aim to receive round-robin style.
-                if let Some(channel_id) = *any_recv {
-                    *any_recv = Some((channel_id + 1) % num_channels);
-                }
-            } else if started {
-                // We started reading a message but didn't finish - we need to record progress.
-                *in_progress = Some((channel_id, data_remaining));
             }
         }
+        Ok(())
     }
 }
 
@@ -296,7 +396,7 @@ impl<'a, D: for<'d> Device<'d>> InterfaceWrapper<'a, D> {
                 .map_err(|_| RPCError::ServerListenError)?;
         }
 
-        // Add to servere handles
+        // Add to server handles
         let socket_id = {
             let mut state = self.iface_state.lock();
 
@@ -307,7 +407,10 @@ impl<'a, D: for<'d> Device<'d>> InterfaceWrapper<'a, D> {
 
             if let Some(addr) = server_addr {
                 {
-                    let mut connect_data = self.sockets[id].connect_data.lock();
+                    let mut connect_data = self.sockets[id]
+                        .connect_data
+                        .try_lock()
+                        .expect("We should be able to get connect data");
                     *connect_data = Some((addr, local_port));
                 }
 
@@ -318,12 +421,11 @@ impl<'a, D: for<'d> Device<'d>> InterfaceWrapper<'a, D> {
 
             // Do this why we hold the iface_state lock, so that no one tries to make progress
             // on this socket before it's initialized.
-            let mut socket_channels = self.sockets[id].num_channels.lock();
+            let mut socket_channels = self.sockets[id]
+                .num_channels
+                .try_lock()
+                .expect("We should be able to get num channels");
             *socket_channels = num_channels;
-            if server_addr.is_none() {
-                let mut any_recv = self.sockets[id].any_recv.lock();
-                *any_recv = Some(0);
-            }
             id
         };
 
@@ -334,20 +436,17 @@ impl<'a, D: for<'d> Device<'d>> InterfaceWrapper<'a, D> {
         log::trace!("wait_for_doorbell()");
         loop {
             let try_state = self.iface_state.try_lock();
-            if doorbell
-                .compare_exchange(true, false, Ordering::SeqCst, Ordering::SeqCst)
-                .is_ok()
-            {
+            if doorbell.load(Ordering::SeqCst) {
                 break;
             }
             if let Some(mut state) = try_state {
-                self.make_progress(&mut *state);
+                self.make_progress(&mut *state)?;
             }
         }
         Ok(())
     }
 
-    fn make_progress(&self, state: &mut InterfaceState<D>) {
+    fn make_progress(&self, state: &mut InterfaceState<D>) -> Result<(), RPCError> {
         log::trace!("make_progress()");
 
         match state.iface.poll(Instant::from_millis(
@@ -369,15 +468,15 @@ impl<'a, D: for<'d> Device<'d>> InterfaceWrapper<'a, D> {
                 // If this socket can send, send any outgoing data.
                 multisocket.send(&mut tcpsocket);
                 // If this socket can recv, recv any incoming data.
-                multisocket.recv(&mut tcpsocket);
+                multisocket.recv(&mut tcpsocket)?;
             } else {
                 let (tcpsocket, cx) = state.iface.get_socket_and_context::<TcpSocket>(handle);
                 multisocket.connect(cx, tcpsocket);
             }
         }
+        Ok(())
     }
 
-    // TODO: msg_id must be equal to the header msg_id
     pub fn send_msg(
         &self,
         socket_id: SocketId,
@@ -388,12 +487,13 @@ impl<'a, D: for<'d> Device<'d>> InterfaceWrapper<'a, D> {
         let socket = &self.sockets[socket_id];
         {
             let mut send_task_option = socket.send_tasks[channel_id].lock();
-            *send_task_option = Some(SocketTask {
+            *send_task_option = Some(SendTask {
                 offset: 0,
                 buf: send_buf,
             });
         }
         self.wait_for_doorbell(&socket.send_doorbells[channel_id])?;
+        socket.send_doorbells[channel_id].store(false, Ordering::SeqCst);
         Ok(())
     }
 
@@ -405,27 +505,13 @@ impl<'a, D: for<'d> Device<'d>> InterfaceWrapper<'a, D> {
     ) -> Result<Arc<[u8]>, RPCError> {
         let channel_id = msg_id as usize;
         let socket = &self.sockets[socket_id];
-        {
-            let mut recv_task_option = socket.recv_tasks[channel_id].lock();
-            *recv_task_option = Some(SocketTask {
-                offset: 0,
-                buf: recv_buf,
-            });
-        }
 
+        // Prepare to receive and wait for data
+        socket.register_recv_buffer(channel_id, recv_buf)?;
         self.wait_for_doorbell(&socket.recv_doorbells[channel_id])?;
-        let mut populated_finished_recv = socket.finished_recvs[channel_id].lock();
 
-        // Get a new reference
-        let my_finished_recv = if let Some(buf) = &*populated_finished_recv {
-            buf.clone()
-        } else {
-            panic!("There should be a receive buffer if the flag was set!");
-        };
-
-        // Drop old reference
-        *populated_finished_recv = None;
-        Ok(my_finished_recv)
+        // Consume received data
+        socket.clear_receive_state(channel_id)
     }
 }
 
@@ -495,7 +581,7 @@ mod tests {
     }
 
     #[test]
-    fn test_send() {
+    fn test_send_single_msg() {
         setup_test_logging();
 
         let iface = get_loopback_interface();
@@ -612,7 +698,7 @@ mod tests {
     }
 
     #[test]
-    fn test_recv() {
+    fn test_recv_single_msg() {
         setup_test_logging();
 
         let iface = get_loopback_interface();
@@ -917,8 +1003,8 @@ mod tests {
     fn test_recv_multisocket_multichannel_concurrent() {
         setup_test_logging();
 
-        let num_sockets = 3u8;
-        let num_channels = 3u8;
+        let num_sockets = 4u8;
+        let num_channels = 10u8;
 
         let iface = get_loopback_interface();
 

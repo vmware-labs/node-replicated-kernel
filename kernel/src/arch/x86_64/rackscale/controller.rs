@@ -114,9 +114,10 @@ pub(crate) fn run() {
 
     // Start running the RPC server
     log::info!("Starting RPC server for client {:?}!", mid);
-    server
-        .run_server(0)
-        .expect("Controller failed to handle RPC from client");
+
+    let ret = server.run_server(0);
+    log::error!("Tried but run server but: {:?}", ret);
+    ret.expect("Controller failed to handle RPC from client");
 }
 
 pub(crate) fn poll_interface() {
@@ -145,7 +146,9 @@ pub(crate) fn poll_interface() {
     // Now that server is ready, the clients may be accepted.
     DCMServerReady.store(true, Ordering::SeqCst);
 
-    server.run_server(0).expect("Failed to handle RPC from DCM");
+    server
+        .run_server(0)
+        .expect("Controller failed to handle RPC from client");
 }
 
 fn register_rpcs(server: &mut Server) {

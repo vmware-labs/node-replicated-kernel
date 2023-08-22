@@ -66,8 +66,8 @@ pub(crate) fn rpc_get_shmem_structure(
     CLIENT_STATE
         .rpc_client
         .call(
-            KernelRpc::GetShmemStructure as RPCType,
             *crate::environment::CORE_ID as u8,
+            KernelRpc::GetShmemStructure as RPCType,
             &[&req_data],
             &mut [&mut res_data[..res_size]],
         )

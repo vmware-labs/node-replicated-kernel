@@ -61,8 +61,8 @@ pub(crate) fn dcm_register_node(mid: MachineId, cores: u64, memslices: u64) -> b
     {
         DCM_CLIENT
             .call(
-                DCMOps::RegisterNode as RPCType,
                 *crate::environment::CORE_ID as u8,
+                DCMOps::RegisterNode as RPCType,
                 unsafe { &[req.as_bytes()] },
                 unsafe { &mut [res.as_mut_bytes()] },
             )

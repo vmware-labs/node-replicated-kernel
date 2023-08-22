@@ -35,8 +35,8 @@ pub(crate) fn rpc_getinfo<P: AsRef<[u8]> + Debug>(pid: usize, name: P) -> KResul
     // Construct result buffer and call RPC
     let mut res_data = [0u8; core::mem::size_of::<KResult<(u64, u64)>>()];
     CLIENT_STATE.rpc_client.call(
-        KernelRpc::GetInfo as RPCType,
         *crate::environment::CORE_ID as u8,
+        KernelRpc::GetInfo as RPCType,
         &[&req_data, name.as_ref()],
         &mut [&mut res_data],
     )?;

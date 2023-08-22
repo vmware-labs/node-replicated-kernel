@@ -215,10 +215,7 @@ impl MultichannelSocket {
                         });
                     }
                 } else {
-                    log::trace!(
-                        "This function should only be called if the channel is ready to receive"
-                    );
-                    return Err(RPCError::TransportError);
+                    return Ok(false);
                 }
             }
         }

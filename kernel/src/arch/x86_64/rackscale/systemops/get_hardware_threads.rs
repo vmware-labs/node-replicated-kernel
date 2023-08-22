@@ -32,8 +32,8 @@ pub(crate) fn rpc_get_hardware_threads(
 
     // Call GetHardwareThreads() RPC
     CLIENT_STATE.rpc_client.call(
-        KernelRpc::GetHardwareThreads as RPCType,
         *crate::environment::CORE_ID as u8,
+        KernelRpc::GetHardwareThreads as RPCType,
         &[&[]],
         &mut [&mut res_data],
     )?;

@@ -55,8 +55,8 @@ fn rpc_open_create<P: AsRef<[u8]> + Debug>(
 
     // Call the RPC
     CLIENT_STATE.rpc_client.call(
-        rpc_type,
         *crate::environment::CORE_ID as u8,
+        rpc_type,
         &[&req_data, pathname.as_ref()],
         &mut [&mut res_data],
     )?;

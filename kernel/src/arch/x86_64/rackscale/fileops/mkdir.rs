@@ -43,8 +43,8 @@ pub(crate) fn rpc_mkdir<P: AsRef<[u8]> + Debug>(
 
     // Call RPC
     CLIENT_STATE.rpc_client.call(
-        KernelRpc::MkDir as RPCType,
         *crate::environment::CORE_ID as u8,
+        KernelRpc::MkDir as RPCType,
         &[&req_data, pathname.as_ref()],
         &mut [&mut res_data],
     )?;

@@ -70,8 +70,8 @@ pub(crate) fn rpc_writeat(
         KernelRpc::WriteAt as RPCType
     };
     CLIENT_STATE.rpc_client.call(
-        rpc_type,
         *crate::environment::CORE_ID as u8,
+        rpc_type,
         &[&req_data, &data],
         &mut [&mut res_data],
     )?;
@@ -132,8 +132,8 @@ pub(crate) fn rpc_readat(
     };
 
     CLIENT_STATE.rpc_client.call(
-        KernelRpc::ReadAt as RPCType,
         *crate::environment::CORE_ID as u8,
+        KernelRpc::ReadAt as RPCType,
         &[&req_data],
         &mut [&mut res_data],
     )?;

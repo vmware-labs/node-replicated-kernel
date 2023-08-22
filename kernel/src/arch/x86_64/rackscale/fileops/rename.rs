@@ -45,8 +45,8 @@ pub(crate) fn rpc_rename<P: AsRef<[u8]> + Debug>(
 
     // Call the RPC
     CLIENT_STATE.rpc_client.call(
-        KernelRpc::FileRename as RPCType,
         *crate::environment::CORE_ID as u8,
+        KernelRpc::FileRename as RPCType,
         &[&req_data, oldname.as_ref(), newname.as_ref()],
         &mut [&mut res_data],
     )?;

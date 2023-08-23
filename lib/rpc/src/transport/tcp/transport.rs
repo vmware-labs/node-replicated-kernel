@@ -45,8 +45,6 @@ impl<'a, D: for<'d> Device<'d>> Transport for TCPTransport<'a, D> {
         sender_id: MsgId,
         payload: &[&[u8]],
     ) -> Result<(), RPCError> {
-        log::info!("Sending header from {:?}: {:?}", sender_id, hdr);
-
         // Calculate the data length
         let mut data_len = HDR_LEN;
         for p in payload {
@@ -108,7 +106,7 @@ impl<'a, D: for<'d> Device<'d>> Transport for TCPTransport<'a, D> {
         let recv_hdr = RPCHeader::from_bytes(&*recv_buffer);
         hdr.copy_from(recv_hdr);
 
-        log::info!("Received header from {:?}: {:?}", recipient_id, hdr);
+        log::debug!("Received header from {:?}: {:?}", recipient_id, hdr);
 
         // Copy data
         let data_to_receive = HDR_LEN + hdr.msg_len as usize;
@@ -308,7 +306,6 @@ mod tests {
                     .expect(
                     "We should be able to initialize a second transport with the same interface",
                 );
-                log::info!("Started both server transports");
 
                 let mut hdr = RPCHeader::default();
                 let mut recv_buf = [0; 10];
@@ -325,7 +322,6 @@ mod tests {
                     for j in 5..10 {
                         assert_eq!(recv_buf[j as usize], 0u8);
                     }
-                    log::info!("Server 1 receive {:?}", i);
 
                     server2_transport
                         .recv_msg(&mut hdr, 0, &mut [&mut recv_buf])
@@ -339,17 +335,14 @@ mod tests {
                     for j in 5..10 {
                         assert_eq!(recv_buf[j as usize], 0u8);
                     }
-                    log::info!("Server 2 receive {:?}", i);
 
                     hdr.msg_len = 2;
                     server_transport
                         .send_msg(&hdr, 0, &[&[i], &[i + 1]])
                         .expect("Failed to send message");
-                    log::info!("Server 1 send {:?}", i);
                     server2_transport
                         .send_msg(&hdr, 0, &[&[i + 1], &[i + 2]])
                         .expect("Failed to send message");
-                    log::info!("Server 2 send {:?}", i);
                 }
             });
 
@@ -370,13 +363,11 @@ mod tests {
                     client_transport
                         .send_msg(&hdr, 0, &[&[0 * i, 1 * i, 2 * i, 3 * i, 4 * i]])
                         .expect("Failed to send message");
-                    log::info!("Client 1 send {:?}", i);
                     client_transport
                         .recv_msg(&mut hdr, 0, &mut [&mut recv_buf1, &mut recv_buf2])
                         .expect("Failed to recv message");
                     assert_eq!(recv_buf1[0], i);
                     assert_eq!(recv_buf2[0], i + 1);
-                    log::info!("Client 1 recv {:?}", i);
                 }
             });
 
@@ -398,23 +389,19 @@ mod tests {
                     client2_transport
                         .send_msg(&hdr, 0, &[&[1, 1, 1, 1, 1]])
                         .expect("Failed to send message");
-                    log::info!("Client 2 send {:?}.a", i);
                     client2_transport
                         .send_msg(&hdr, 0, &[&[1, 1, 1, 1, 1]])
                         .expect("Failed to send message");
-                    log::info!("Client 2 send {:?}.a", i);
                     client2_transport
                         .recv_msg(&mut hdr, 0, &mut [&mut recv_buf1, &mut recv_buf2])
                         .expect("Failed to recv message");
                     assert_eq!(recv_buf1[0], (i * 2) + 1);
                     assert_eq!(recv_buf2[0], (i * 2) + 2);
-                    log::info!("Client 2 recv {:?}.a", i);
                     client2_transport
                         .recv_msg(&mut hdr, 0, &mut [&mut recv_buf1, &mut recv_buf2])
                         .expect("Failed to recv message");
                     assert_eq!(recv_buf1[0], (i * 2 + 1) + 1);
                     assert_eq!(recv_buf2[0], (i * 2 + 1) + 2);
-                    log::info!("Client 2 recv {:?}.b", i);
                 }
             });
         });

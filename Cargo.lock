@@ -1136,7 +1136,7 @@ dependencies = [
  "serde",
  "serde_cbor",
  "slabmalloc",
- "smoltcp 0.8.1",
+ "smoltcp 0.8.0",
  "spin 0.9.8",
  "static_assertions",
  "testutils",
@@ -1651,7 +1651,7 @@ dependencies = [
  "lazy_static",
  "log",
  "rawtime",
- "smoltcp 0.8.1",
+ "smoltcp 0.8.0",
  "spin 0.9.8",
  "vmxnet3",
 ]
@@ -1816,9 +1816,8 @@ dependencies = [
 
 [[package]]
 name = "smoltcp"
-version = "0.8.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "72165c4af59f5f19c7fb774b88b95660591b612380305b5f4503157341a9f7ee"
+version = "0.8.0"
+source = "git+https://github.com/hunhoffe/smoltcp.git?branch=v0.8.0-peek-slice#dde8c1aa1fe52f4bdc253a5d812107b591dc8acf"
 dependencies = [
  "bitflags",
  "byteorder",
@@ -2047,7 +2046,7 @@ dependencies = [
  "env_logger 0.9.0",
  "kpi",
  "log",
- "smoltcp 0.8.1",
+ "smoltcp 0.8.0",
  "static_assertions",
  "x86 0.52.0",
 ]

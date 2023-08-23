@@ -53,7 +53,7 @@ gdbstub = { git = "https://github.com/daniel5151/gdbstub.git", branch = "dev/0.6
 gdbstub_arch = { git = "https://github.com/daniel5151/gdbstub.git", branch = "dev/0.6" }
 # Optional external libraries:
 addr2line = { version = "0.16", default-features = false, features = ["rustc-demangle"], optional = true }
-smoltcp = { version = "0.8.0", default-features = false, features = [ "alloc", "log", "proto-ipv4", "proto-igmp", "proto-dhcpv4", "socket-raw", "socket-icmp", "socket-udp", "socket-tcp" ], optional = true }
+smoltcp = { git = "https://github.com/hunhoffe/smoltcp.git", branch = "v0.8.0-peek-slice", default-features = false, features = [ "alloc", "log", "proto-ipv4", "proto-igmp", "proto-dhcpv4", "socket-raw", "socket-icmp", "socket-udp", "socket-tcp" ], optional = true }
 
 [[bin]]
 name = "nrk"

@@ -90,7 +90,7 @@ impl Bench for MIX {
         while iterations <= duration {
             let start = rawtime::Instant::now();
             while start.elapsed().as_secs() < 1 {
-                for _i in 0..64 {
+                for _i in 0..4 {
                     unsafe { rdrand16(&mut random_num) };
                     let rand = random_num as usize % total_pages;
                     let offset = rand * 4096;

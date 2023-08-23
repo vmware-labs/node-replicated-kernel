@@ -192,10 +192,11 @@ pub(crate) fn handle_read(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(),
         return Ok(());
     }
 
+    let payload_offset = core::mem::size_of::<KResult<(u64, u64)>>();
     let ret = cnrfs::MlnrKernelNode::file_read(
         pid,
         fd,
-        &mut &mut payload[HDR_LEN..HDR_LEN + len as usize][..],
+        &mut &mut payload[payload_offset..payload_offset + len as usize][..],
         offset,
     );
     let extra_data = match ret {

@@ -351,9 +351,6 @@ pub struct InterfaceWrapper<'a, D: for<'d> Device<'d>> {
 
 impl<'a, D: for<'d> Device<'d>> InterfaceWrapper<'a, D> {
     pub fn new(iface: Interface<'a, D>) -> InterfaceWrapper<'a, D> {
-        lazy_static::initialize(&rawtime::BOOT_TIME_ANCHOR);
-        lazy_static::initialize(&rawtime::WALL_TIME_ANCHOR);
-
         let mut sockets = ArrayVec::new();
         for _ in 0..MAX_SOCKETS {
             sockets.push(MultichannelSocket::new());

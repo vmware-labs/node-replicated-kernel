@@ -203,7 +203,6 @@ pub(crate) fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
             .map_or(false, |c| c.mode == crate::cmdline::Mode::Client)
         {
             crate::nrproc::register_thread_with_process_replicas();
-            crate::arch::rackscale::client_state::create_client_rpc_shmem_buffers();
         }
 
         #[cfg(not(feature = "rackscale"))]
@@ -439,14 +438,12 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
                     REMOTE_TLB_WORK_PENDING_VECTOR,
                 );
                 lazy_static::initialize(&rackscale::client_state::CLIENT_STATE);
-                crate::arch::rackscale::client_state::create_client_rpc_shmem_buffers();
-                log::warn!("Finished inititializing client state & shmem buffer");
+                log::info!("Finished inititializing client state");
             }
         }
         // Initialize the workqueues used for distributed TLB shootdowns
-        log::warn!("About to initialize rackscale client workqueues");
         lazy_static::initialize(&crate::arch::tlb::RACKSCALE_CLIENT_WORKQUEUES);
-        log::warn!("Finished inititializing client work queues");
+        log::info!("Finished inititializing client work queues");
     }
 
     unsafe { vspace::init_large_objects_pml4() };

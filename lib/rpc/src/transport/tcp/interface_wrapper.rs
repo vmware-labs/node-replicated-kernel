@@ -452,9 +452,18 @@ impl<'a, D: for<'d> Device<'d>> InterfaceWrapper<'a, D> {
     fn make_progress(&self, state: &mut InterfaceState<D>) -> Result<(), RPCError> {
         log::trace!("make_progress()");
 
-        match state.iface.poll(Instant::from_millis(
-            rawtime::duration_since_boot().as_millis() as i64,
-        )) {
+        #[cfg(feature = "std")]
+        let time = Instant::from_millis(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("Time should move forwards?")
+                .as_millis() as i64,
+        );
+
+        #[cfg(not(feature = "std"))]
+        let time = Instant::from_millis(rawtime::duration_since_boot().as_millis() as i64);
+
+        match state.iface.poll(time) {
             Ok(_) => {}
             Err(e) => {
                 log::warn!("poll error: {}", e);

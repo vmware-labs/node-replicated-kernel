@@ -1651,6 +1651,7 @@ dependencies = [
  "lazy_static",
  "log",
  "rawtime",
+ "rpc",
  "smoltcp 0.8.0",
  "spin 0.9.8",
  "vmxnet3",

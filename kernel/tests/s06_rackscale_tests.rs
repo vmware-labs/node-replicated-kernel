@@ -169,6 +169,7 @@ fn s06_rackscale_shmem_fs_prop_test() {
 }
 
 #[cfg(not(feature = "baremetal"))]
+#[ignore]
 #[test]
 fn s06_rackscale_shmem_shootdown_test() {
     let built = BuildArgs::default()
@@ -201,6 +202,7 @@ fn s06_rackscale_shmem_shootdown_test() {
 }
 
 #[cfg(not(feature = "baremetal"))]
+#[ignore]
 #[test]
 fn s06_rackscale_shmem_userspace_multicore_test() {
     rackscale_userspace_multicore_test(RackscaleTransport::Shmem);

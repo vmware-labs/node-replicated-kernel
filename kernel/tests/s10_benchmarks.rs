@@ -1028,3 +1028,106 @@ fn s10_pmem_alloc() {
 
     check_for_successful_exit(&cmdline, qemu_run(), output);
 }
+
+#[test]
+fn s10_lammps_benchmark() {
+    setup_network(1);
+
+    let machine = Machine::determine();
+    let build = BuildArgs::default()
+        .module("rkapps")
+        .user_feature("rkapps:lammps")
+        .release()
+        .build();
+
+    let threads: Vec<usize> = machine
+        .thread_defaults_uniform()
+        .into_iter()
+        // Throw out everything above 28 since we have some non-deterministic
+        // bug on larger machines that leads to threads calling sched_yield and
+        // no readrandom is performed...
+        .filter(|&t| t <= 28)
+        .collect();
+
+    // level-DB arguments
+    let (reads, num, val_size) = if cfg!(feature = "smoke") {
+        (10_000, 5_000, 4096)
+    } else {
+        (100_000, 50_000, 65535)
+    };
+
+    let file_name = "lammps.csv";
+    let _r = std::fs::remove_file(file_name);
+
+    for thread in threads.iter() {
+        let kernel_cmdline = format!(
+            r#"init=lammps.bin initargs={}"#,
+            *thread,
+        );
+        let mut cmdline = RunnerArgs::new_with_build("userspace-smp", &build)
+            .timeout(180_000)
+            .cores(machine.max_cores())
+            .nodes(2)
+            .use_virtio()
+            .setaffinity(Vec::new())
+            .cmd(kernel_cmdline.as_str())
+            .no_network_setup();
+
+        if cfg!(feature = "smoke") {
+            cmdline = cmdline.memory(8192);
+        } else {
+            cmdline = cmdline.memory(80_000);
+        }
+
+        let mut output = String::new();
+        let mut qemu_run = || -> Result<WaitStatus> {
+            let mut dhcp_server = spawn_dhcpd()?;
+            let mut p = spawn_nrk(&cmdline)?;
+
+            output += dhcp_server.exp_string(DHCP_ACK_MATCH)?.as_str();
+
+            let (prev, matched) = p.exp_regex(r#"readrandom(.*)"#)?;
+            println!("{}", matched);
+            output += prev.as_str();
+            output += matched.as_str();
+
+            // Append parsed results to a CSV file
+            let write_headers = !Path::new(file_name).exists();
+            let mut csv_file = OpenOptions::new()
+                .append(true)
+                .create(true)
+                .open(file_name)
+                .expect("Can't open file");
+            if write_headers {
+                let row = "git_rev,benchmark,ncores,reads,num,val_size,operations\n";
+                let r = csv_file.write(row.as_bytes());
+                assert!(r.is_ok());
+            }
+
+            let parts: Vec<&str> = matched.split("ops/sec").collect();
+            let mut parts: Vec<&str> = parts[0].split(' ').collect();
+            parts.pop();
+            let r = csv_file.write(format!("{},", env!("GIT_HASH")).as_bytes());
+            assert!(r.is_ok());
+            let out = format!(
+                "readrandom,{},{},{},{},{}",
+                *thread,
+                reads,
+                num,
+                val_size,
+                parts.last().unwrap()
+            );
+            let r = csv_file.write(out.as_bytes());
+            assert!(r.is_ok());
+            let r = csv_file.write("\n".as_bytes());
+            assert!(r.is_ok());
+
+            // cleanup
+            dhcp_server.send_control('c')?;
+            p.process.kill(SIGTERM)?;
+            p.process.exit()
+        };
+
+        check_for_successful_exit(&cmdline, qemu_run(), output);
+    }
+}

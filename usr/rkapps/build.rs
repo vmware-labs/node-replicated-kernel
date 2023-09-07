@@ -96,6 +96,15 @@ fn build_plan() -> Vec<(&'static str, &'static str, &'static str, bool)> {
             !unwind_hack,
         ));
     }
+    
+    if cfg!(feature = "lammps") {
+        plan.push((
+            "lammps",
+            "../../../../lammps.bin",
+            "build/src/lmp_serial",
+            !unwind_hack,
+        ));
+    }
 
     plan
 }
@@ -138,11 +147,11 @@ fn main() {
             .unwrap();
 
         println!(
-            "CHECKOUT be303d8bfc2c40d63704848bb3acd9e075dd61e4 {:?}",
+            "CHECKOUT 72157ba18033bc00a6d8d64bc4355d8af66c1881 {:?}",
             out_dir
         );
         Command::new("git")
-            .args(&["checkout", "be303d8bfc2c40d63704848bb3acd9e075dd61e4"])
+            .args(&["checkout", "72157ba18033bc00a6d8d64bc4355d8af66c1881"])
             .current_dir(&Path::new(&out_dir))
             .status()
             .unwrap();

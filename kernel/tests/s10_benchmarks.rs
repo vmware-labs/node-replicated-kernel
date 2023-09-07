@@ -1060,10 +1060,7 @@ fn s10_lammps_benchmark() {
     let _r = std::fs::remove_file(file_name);
 
     for thread in threads.iter() {
-        let kernel_cmdline = format!(
-            r#"init=lammps.bin initargs={}"#,
-            *thread,
-        );
+        let kernel_cmdline = format!(r#"init=lammps.bin initargs={}"#, *thread,);
         let mut cmdline = RunnerArgs::new_with_build("userspace-smp", &build)
             .timeout(180_000)
             .cores(machine.max_cores())

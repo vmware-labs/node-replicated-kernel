@@ -96,7 +96,7 @@ fn build_plan() -> Vec<(&'static str, &'static str, &'static str, bool)> {
             !unwind_hack,
         ));
     }
-    
+
     if cfg!(feature = "lammps") {
         plan.push((
             "lammps",

@@ -1056,11 +1056,14 @@ fn s10_lammps_benchmark() {
         (100_000, 50_000, 65535)
     };
 
-    let file_name = "lammps.csv";
+    let file_name = "lammps_benchmark.csv";
     let _r = std::fs::remove_file(file_name);
 
     for thread in threads.iter() {
         let kernel_cmdline = format!(r#"init=lammps.bin initargs={}"#, *thread,);
+
+        // Everything below here is the same as for level-DB
+
         let mut cmdline = RunnerArgs::new_with_build("userspace-smp", &build)
             .timeout(180_000)
             .cores(machine.max_cores())

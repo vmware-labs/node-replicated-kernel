@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
 use alloc::boxed::Box;
-use core::alloc::{Allocator, Layout};
+use core::alloc::Layout;
 use core::mem::transmute;
 use core::pin::Pin;
 use core::ptr::NonNull;
@@ -33,7 +33,6 @@ enum Modify {
 /// The actual page-table. We allocate the PML4 upfront.
 pub(crate) struct PageTable {
     pub pml4: Pin<Box<PML4>>,
-    pub allocator: Option<Box<dyn Allocator + Send + Sync>>,
 }
 
 impl Drop for PageTable {
@@ -171,14 +170,13 @@ impl PageTable {
     /// Create a new address-space.
     ///
     /// Allocate an initial PML4 table for it.
-    pub(crate) fn new(allocator: Box<dyn Allocator + Send + Sync>) -> Result<PageTable, KError> {
+    pub(crate) fn new() -> Result<PageTable, KError> {
         let pml4 = Box::try_new(
             [PML4Entry::new(PAddr::from(0x0u64), PML4Flags::empty()); PAGE_SIZE_ENTRIES],
         )?;
 
         Ok(PageTable {
             pml4: Box::into_pin(pml4),
-            allocator: Some(allocator),
         })
     }
 
@@ -820,16 +818,13 @@ impl PageTable {
     }
 
     fn alloc_frame(&self) -> Frame {
-        let frame_ptr = self.allocator.as_ref().map_or_else(
-            || unsafe {
-                let ptr = alloc::alloc::alloc(PT_LAYOUT);
-                debug_assert!(!ptr.is_null());
+        let frame_ptr = unsafe {
+            let ptr = alloc::alloc::alloc(PT_LAYOUT);
+            debug_assert!(!ptr.is_null());
 
-                let nptr = NonNull::new_unchecked(ptr);
-                NonNull::slice_from_raw_parts(nptr, PT_LAYOUT.size())
-            },
-            |allocator| allocator.allocate(PT_LAYOUT).unwrap(),
-        );
+            let nptr = NonNull::new_unchecked(ptr);
+            NonNull::slice_from_raw_parts(nptr, PT_LAYOUT.size())
+        };
         let vaddr = VAddr::from(frame_ptr.as_ptr() as *const u8 as u64);
         let paddr = crate::arch::memory::kernel_vaddr_to_paddr(vaddr);
         let mut frame = Frame::new(paddr, PT_LAYOUT.size(), 0);

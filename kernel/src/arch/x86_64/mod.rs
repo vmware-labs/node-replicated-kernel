@@ -21,9 +21,9 @@
 
 use alloc::sync::Arc;
 use core::mem::transmute;
+use core::num::NonZeroUsize;
 use core::sync::atomic::AtomicBool;
 use core::sync::atomic::Ordering;
-use core::num::NonZeroUsize;
 
 #[cfg(feature = "rackscale")]
 use crate::nr::NR_LOG;
@@ -450,7 +450,6 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     // Set-up interrupt routing drivers (I/O APIC controllers)
     irq::ioapic_initialize();
 
-
     // Let's go with one replica per NUMA node for now:
     let numa_nodes = core::cmp::max(1, atopology::MACHINE_TOPOLOGY.num_nodes());
     let numa_nodes = NonZeroUsize::new(numa_nodes).expect("At least one NUMA node");
@@ -459,14 +458,22 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     let kernel_node = {
         // Create the global operation log and first replica and store it (needs
         // TLS)
-        let kernel_node: Arc<NodeReplicated<KernelNode>> = Arc::try_new(NodeReplicated::new(numa_nodes, |afc: AffinityChange| { 
-            let pcm = kcb::per_core_mem();
-            match afc {
-                AffinityChange::Replica(r) => pcm.set_mem_affinity(r).expect("Can't set affinity"),
-                AffinityChange::Revert(orig) => pcm.set_mem_affinity(orig).expect("Can't set affinity"),
-            }
-            return 0; // xxx
-            }).expect("Not enough memory to initialize system")).expect("Not enough memory to initialize system");
+        let kernel_node: Arc<NodeReplicated<KernelNode>> = Arc::try_new(
+            NodeReplicated::new(numa_nodes, |afc: AffinityChange| {
+                let pcm = kcb::per_core_mem();
+                match afc {
+                    AffinityChange::Replica(r) => {
+                        pcm.set_mem_affinity(r).expect("Can't set affinity")
+                    }
+                    AffinityChange::Revert(orig) => {
+                        pcm.set_mem_affinity(orig).expect("Can't set affinity")
+                    }
+                }
+                return 0; // xxx
+            })
+            .expect("Not enough memory to initialize system"),
+        )
+        .expect("Not enough memory to initialize system");
 
         let local_ridx = kernel_node.register(0).unwrap();
         crate::nr::NR_REPLICA.call_once(|| (kernel_node.clone(), local_ridx));
@@ -509,6 +516,7 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     crate::pci::init();
 
     // Initialize processes
+    #[cfg(feature = "rackscale")]
     lazy_static::initialize(&process::PROCESS_LOGS);
 
     #[cfg(not(feature = "rackscale"))]

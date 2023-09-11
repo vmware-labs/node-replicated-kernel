@@ -5,11 +5,11 @@ use alloc::boxed::Box;
 use alloc::collections::TryReserveError;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
-use core::alloc::Allocator;
 use core::arch::asm;
 use core::cell::RefCell;
 use core::cmp::PartialEq;
 use core::iter::Iterator;
+use core::sync::atomic::{AtomicUsize, Ordering};
 use core::{fmt, ptr};
 
 use arrayvec::ArrayVec;
@@ -19,12 +19,13 @@ use kpi::arch::SaveArea;
 use kpi::process::{FrameId, ELF_OFFSET, EXECUTOR_OFFSET};
 use lazy_static::lazy_static;
 use log::{debug, info, trace, warn};
+#[cfg(feature = "rackscale")]
 use node_replication::{Dispatch, Log, Replica};
+use nr2::nr::NodeReplicated;
 use x86::bits64::paging::*;
 use x86::bits64::rflags;
 use x86::{controlregs, Ring};
 
-use crate::arch::kcb::per_core_mem;
 use crate::error::{KError, KResult};
 use crate::fs::{fd::FileDescriptorEntry, MAX_FILES_PER_PROCESS};
 use crate::memory::vspace::{AddressSpace, MapAction};
@@ -69,6 +70,7 @@ pub(crate) fn current_pid() -> KResult<Pid> {
         .pid)
 }
 
+#[cfg(feature = "rackscale")]
 lazy_static! {
     pub(crate) static ref PROCESS_LOGS: Box<
         ArrayVec<
@@ -78,7 +80,6 @@ lazy_static! {
     > = {
 
 
-        #[cfg(feature = "rackscale")]
         if crate::CMDLINE
             .get()
             .map_or(false, |c| c.mode == crate::cmdline::Mode::Controller)
@@ -117,7 +118,6 @@ lazy_static! {
             process_logs
         };
 
-        #[cfg(feature = "rackscale")]
         if crate::CMDLINE
             .get()
             .map_or(false, |c| c.mode == crate::cmdline::Mode::Controller)
@@ -132,61 +132,49 @@ lazy_static! {
 }
 
 lazy_static! {
-    pub(crate) static ref PROCESS_TABLE: ArrayVec<
-        ArrayVec<Arc<Replica<'static, NrProcess<Ring3Process>>>, MAX_PROCESSES>,
-        MAX_NUMA_NODES,
-    > = create_process_table();
+    pub(crate) static ref PROCESS_TABLE: ArrayVec<Arc<NodeReplicated<NrProcess<Ring3Process>>>, MAX_PROCESSES> =
+        create_process_table();
 }
 
 #[cfg(not(feature = "rackscale"))]
-fn create_process_table(
-) -> ArrayVec<ArrayVec<Arc<Replica<'static, NrProcess<Ring3Process>>>, MAX_PROCESSES>, MAX_NUMA_NODES>
-{
-    use crate::memory::detmem::DA;
+fn create_process_table() -> ArrayVec<Arc<NodeReplicated<NrProcess<Ring3Process>>>, MAX_PROCESSES> {
+    use crate::arch::kcb;
+    use core::num::NonZeroUsize;
+    use nr2::nr::AffinityChange;
 
     // Want at least one replica...
-    let numa_nodes = core::cmp::max(1, atopology::MACHINE_TOPOLOGY.num_nodes());
+    let num_replicas =
+        NonZeroUsize::new(core::cmp::max(1, atopology::MACHINE_TOPOLOGY.num_nodes())).unwrap();
+    let mut processes = ArrayVec::new();
 
-    let mut numa_cache = ArrayVec::new();
-    for _n in 0..numa_nodes {
-        let process_replicas = ArrayVec::new();
-        debug_assert!(!numa_cache.is_full());
-        numa_cache.push(process_replicas)
+    for _pid in 0..MAX_PROCESSES {
+        debug_assert_eq!(
+            *crate::environment::NODE_ID,
+            0,
+            "Expect initialization to happen on node 0."
+        );
+
+        let process: Arc<NodeReplicated<NrProcess<Ring3Process>>> = Arc::try_new(
+            NodeReplicated::new(num_replicas, |afc: AffinityChange| {
+                let pcm = kcb::per_core_mem();
+                match afc {
+                    AffinityChange::Replica(r) => {
+                        pcm.set_mem_affinity(r).expect("Can't set affinity")
+                    }
+                    AffinityChange::Revert(orig) => {
+                        pcm.set_mem_affinity(orig).expect("Can't set affinity")
+                    }
+                }
+                return 0; // TODO(dynrep): Return error code
+            })
+            .expect("Not enough memory to initialize system"),
+        )
+        .expect("Not enough memory to initialize system");
+
+        processes.push(process)
     }
 
-    for pid in 0..MAX_PROCESSES {
-        let allocator = DA::new().expect("Can't initialize process deterministic memory allocator");
-
-        for node in 0..numa_nodes {
-            debug_assert!(!numa_cache[node].is_full());
-
-            let pcm = per_core_mem();
-            pcm.set_mem_affinity(node as atopology::NodeId)
-                .expect("Can't change affinity");
-
-            let p = Box::try_new(
-                Ring3Process::new(pid, Box::new(allocator.clone()))
-                    .expect("Can't create process during init"),
-            )
-            .expect("Not enough memory to initialize processes");
-            let nrp = NrProcess::new(p, Box::new(allocator.clone()));
-
-            numa_cache[node].push(Replica::<NrProcess<Ring3Process>>::with_data(
-                &PROCESS_LOGS[pid],
-                nrp,
-            ));
-
-            pcm.set_mem_affinity(0 as atopology::NodeId)
-                .expect("Can't change affinity");
-            debug_assert_eq!(
-                *crate::environment::NODE_ID,
-                0,
-                "Expect initialization to happen on node 0."
-            );
-        }
-    }
-
-    numa_cache
+    processes
 }
 
 #[cfg(feature = "rackscale")]
@@ -266,10 +254,7 @@ impl crate::nrproc::ProcessManager for ArchProcessManagement {
 
     fn process_table(
         &self,
-    ) -> &'static ArrayVec<
-        ArrayVec<Arc<Replica<'static, NrProcess<Self::Process>>>, MAX_PROCESSES>,
-        MAX_NUMA_NODES,
-    > {
+    ) -> &'static ArrayVec<Arc<NodeReplicated<NrProcess<Self::Process>>>, MAX_PROCESSES> {
         &*super::process::PROCESS_TABLE
     }
 }
@@ -1026,8 +1011,42 @@ pub(crate) struct Ring3Process {
     pub read_only_offset: VAddr,
 }
 
+static NEXT_PID: AtomicUsize = AtomicUsize::new(0);
+
+impl Default for NrProcess<Ring3Process> {
+    fn default() -> Self {
+        let next_pid = NEXT_PID.fetch_add(1, Ordering::Relaxed);
+        NrProcess::new(
+            Box::try_new(
+                Ring3Process::new(next_pid as Pid).expect("Failed to set-up process during init"),
+            )
+            .expect("Failed to initialize process during init"),
+        )
+    }
+}
+
+impl Clone for Ring3Process {
+    fn clone(&self) -> Self {
+        unimplemented!("Clone not implemented for Ring3Process")
+        /*Ring3Process {
+            pid: self.pid,
+            current_eid: self.current_eid,
+            vspace: self.vspace.clone(),
+            offset: self.offset,
+            pinfo: self.pinfo.clone(),
+            entry_point: self.entry_point,
+            executor_cache: self.executor_cache.clone(),
+            executor_offset: self.executor_offset,
+            fds: self.fds.clone(),
+            pfm: self.pfm.clone(),
+            writeable_sections: self.writeable_sections.clone(),
+            read_only_offset: self.read_only_offset,
+        }*/
+    }
+}
+
 impl Ring3Process {
-    fn new(pid: Pid, allocator: Box<dyn Allocator + Sync + Send>) -> Result<Self, KError> {
+    fn new(pid: Pid) -> Result<Self, KError> {
         const NONE_EXECUTOR: Option<Vec<Box<Ring3Executor>>> = None;
         #[cfg(not(feature = "rackscale"))]
         let executor_cache: ArrayVec<Option<Vec<Box<Ring3Executor>>>, MAX_NUMA_NODES> =
@@ -1051,7 +1070,7 @@ impl Ring3Process {
             pid: pid,
             current_eid: 0,
             offset: VAddr::from(ELF_OFFSET),
-            vspace: VSpace::new(allocator)?,
+            vspace: VSpace::new()?,
             entry_point: VAddr::from(0usize),
             executor_cache,
             executor_offset: VAddr::from(EXECUTOR_OFFSET),

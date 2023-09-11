@@ -3,6 +3,7 @@
 
 use alloc::boxed::Box;
 use alloc::sync::Arc;
+use core::num::NonZeroUsize;
 use core::sync::atomic::{AtomicBool, Ordering};
 
 use arrayvec::ArrayVec;
@@ -10,7 +11,7 @@ use cnr::Replica as MlnrReplica;
 use ctor::ctor;
 use fallible_collections::TryClone;
 use log::{debug, info};
-use nr2::nr::{Log, Replica};
+use nr2::nr::{AffinityChange, Log, NodeReplicated, Replica};
 use x86::current::paging::HUGE_PAGE_SIZE;
 
 use crate::fs::cnrfs::MlnrKernelNode;
@@ -102,14 +103,33 @@ fn init_setup() {
     unsafe { kcb::PER_CORE_MEMORY.set_global_mem(global_memory_static) };
     debug!("Memory allocation should work at this point...");
 
-    let log: Arc<Log<Op>> = Arc::try_new(Log::<Op>::new(LARGE_PAGE_SIZE))
+    let kernel_node = {
+        // Create the global operation log and first replica and store it (needs
+        // TLS)
+        let kernel_node: Arc<NodeReplicated<KernelNode>> = Arc::try_new(
+            NodeReplicated::new(NonZeroUsize::new(1).unwrap(), |afc: AffinityChange| {
+                return 0; // xxx
+            })
+            .expect("Not enough memory to initialize system"),
+        )
         .expect("Not enough memory to initialize system");
-    let bsp_replica = Replica::<KernelNode>::new(&log);
-    let local_ridx = bsp_replica
-        .register()
-        .expect("Failed to register with Replica.");
-    crate::nr::NR_REPLICA.call_once(|| (bsp_replica.clone(), local_ridx));
 
+        let local_ridx = kernel_node.register(0).unwrap();
+        crate::nr::NR_REPLICA.call_once(|| (kernel_node.clone(), local_ridx));
+        kernel_node
+    };
+
+    /*
+
+       let log: Arc<Log<Op>> = Arc::try_new(Log::<Op>::new(LARGE_PAGE_SIZE))
+           .expect("Not enough memory to initialize system");
+       let bsp_replica = Replica::<KernelNode>::new(&log);
+       let local_ridx = bsp_replica
+           .register()
+           .expect("Failed to register with Replica.");
+       crate::nr::NR_REPLICA.call_once(|| (bsp_replica.clone(), local_ridx));
+
+    */
     // Starting to initialize file-system
     let fs_logs = crate::fs::cnrfs::allocate_logs();
     // Construct the first replica

@@ -7,7 +7,7 @@ use core::fmt::Debug;
 use alloc::sync::Arc;
 use hashbrown::HashMap;
 use log::{error, trace};
-use nr2::nr::{NodeReplicated, ThreadToken, Dispatch};
+use nr2::nr::{Dispatch, NodeReplicated, ThreadToken};
 use spin::Once;
 
 #[cfg(feature = "rackscale")]
@@ -96,7 +96,6 @@ pub(crate) struct CoreInfo {
     pub pid: Pid,
     pub entry_point: VAddr,
 }
-
 
 #[derive(Debug, Clone)]
 pub(crate) struct KernelNode {

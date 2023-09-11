@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
 use alloc::boxed::Box;
-use core::alloc::Allocator;
 use core::ops::Bound::*;
 
 use fallible_collections::btree::BTreeMap;
@@ -70,8 +69,7 @@ lazy_static! {
             //   allocated with slabmalloc (maybe we can have a no_drop variant
             //   of PageTable?)
             PageTable {
-                pml4: Box::into_pin(Box::from_raw(pml4_table)),
-                allocator: None,
+                pml4: Box::into_pin(Box::from_raw(pml4_table))
             }
         }
 
@@ -201,10 +199,10 @@ impl Drop for VSpace {
 }
 
 impl VSpace {
-    pub(crate) fn new(allocator: Box<dyn Allocator + Sync + Send>) -> Result<Self, KError> {
+    pub(crate) fn new() -> Result<Self, KError> {
         Ok(VSpace {
             mappings: BTreeMap::new(),
-            page_table: PageTable::new(allocator)?,
+            page_table: PageTable::new()?,
         })
     }
 

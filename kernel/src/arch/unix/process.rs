@@ -8,14 +8,16 @@ use alloc::vec::Vec;
 use bootloader_shared::Module;
 use core::alloc::Allocator;
 use core::cell::RefCell;
+use core::num::NonZeroUsize;
 use core::ops::{Deref, DerefMut};
+use core::sync::atomic::{AtomicUsize, Ordering};
 use x86::current::paging::PAddr;
 
 use arrayvec::ArrayVec;
 use kpi::process::FrameId;
 use lazy_static::lazy_static;
 
-use nr2::nr::{Dispatch, Log, Replica};
+use nr2::nr::{AffinityChange, Dispatch, NodeReplicated, ThreadToken};
 
 use crate::arch::kcb::get_kcb;
 use crate::error::{KError, KResult};
@@ -63,41 +65,19 @@ pub(crate) fn swap_current_executor(_current_executor: Box<UnixThread>) -> Optio
 }
 
 lazy_static! {
-    pub(crate) static ref PROCESS_TABLE: ArrayVec<ArrayVec<Arc<Replica<'static, NrProcess<UnixProcess>>>, MAX_PROCESSES>, MAX_NUMA_NODES> = {
+    pub(crate) static ref PROCESS_TABLE: ArrayVec<Arc<NodeReplicated<NrProcess<UnixProcess>>>, MAX_PROCESSES> = {
+        debug_assert_eq!(*crate::environment::NODE_ID, 0, "Expect initialization to happen on node 0.");
         // Want at least one replica...
-        let numa_nodes = core::cmp::max(1, atopology::MACHINE_TOPOLOGY.num_nodes());
+        let num_replicas = NonZeroUsize::new(core::cmp::max(1, atopology::MACHINE_TOPOLOGY.num_nodes())).expect("At least one numa node");
 
-        let mut numa_cache = ArrayVec::new();
-        for _n in 0..numa_nodes {
-            let process_replicas = ArrayVec::new();
-            debug_assert!(!numa_cache.is_full(), "Ensured by loop range");
-            numa_cache.push(process_replicas)
-        }
-
+        let mut processes = ArrayVec::new();
         for pid in 0..MAX_PROCESSES {
-                let log = Arc::try_new(Log::<<NrProcess<UnixProcess> as Dispatch>::WriteOperation>::new(
-                    LARGE_PAGE_SIZE,
-                )).expect("Can't initialize processes, out of memory.");
-
-            let da = DA::new().expect("Can't initialize process deterministic memory allocator");
-            for node in 0..numa_nodes {
-                let pcm = super::kcb::per_core_mem();
-                assert!(pcm.set_mem_affinity(node as atopology::NodeId).is_ok());
-
-                debug_assert!(!numa_cache[node].is_full(), "Ensured by loop range");
-
-
-                let p = Box::try_new(UnixProcess::new(pid, Box::new(da.clone())).expect("Can't create process during init")).expect("Not enough memory to initialize processes");
-                let nrp = NrProcess::new(p, Box::new(da.clone()));
-
-                numa_cache[node].push(Replica::<NrProcess<UnixProcess>>::with_data(&log, nrp));
-
-                debug_assert_eq!(*crate::environment::NODE_ID, 0, "Expect initialization to happen on node 0.");
-                assert!(pcm.set_mem_affinity(0).is_ok());
-            }
+            processes.push(
+                Arc::try_new(NodeReplicated::<NrProcess<UnixProcess>>::new(num_replicas, |afc: AffinityChange| {
+                    return 0; // TODO(dynrep): Return error code
+                }).expect("Not enough memory to initialize system")).expect("Not enough memory to initialize system"));
         }
-
-        numa_cache
+        processes
     };
 }
 
@@ -108,10 +88,7 @@ impl crate::nrproc::ProcessManager for ArchProcessManagement {
 
     fn process_table(
         &self,
-    ) -> &'static ArrayVec<
-        ArrayVec<Arc<Replica<'static, NrProcess<Self::Process>>>, MAX_PROCESSES>,
-        MAX_NUMA_NODES,
-    > {
+    ) -> &'static ArrayVec<Arc<NodeReplicated<NrProcess<UnixProcess>>>, MAX_PROCESSES> {
         &super::process::PROCESS_TABLE
     }
 }
@@ -127,8 +104,37 @@ pub(crate) struct UnixProcess {
     pub frames: ArrayVec<Option<Frame>, MAX_FRAMES_PER_PROCESS>,
 }
 
+static NEXT_PID: AtomicUsize = AtomicUsize::new(0);
+
+impl Default for NrProcess<UnixProcess> {
+    fn default() -> Self {
+        let next_pid = NEXT_PID.fetch_add(1, Ordering::Relaxed);
+        NrProcess::new(
+            Box::try_new(
+                UnixProcess::new(next_pid as Pid).expect("Failed to set-up process during init"),
+            )
+            .expect("Failed to initialize process during init"),
+        )
+    }
+}
+
+impl Clone for UnixProcess {
+    fn clone(&self) -> Self {
+        unimplemented!("Clone not yet implemented for UnixProcess")
+        /*
+        UnixProcess {
+            pid: self.pid,
+            vspace: self.vspace.clone(),
+            fds: self.fds.clone(),
+            pinfo: self.pinfo.clone(),
+            frames: self.frames.clone(),
+        }
+         */
+    }
+}
+
 impl UnixProcess {
-    fn new(pid: Pid, _allocator: Box<dyn Allocator + Send + Sync>) -> Result<Self, KError> {
+    fn new(pid: Pid) -> Result<Self, KError> {
         Ok(UnixProcess {
             pid,
             vspace: VSpace::new(),

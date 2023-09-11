@@ -58,7 +58,7 @@ pub(crate) const MAX_FRAMES_PER_PROCESS: usize = MAX_CORES;
 pub(crate) const MAX_WRITEABLE_SECTIONS_PER_PROCESS: usize = 4;
 
 /// Abstract definition of a process.
-pub(crate) trait Process: FrameManagement {
+pub(crate) trait Process: FrameManagement + Clone {
     type E: Executor + Copy + Sync + Send + Debug + PartialEq;
     type A: AddressSpace;
 

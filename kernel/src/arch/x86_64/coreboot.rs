@@ -18,7 +18,7 @@ use fallible_collections::FallibleVecGlobal;
 use fallible_collections::TryClone;
 use log::debug;
 use log::trace;
-use nr2::nr::{NodeReplicated};
+use nr2::nr::NodeReplicated;
 use x86::apic::ApicId;
 use x86::current::paging::PAddr;
 
@@ -346,7 +346,7 @@ pub(super) fn boot_app_cores(
     // Let's go with one replica per NUMA node for now:
     let numa_nodes = core::cmp::max(1, atopology::MACHINE_TOPOLOGY.num_nodes());
     let numa_nodes = NonZeroUsize::new(numa_nodes).expect("At least one NUMA node");
-         
+
     let mut fs_replicas: Vec<Arc<MlnrReplica<'static, MlnrKernelNode>>> =
         Vec::try_with_capacity(numa_nodes.get()).expect("Not enough memory to initialize system");
 
@@ -465,5 +465,4 @@ pub(super) fn boot_app_cores(
         debug!("Core {:?} has started", thread.apic_id());
         pcm.set_mem_affinity(0).expect("Can't set affinity");
     }
-
 }

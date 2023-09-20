@@ -152,6 +152,7 @@ mod tests {
     #[test]
     fn test_initialization() {
         setup_test_logging();
+        log::warn!("Starting test: test_initialization");
 
         let iface = get_loopback_interface();
 
@@ -163,6 +164,7 @@ mod tests {
     #[test]
     fn test_send_recv() {
         setup_test_logging();
+        log::warn!("Starting test: test_send_recv");
 
         let iface = get_loopback_interface();
 
@@ -226,6 +228,7 @@ mod tests {
     #[test]
     fn test_send_and_recv() {
         setup_test_logging();
+        log::warn!("Starting test: test_send_and_recv");
 
         let iface = get_loopback_interface();
 
@@ -289,6 +292,7 @@ mod tests {
     #[test]
     fn test_multi_client_server() {
         setup_test_logging();
+        log::warn!("Starting test: test_multi_client_server");
 
         let iface = get_loopback_interface();
         let interface_wrapper = Arc::new(InterfaceWrapper::new(iface));
@@ -419,6 +423,7 @@ mod tests {
     #[test]
     fn test_multi_client_server_channel() {
         setup_test_logging();
+        log::warn!("Starting test: test_multi_client_server_channel");
 
         let iface = get_loopback_interface();
         let interface_wrapper = Arc::new(InterfaceWrapper::new(iface));

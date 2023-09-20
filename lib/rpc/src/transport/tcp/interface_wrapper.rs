@@ -568,6 +568,7 @@ mod tests {
     #[test]
     fn test_add_server_socket() {
         setup_test_logging();
+        log::warn!("Starting test: test_add_server_socket");
 
         let iface = get_loopback_interface();
         let interface_wrapper = InterfaceWrapper::new(iface);
@@ -579,6 +580,7 @@ mod tests {
     #[test]
     fn test_add_client_socket() {
         setup_test_logging();
+        log::warn!("Starting test: test_add_client_socket");
 
         let iface = get_loopback_interface();
         let interface_wrapper = InterfaceWrapper::new(iface);
@@ -590,6 +592,7 @@ mod tests {
     #[test]
     fn test_add_socket_multi() {
         setup_test_logging();
+        log::warn!("Starting test: test_add_socket_multi");
 
         let iface = get_loopback_interface();
 
@@ -611,6 +614,7 @@ mod tests {
     #[test]
     fn test_send_single_msg() {
         setup_test_logging();
+        log::warn!("Starting test: test_send_single_msg");
 
         let iface = get_loopback_interface();
 
@@ -642,6 +646,7 @@ mod tests {
     #[test]
     fn test_send_multichannel() {
         setup_test_logging();
+        log::warn!("Starting test: test_send_multichannel");
 
         let iface = get_loopback_interface();
 
@@ -680,6 +685,7 @@ mod tests {
     #[test]
     fn test_send_multichannel_concurrent() {
         setup_test_logging();
+        log::warn!("Starting test: test_send_multichannel_concurrent");
 
         let iface = get_loopback_interface();
 
@@ -728,6 +734,7 @@ mod tests {
     #[test]
     fn test_recv_single_msg() {
         setup_test_logging();
+        log::warn!("Starting test: test_recv_single_msg");
 
         let iface = get_loopback_interface();
 
@@ -784,6 +791,7 @@ mod tests {
     #[test]
     fn test_recv_anychannel() {
         setup_test_logging();
+        log::warn!("Starting test: test_recv_anychannel");
 
         let iface = get_loopback_interface();
 
@@ -855,6 +863,7 @@ mod tests {
     #[test]
     fn test_recv_anychannel_concurrent() {
         setup_test_logging();
+        log::warn!("Starting test: test_recv_anychannel_concurrent");
 
         let iface = get_loopback_interface();
 
@@ -934,6 +943,7 @@ mod tests {
     #[test]
     fn test_recv_multi_concurrent() {
         setup_test_logging();
+        log::warn!("Starting test: test_recv_multi_concurrent");
 
         let iface = get_loopback_interface();
 
@@ -1030,6 +1040,7 @@ mod tests {
     #[test]
     fn test_recv_multisocket_multichannel_concurrent() {
         setup_test_logging();
+        log::warn!("Starting test: test_recv_multisocket_multichannel_concurrent");
 
         let num_sockets = 4u8;
         let num_channels = 10u8;

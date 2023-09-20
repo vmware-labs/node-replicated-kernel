@@ -83,7 +83,6 @@ impl RPCHeader {
 mod tests {
     use crate::rpc::RPCHeader;
 
-    #[ignore]
     #[test]
     fn test_hdr_serialization() {
         let orig_id = 5;

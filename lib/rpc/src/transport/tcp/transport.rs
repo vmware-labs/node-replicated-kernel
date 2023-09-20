@@ -106,7 +106,7 @@ impl<'a, D: for<'d> Device<'d>> Transport for TCPTransport<'a, D> {
         let recv_hdr = RPCHeader::from_bytes(&*recv_buffer);
         hdr.copy_from(recv_hdr);
 
-        log::debug!("Received header from {:?}: {:?}", recipient_id, hdr);
+        log::trace!("Received header from {:?}: {:?}", recipient_id, hdr);
 
         // Copy data
         let data_to_receive = HDR_LEN + hdr.msg_len as usize;
@@ -294,18 +294,14 @@ mod tests {
         let interface_wrapper = Arc::new(InterfaceWrapper::new(iface));
 
         let server_iface_wrapper = interface_wrapper.clone();
+        let server2_iface_wrapper = interface_wrapper.clone();
         let client_iface_wrapper = interface_wrapper.clone();
         let client2_iface_wrapper = interface_wrapper.clone();
 
         thread::scope(|s| {
             s.spawn(move || {
-                let server_transport =
-                    TCPTransport::new(None, 10111, server_iface_wrapper.clone(), 1)
-                        .expect("We should be able to initialize");
-                let server2_transport = TCPTransport::new(None, 10113, server_iface_wrapper, 1)
-                    .expect(
-                    "We should be able to initialize a second transport with the same interface",
-                );
+                let server_transport = TCPTransport::new(None, 10111, server_iface_wrapper, 1)
+                    .expect("We should be able to initialize");
 
                 let mut hdr = RPCHeader::default();
                 let mut recv_buf = [0; 10];
@@ -323,6 +319,22 @@ mod tests {
                         assert_eq!(recv_buf[j as usize], 0u8);
                     }
 
+                    hdr.msg_len = 2;
+                    server_transport
+                        .send_msg(&hdr, 0, &[&[i], &[i + 1]])
+                        .expect("Failed to send message");
+                }
+            });
+
+            s.spawn(move || {
+                let server2_transport = TCPTransport::new(None, 10113, server2_iface_wrapper, 1)
+                    .expect(
+                    "We should be able to initialize a second transport with the same interface",
+                );
+
+                let mut hdr = RPCHeader::default();
+                let mut recv_buf = [0; 10];
+                for i in 0u8..10 {
                     server2_transport
                         .recv_msg(&mut hdr, 0, &mut [&mut recv_buf])
                         .expect("Failed to send message");
@@ -337,9 +349,6 @@ mod tests {
                     }
 
                     hdr.msg_len = 2;
-                    server_transport
-                        .send_msg(&hdr, 0, &[&[i], &[i + 1]])
-                        .expect("Failed to send message");
                     server2_transport
                         .send_msg(&hdr, 0, &[&[i + 1], &[i + 2]])
                         .expect("Failed to send message");
@@ -415,21 +424,16 @@ mod tests {
         let interface_wrapper = Arc::new(InterfaceWrapper::new(iface));
 
         let server_iface_wrapper = interface_wrapper.clone();
+        let server2_iface_wrapper = interface_wrapper.clone();
         let client_iface_wrapper = interface_wrapper.clone();
         let client2_iface_wrapper = interface_wrapper.clone();
 
         thread::scope(|s| {
             s.spawn(move || {
-                let server_transport =
-                    TCPTransport::new(None, 10111, server_iface_wrapper.clone(), 1)
-                        .expect("We should be able to initialize");
-                let server2_transport = TCPTransport::new(None, 10113, server_iface_wrapper, 10)
-                    .expect(
-                    "We should be able to initialize a second transport with the same interface",
-                );
+                let server_transport = TCPTransport::new(None, 10111, server_iface_wrapper, 1)
+                    .expect("We should be able to initialize");
 
                 let mut hdr1 = RPCHeader::default();
-                let mut hdr2 = RPCHeader::default();
                 let mut recv_buf = [0; 10];
                 for i in 0u8..10 {
                     server_transport
@@ -444,6 +448,22 @@ mod tests {
                         assert_eq!(recv_buf[j as usize], 0u8);
                     }
 
+                    hdr1.msg_len = 2;
+                    hdr1.msg_id = 0;
+                    server_transport
+                        .send_msg(&hdr1, 0, &[&[i], &[i + 1]])
+                        .expect("Failed to send message");
+                }
+            });
+
+            s.spawn(move || {
+                let server2_transport = TCPTransport::new(None, 10113, server2_iface_wrapper, 10)
+                    .expect(
+                    "We should be able to initialize a second transport with the same interface",
+                );
+                let mut hdr2 = RPCHeader::default();
+                let mut recv_buf = [0; 10];
+                for i in 0u8..10 {
                     server2_transport
                         .recv_msg(&mut hdr2, i, &mut [&mut recv_buf])
                         .expect("Failed to send message");
@@ -455,12 +475,6 @@ mod tests {
                     for j in 5..10 {
                         assert_eq!(recv_buf[j as usize], 0u8);
                     }
-
-                    hdr1.msg_len = 2;
-                    hdr2.msg_id = 0;
-                    server_transport
-                        .send_msg(&hdr1, 0, &[&[i], &[i + 1]])
-                        .expect("Failed to send message");
 
                     hdr2.msg_len = 2;
                     hdr2.msg_id = i;

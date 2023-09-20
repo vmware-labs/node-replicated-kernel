@@ -22,7 +22,7 @@ use crate::transport::shmem::create_shmem_transport;
 
 use super::*;
 
-pub(crate) const CONTROLLER_PORT_BASE: u16 = 6970;
+pub(crate) const CONTROLLER_PORT_BASE: u16 = 10110;
 
 static ClientReadyCount: AtomicU64 = AtomicU64::new(0);
 static DCMServerReady: AtomicBool = AtomicBool::new(false);

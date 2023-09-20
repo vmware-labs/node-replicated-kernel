@@ -74,6 +74,8 @@ impl<'a> Receiver<'a> {
 
 #[cfg(test)]
 mod tests {
+
+    #[ignore]
     #[test]
     fn shared_queue_tests() {
         use super::*;

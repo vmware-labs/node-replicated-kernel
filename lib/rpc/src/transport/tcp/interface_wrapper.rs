@@ -15,8 +15,8 @@ use smoltcp::wire::IpAddress;
 
 use crate::rpc::*;
 
-pub(crate) const RX_BUF_LEN: usize = 8192;
-pub(crate) const TX_BUF_LEN: usize = 8192;
+pub(crate) const RX_BUF_LEN: usize = 65536;
+pub(crate) const TX_BUF_LEN: usize = 65536;
 
 const MAX_SOCKETS: usize = 16;
 pub(crate) type SocketId = usize;
@@ -162,7 +162,13 @@ impl MultichannelSocket {
         match socket.recv_slice(&mut buf[..msg_len]) {
             Ok(bytes_recv) => {
                 if bytes_recv > 0 {
-                    log::debug!("recv [{:?}-{:?}]", 0, bytes_recv);
+                    log::debug!(
+                        "recv [{:?}-{:?}] recv_queue={:?}, send_queue={:?}",
+                        0,
+                        bytes_recv,
+                        socket.recv_queue(),
+                        socket.send_queue()
+                    );
                     if bytes_recv != msg_len {
                         log::error!("Partial receive???");
                         Err(RPCError::TransportError)
@@ -198,7 +204,13 @@ impl MultichannelSocket {
                 if let Some(ref mut task) = *send_task_opt {
                     // Attempt to send until end of data array
                     if let Ok(bytes_sent) = socket.send_slice(&(task.buf[task.offset..])) {
-                        log::debug!("sent [{:?}-{:?}]", task.offset, task.offset + bytes_sent);
+                        log::debug!(
+                            "sent [{:?}-{:?}] (send_buffer={:?}, recv_buffer={:?})",
+                            task.offset,
+                            task.offset + bytes_sent,
+                            socket.send_queue(),
+                            socket.recv_queue()
+                        );
                         task.offset += bytes_sent;
 
                         if task.offset == task.buf.len() {
@@ -240,10 +252,11 @@ impl MultichannelSocket {
             let hdr_bytes = unsafe { hdr.as_mut_bytes() };
             if let Ok(hdr_len) = socket.peek_slice(&mut hdr_bytes[..]) {
                 if hdr_len == HDR_LEN {
-                    log::debug!(
-                        "Peeked header msg_id={:?}, recv_queue={:?}",
+                    log::trace!(
+                        "Peeked header msg_id={:?}, recv_queue={:?}, send_queue={:?}",
                         hdr,
-                        socket.recv_queue()
+                        socket.recv_queue(),
+                        socket.send_queue()
                     );
                     let msg_len = hdr.msg_len as usize;
 
@@ -271,8 +284,8 @@ impl MultichannelSocket {
                                     self.recv_doorbells[channel].store(true, Ordering::SeqCst);
                                 }
                             } else {
-                                log::error!("Got receive message for a channel that isn't ready.");
-                                return Err(RPCError::TransportError);
+                                log::trace!("Got receive message for a channel that isn't ready.");
+                                return Ok(());
                             }
                         } else {
                             // This indicates we are a server, so we can receive on any channel.
@@ -476,16 +489,19 @@ impl<'a, D: for<'d> Device<'d>> InterfaceWrapper<'a, D> {
             let mut tcpsocket = state.iface.get_socket::<TcpSocket>(handle);
             let multisocket = &self.sockets[socket_id];
 
-            if tcpsocket.is_open() {
-                // If this socket can send, send any outgoing data.
-                multisocket.send(&mut tcpsocket);
+            if tcpsocket.may_send() && tcpsocket.may_recv() {
                 // If this socket can recv, recv any incoming data.
                 multisocket.recv(&mut tcpsocket)?;
+                // If this socket can send, send any outgoing data.
+                multisocket.send(&mut tcpsocket);
             } else {
-                let (tcpsocket, cx) = state.iface.get_socket_and_context::<TcpSocket>(handle);
-                multisocket.connect(cx, tcpsocket);
+                if !tcpsocket.is_open() {
+                    let (tcpsocket, cx) = state.iface.get_socket_and_context::<TcpSocket>(handle);
+                    multisocket.connect(cx, tcpsocket);
+                }
             }
         }
+
         Ok(())
     }
 

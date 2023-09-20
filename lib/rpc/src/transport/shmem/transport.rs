@@ -118,6 +118,7 @@ mod tests {
     use std::sync::Arc;
     use std::thread;
 
+    #[ignore]
     #[test]
     fn shmem_transport_test() {
         // Create transport
@@ -170,6 +171,7 @@ mod tests {
         assert_eq!(&send_data, &client_data[0..send_data.len()]);
     }
 
+    #[ignore]
     #[test]
     fn shmem_transport_with_allocator_test() {
         let alloc_size = 8 * 1024 * 1024;

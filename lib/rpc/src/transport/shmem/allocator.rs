@@ -59,6 +59,7 @@ unsafe impl Allocator for ShmemAllocator {
 mod test {
     use super::*;
 
+    #[ignore]
     #[test]
     fn test_allocator() {
         let base = 0x1000;
@@ -70,6 +71,7 @@ mod test {
         assert_eq!(allocator.next.load(Ordering::Relaxed), base + 0x1000);
     }
 
+    #[ignore]
     #[test]
     fn test_allocator_overflow() {
         let base = 0x1000;

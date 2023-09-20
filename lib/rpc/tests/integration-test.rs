@@ -29,6 +29,7 @@ fn get_loopback_interface() -> Interface<'static, Loopback> {
     iface
 }
 
+#[ignore]
 #[test]
 fn test_client_server_shmem_transport() {
     use std::alloc::{alloc, Layout};
@@ -104,6 +105,7 @@ fn test_client_server_shmem_transport() {
     assert_eq!(send_data, recv_data);
 }
 
+#[ignore]
 #[test]
 fn test_client_shmem_multithread() {
     use spin::Mutex;

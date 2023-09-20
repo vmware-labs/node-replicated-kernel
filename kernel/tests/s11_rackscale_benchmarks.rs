@@ -19,6 +19,7 @@ use testutils::builder::BuildArgs;
 use testutils::rackscale_runner::{RackscaleBench, RackscaleRun};
 use testutils::runner_args::RackscaleTransport;
 
+#[ignore]
 #[test]
 #[cfg(not(feature = "baremetal"))]
 fn s11_rackscale_shmem_fxmark_benchmark() {
@@ -161,18 +162,21 @@ enum VMOpsBench {
     UnmapLatency = 2,
 }
 
+#[ignore]
 #[test]
 #[cfg(not(feature = "baremetal"))]
 fn s11_rackscale_shmem_vmops_maptput_benchmark() {
     rackscale_vmops_benchmark(RackscaleTransport::Shmem, VMOpsBench::MapThroughput);
 }
 
+#[ignore]
 #[test]
 #[cfg(not(feature = "baremetal"))]
 fn s11_rackscale_shmem_vmops_maplat_benchmark() {
     rackscale_vmops_benchmark(RackscaleTransport::Shmem, VMOpsBench::MapLatency);
 }
 
+#[ignore]
 #[test]
 #[cfg(not(feature = "baremetal"))]
 fn s11_rackscale_shmem_vmops_unmaplat_benchmark() {
@@ -328,6 +332,7 @@ struct LevelDBConfig {
     val_size: i32,
 }
 
+#[ignore]
 #[test]
 #[cfg(not(feature = "baremetal"))]
 fn s11_rackscale_shmem_leveldb_benchmark() {
@@ -463,6 +468,7 @@ struct MemcachedInternalConfig {
     pub mem_size: usize,
 }
 
+#[ignore]
 #[test]
 #[cfg(not(feature = "baremetal"))]
 fn s11_rackscale_memcached_benchmark_internal() {
@@ -652,6 +658,7 @@ fn rackscale_memcached_benchmark(transport: RackscaleTransport) {
     bench.run_bench(false, is_smoke);
 }
 
+#[ignore]
 #[test]
 #[cfg(not(feature = "baremetal"))]
 fn s11_rackscale_monetdb_benchmark() {

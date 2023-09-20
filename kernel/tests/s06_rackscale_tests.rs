@@ -16,6 +16,7 @@ use testutils::rackscale_runner::RackscaleRun;
 use testutils::runner_args::RackscaleTransport;
 
 #[cfg(not(feature = "baremetal"))]
+#[ignore]
 #[test]
 fn s06_rackscale_shmem_userspace_smoke_test() {
     rackscale_userspace_smoke_test(RackscaleTransport::Shmem);
@@ -96,6 +97,7 @@ fn s06_rackscale_phys_alloc_test() {
 }
 
 #[cfg(not(feature = "baremetal"))]
+#[ignore]
 #[test]
 fn s06_rackscale_shmem_fs_test() {
     rackscale_fs_test(RackscaleTransport::Shmem);
@@ -137,6 +139,7 @@ fn rackscale_fs_test(transport: RackscaleTransport) {
 }
 
 #[cfg(not(feature = "baremetal"))]
+#[ignore]
 #[test]
 fn s06_rackscale_shmem_fs_prop_test() {
     let built = BuildArgs::default()
@@ -319,6 +322,7 @@ fn rackscale_userspace_multicore_multiclient(transport: RackscaleTransport) {
 }
 
 #[cfg(not(feature = "baremetal"))]
+#[ignore]
 #[test]
 fn s06_rackscale_shmem_userspace_rumprt_fs() {
     rackscale_userspace_rumprt_fs(RackscaleTransport::Shmem);

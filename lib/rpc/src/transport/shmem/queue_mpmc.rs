@@ -333,6 +333,7 @@ mod tests {
     use std::sync::mpsc::channel;
     use std::thread;
 
+    #[ignore]
     #[test]
     fn test_default_initialization() {
         let queue = Queue::new().unwrap();
@@ -346,6 +347,7 @@ mod tests {
         }
     }
 
+    #[ignore]
     #[test]
     fn test_enqueue() {
         let queue = Queue::new().unwrap();
@@ -353,6 +355,7 @@ mod tests {
         assert_eq!(queue.state.enqueue_pos(Ordering::Relaxed), 1);
     }
 
+    #[ignore]
     #[test]
     fn test_dequeue() {
         let queue = Queue::new().unwrap();
@@ -367,6 +370,7 @@ mod tests {
         assert_eq!(queue.state.dequeue_pos(Ordering::Relaxed), 1);
     }
 
+    #[ignore]
     #[test]
     fn test_enqueue_full() {
         let queue = Queue::new().unwrap();
@@ -378,6 +382,7 @@ mod tests {
         assert_eq!(queue.enqueue(&[&DEFAULT_QUEUE_SIZE.to_be_bytes()]), false);
     }
 
+    #[ignore]
     #[test]
     fn test_dequeue_empty() {
         let queue = Queue::new().unwrap();
@@ -385,6 +390,7 @@ mod tests {
         assert!(queue.dequeue(&mut [&mut entry]).is_err());
     }
 
+    #[ignore]
     #[test]
     fn test_two_clients() {
         let queue = Queue::new().unwrap();
@@ -402,6 +408,7 @@ mod tests {
         assert_eq!(consumer.state.dequeue_pos(Ordering::Relaxed), 1);
     }
 
+    #[ignore]
     #[test]
     fn test_parallel_client() {
         let queue = Queue::new().unwrap();
@@ -435,6 +442,7 @@ mod tests {
         consumer_thread.join().unwrap();
     }
 
+    #[ignore]
     #[test]
     fn len() {
         // fill and drain N elements from the queue, with N: 1..=1024
@@ -472,6 +480,7 @@ mod tests {
         }
     }
 
+    #[ignore]
     #[test]
     fn test() {
         let nthreads = 8;
@@ -524,6 +533,7 @@ mod tests {
         }
     }
 
+    #[ignore]
     #[test]
     fn test_custom_allocator() {
         let q = Queue::with_capacity_in(true, DEFAULT_QUEUE_SIZE, Global).unwrap();

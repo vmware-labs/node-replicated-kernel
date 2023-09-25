@@ -3,12 +3,14 @@
 
 use crate::prelude::*;
 use core::fmt::Debug;
+use core::num::NonZeroUsize;
 
 use alloc::sync::Arc;
 use hashbrown::HashMap;
 use log::{error, trace};
-use nr2::nr::{Dispatch, NodeReplicated, ThreadToken};
+use nr2::nr::{Dispatch, NodeReplicated, ThreadToken, AffinityChange};
 use spin::Once;
+use crate::arch::kcb;
 
 #[cfg(feature = "rackscale")]
 use lazy_static::lazy_static;
@@ -25,39 +27,43 @@ pub(crate) static NR_REPLICA: Once<(Arc<NodeReplicated<KernelNode>>, ThreadToken
 // clones to client so they can create replicas of their own.
 #[cfg(feature = "rackscale")]
 lazy_static! {
-    pub(crate) static ref NR_LOG: Arc<nr2::nr::Log<Op>> = {
+    pub(crate) static ref KERNEL_NODE_INSTANCE: Arc<NodeReplicated<KernelNode>> = {
+        use crate::memory::shmem_affinity::mid_to_shmem_affinity;
+        use crate::memory::shmem_affinity::local_shmem_affinity;
+
         if crate::CMDLINE
             .get()
             .map_or(false, |c| c.mode == crate::cmdline::Mode::Controller)
         {
-            use nr2::nr::Log;
-            use crate::arch::kcb::per_core_mem;
-            use crate::memory::{LARGE_PAGE_SIZE, shmem_affinity::local_shmem_affinity};
-
-            let pcm = per_core_mem();
-            pcm.set_mem_affinity(local_shmem_affinity())
-                .expect("Can't change affinity");
-
-            let log = Arc::try_new(Log::<Op>::new(LARGE_PAGE_SIZE)).expect("Not enough memory to initialize system");
-
-            // Reset mem allocator to use per core memory again
-            let pcm = per_core_mem();
-            pcm.set_mem_affinity(0 as atopology::NodeId)
-                .expect("Can't change affinity");
-
-            log
+            // Want at least one replica...
+            let num_replicas =
+                NonZeroUsize::new(core::cmp::max(1, atopology::MACHINE_TOPOLOGY.num_nodes())).unwrap();
+            Arc::try_new(
+                NodeReplicated::new(num_replicas, |afc: AffinityChange| {
+                    let pcm = kcb::per_core_mem();
+                    match afc {
+                        AffinityChange::Replica(r) => {
+                            pcm.set_mem_affinity(mid_to_shmem_affinity(r)).expect("Can't change affinity");
+                        }
+                        AffinityChange::Revert(_orig) => {
+                            pcm.set_mem_affinity(local_shmem_affinity()).expect("Can't set affinity")
+                        }
+                    }
+                    return 0; // TODO(dynrep): Return error code
+                })
+                .expect("Not enough memory to initialize system"),
+            )
+            .expect("Not enough memory to initialize system")
         } else {
-            use nr2::nr::Log;
             use crate::memory::{paddr_to_kernel_vaddr, PAddr};
-
             use crate::arch::rackscale::get_shmem_structure::{rpc_get_shmem_structure, ShmemStructure};
 
             // Get location of the nr log from the controller, who will created them in shared memory
-            let mut log_ptrs = [0u64; 1];
-            rpc_get_shmem_structure(ShmemStructure::NrLog, &mut log_ptrs).expect("Failed to get nr log from controller");
-            let log_ptr = paddr_to_kernel_vaddr(PAddr::from(log_ptrs[0]));
-            let local_log_arc = unsafe { Arc::from_raw(log_ptr.as_u64() as *const Log<'static, Op>) };
-            local_log_arc
+            let mut node_replicated_ptrs = [0u64; 1];
+            rpc_get_shmem_structure(ShmemStructure::NrLog, &mut node_replicated_ptrs).expect("Failed to get nr log from controller");
+            let nr_ptr = paddr_to_kernel_vaddr(PAddr::from(node_replicated_ptrs[0]));
+            let nr_instance = unsafe { Arc::from_raw(nr_ptr.as_u64() as *const NodeReplicated<KernelNode>) };
+            nr_instance
         }
     };
 }

@@ -9,20 +9,20 @@ use core2::io::Write;
 
 use atopology::NodeId;
 use crossbeam_queue::ArrayQueue;
-use nr2::nr::{Dispatch, Log};
+use nr2::nr::{Dispatch, Log, NodeReplicated};
 use rpc::rpc::*;
 use rpc::RPCClient;
 
 use super::client_state::CLIENT_STATE;
 use super::kernelrpc::*;
 use crate::arch::kcb::per_core_mem;
-use crate::arch::process::{Ring3Process, PROCESS_LOGS};
+use crate::arch::process::{Ring3Process, PROCESS_TABLE};
 use crate::arch::tlb::{Shootdown, RACKSCALE_CLIENT_WORKQUEUES};
 use crate::error::{KError, KResult};
 use crate::memory::shmem_affinity::local_shmem_affinity;
 use crate::memory::vspace::TlbFlushHandle;
 use crate::memory::{kernel_vaddr_to_paddr, paddr_to_kernel_vaddr, PAddr, VAddr};
-use crate::nr::{Op, NR_LOG};
+use crate::nr::{Op, KERNEL_NODE_INSTANCE};
 use crate::nrproc::NrProcess;
 use crate::process::MAX_PROCESSES;
 
@@ -128,20 +128,17 @@ pub(crate) fn handle_get_shmem_structure(
         ShmemStructure::NrProcLogs => {
             let mut logs = [0u64; MAX_PROCESSES];
 
-            for i in 0..PROCESS_LOGS.len() {
+            for i in 0..PROCESS_TABLE.len() {
                 // Create a clone in shared memory, and get the raw representation of it
                 // The clone increments the strong counter, and the into_raw consumes this clone of the arc.
-                let client_clone = Arc::into_raw(Arc::clone(&PROCESS_LOGS[i]));
+                let client_clone = Arc::into_raw(Arc::clone(&PROCESS_TABLE[i]));
 
                 // Send the raw pointer to the client clone address. To do this, we'll convert the kernel address
                 // to a physical address, and then change it to a shmem offset by subtracting the shmem base.
                 // TODO(rackscale): try to simplify this, and below?
                 let arc_log_paddr = kernel_vaddr_to_paddr(VAddr::from_u64(
                     (*&client_clone
-                        as *const Log<
-                            'static,
-                            <NrProcess<Ring3Process> as Dispatch>::WriteOperation,
-                        >) as u64,
+                        as *const NodeReplicated<NrProcess<Ring3Process>>) as u64,
                 ));
                 logs[i] = arc_log_paddr.as_u64();
             }
@@ -151,7 +148,7 @@ pub(crate) fn handle_get_shmem_structure(
             hdr.msg_len = core::mem::size_of::<[u64; MAX_PROCESSES]>() as u64;
         }
         ShmemStructure::NrLog => {
-            let log_clone = Arc::into_raw(Arc::clone(&NR_LOG));
+            let log_clone = Arc::into_raw(Arc::clone(&KERNEL_NODE_INSTANCE));
             let log_paddr =
                 kernel_vaddr_to_paddr(VAddr::from_u64((*&log_clone as *const Log<Op>) as u64))
                     .as_u64();

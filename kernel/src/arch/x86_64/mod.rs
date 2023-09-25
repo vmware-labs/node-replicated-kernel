@@ -21,18 +21,14 @@
 
 use alloc::sync::Arc;
 use core::mem::transmute;
-use core::num::NonZeroUsize;
 use core::sync::atomic::AtomicBool;
 use core::sync::atomic::Ordering;
 
-#[cfg(feature = "rackscale")]
-use crate::nr::NR_LOG;
 pub use bootloader_shared::*;
 use cnr::Replica as MlnrReplica;
 use fallible_collections::TryClone;
 use klogger::sprint;
 use log::{debug, error, info};
-use nr2::nr::{AffinityChange, NodeReplicated};
 use x86::{controlregs, cpuid};
 
 use crate::cmdline::CommandLineArguments;
@@ -40,7 +36,6 @@ use crate::fs::cnrfs::MlnrKernelNode;
 use crate::memory::global::GlobalMemory;
 use crate::memory::mcache;
 use crate::memory::per_core::PerCoreMemory;
-use crate::nr::KernelNode;
 use crate::ExitReason;
 
 use coreboot::AppCoreArgs;
@@ -449,12 +444,16 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     // Set-up interrupt routing drivers (I/O APIC controllers)
     irq::ioapic_initialize();
 
-    // Let's go with one replica per NUMA node for now:
-    let numa_nodes = core::cmp::max(1, atopology::MACHINE_TOPOLOGY.num_nodes());
-    let numa_nodes = NonZeroUsize::new(numa_nodes).expect("At least one NUMA node");
-
     #[cfg(not(feature = "rackscale"))]
     let kernel_node = {
+        use core::num::NonZeroUsize;
+        use crate::nr::KernelNode;
+        use nr2::nr::{AffinityChange, NodeReplicated};
+
+        // Let's go with one replica per NUMA node for now:
+        let numa_nodes = core::cmp::max(1, atopology::MACHINE_TOPOLOGY.num_nodes());
+        let numa_nodes = NonZeroUsize::new(numa_nodes).expect("At least one NUMA node");
+
         // Create the global operation log and first replica and store it (needs
         // TLS)
         let kernel_node: Arc<NodeReplicated<KernelNode>> = Arc::try_new(
@@ -516,7 +515,12 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
 
     // Initialize processes
     #[cfg(feature = "rackscale")]
-    lazy_static::initialize(&process::PROCESS_LOGS);
+    if crate::CMDLINE
+        .get()
+        .map_or(false, |c| c.mode == crate::cmdline::Mode::Controller)
+    {
+        lazy_static::initialize(&process::PROCESS_TABLE);
+    }
 
     #[cfg(not(feature = "rackscale"))]
     {
@@ -525,7 +529,7 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     }
 
     #[cfg(feature = "rackscale")]
-    let (log, bsp_replica) = {
+    let kernel_node = {
         if crate::CMDLINE
             .get()
             .map_or(false, |c| c.mode == crate::cmdline::Mode::Client)
@@ -534,15 +538,12 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
             crate::nrproc::register_thread_with_process_replicas();
         }
 
-        // this calls an RPC on the client, which is why we do this later in initialization than in non-rackscale
-        lazy_static::initialize(&NR_LOG);
+        lazy_static::initialize(&crate::nr::KERNEL_NODE_INSTANCE);
+        let kernel_node = crate::nr::KERNEL_NODE_INSTANCE.clone();
 
-        // For rackscale, only the controller is going to create the base log.
-        // All clients will use this to create replicas.
-        let bsp_replica = Replica::<KernelNode>::new(&NR_LOG);
-        let local_ridx = bsp_replica.register().unwrap();
-        crate::nr::NR_REPLICA.call_once(|| (bsp_replica.clone(), local_ridx));
-        (&NR_LOG.clone(), bsp_replica)
+        let local_ridx = kernel_node.register(0).unwrap();
+        crate::nr::NR_REPLICA.call_once(|| (kernel_node.clone(), local_ridx));
+        kernel_node
     };
 
     #[cfg(feature = "gdb")]

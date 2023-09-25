@@ -20,9 +20,9 @@ use kpi::arch::SaveArea;
 use kpi::process::{FrameId, ELF_OFFSET, EXECUTOR_OFFSET};
 use lazy_static::lazy_static;
 use log::{debug, info, trace, warn};
-#[cfg(feature = "rackscale")]
-use node_replication::{Dispatch, Log, Replica};
-use nr2::nr::NodeReplicated;
+use crate::arch::kcb::{self, per_core_mem};
+use core::num::NonZeroUsize;
+use nr2::nr::{NodeReplicated, AffinityChange};
 use x86::bits64::paging::*;
 use x86::bits64::rflags;
 use x86::{controlregs, Ring};
@@ -72,25 +72,16 @@ pub(crate) fn current_pid() -> KResult<Pid> {
 
 #[cfg(feature = "rackscale")]
 lazy_static! {
-    pub(crate) static ref PROCESS_LOGS: Box<
-        ArrayVec<
-            Arc<Log::<'static, <NrProcess<Ring3Process> as Dispatch>::WriteOperation>>,
-            MAX_PROCESSES,
-        >,
-    > = {
+    pub(crate) static ref PROCESS_TABLE: ArrayVec<Arc<NodeReplicated<NrProcess<Ring3Process>>>, MAX_PROCESSES> = {
+        use crate::memory::shmem_affinity::mid_to_shmem_affinity;
 
-
-        if crate::CMDLINE
+        if !crate::CMDLINE
             .get()
             .map_or(false, |c| c.mode == crate::cmdline::Mode::Controller)
         {
-            // We want to allocate the logs in controller shared memory
-            use crate::memory::shmem_affinity::local_shmem_affinity;
-            let pcm = per_core_mem();
-            pcm.set_mem_affinity(local_shmem_affinity()).expect("Can't change affinity");
-        } else {
             // Get location of the logs from the controller, who will have created them in shared memory
-            use crate::arch::rackscale::get_shmem_structure::{rpc_get_shmem_structure, ShmemStructure};
+            
+            /*use crate::arch::rackscale::get_shmem_structure::{rpc_get_shmem_structure, ShmemStructure};
 
             let mut log_ptrs = [0u64; MAX_PROCESSES];
             rpc_get_shmem_structure(ShmemStructure::NrProcLogs, &mut log_ptrs[..]).expect("Failed to get process log pointers");
@@ -103,12 +94,54 @@ lazy_static! {
                 };
                 process_logs.push(local_log_arc);
             }
-            return process_logs;
+            return process_logs;*/
+            unimplemented!("Need to get NodeReplicated from controller")
         }
 
-        // TODO(dynrep): here we create the Log on the controller for sending it
-        // to the data-kernels this would probably need to create a
-        // NodeReplicated<DataKernel> NodeReplicated<Process> instance
+        // We want to allocate the logs in controller shared memory
+        use crate::memory::shmem_affinity::local_shmem_affinity;
+        let pcm = per_core_mem();
+        pcm.set_mem_affinity(local_shmem_affinity()).expect("Can't change affinity");
+        
+        // Want at least one replica...
+        let num_replicas =
+            NonZeroUsize::new(core::cmp::max(1, atopology::MACHINE_TOPOLOGY.num_nodes())).unwrap();
+        let mut processes = ArrayVec::new();
+
+        for _pid in 0..MAX_PROCESSES {
+            debug_assert_eq!(
+                *crate::environment::NODE_ID,
+                0,
+                "Expect initialization to happen on node 0."
+            );
+
+            let process: Arc<NodeReplicated<NrProcess<Ring3Process>>> = Arc::try_new(
+                NodeReplicated::new(num_replicas, |afc: AffinityChange| {
+                    let pcm = kcb::per_core_mem();
+                    match afc {
+                        AffinityChange::Replica(r) => {
+                            pcm.set_mem_affinity(mid_to_shmem_affinity(r)).expect("Can't change affinity");
+                        }
+                        AffinityChange::Revert(_orig) => {
+                            pcm.set_mem_affinity(local_shmem_affinity()).expect("Can't set affinity")
+                        }
+                    }
+                    return 0; // TODO(dynrep): Return error code
+                })
+                .expect("Not enough memory to initialize system"),
+            )
+            .expect("Not enough memory to initialize system");
+
+            processes.push(process)
+        }
+
+
+        // Reset mem allocator to use per core memory again
+        let pcm = per_core_mem();
+        pcm.set_mem_affinity(0 as atopology::NodeId).expect("Can't change affinity");
+
+        processes
+
 
         // NodeReplicated::new(#data-kernels) ->
         //  - for data_kernel in 0..#data-kernels {
@@ -143,31 +176,10 @@ lazy_static! {
             - The closure when set on controller probably won't work in data-kernel (diff symbol addresses?)
             - The binary might be fine because it's identical!
         */
-        let process_logs = {
-            let mut process_logs = Box::try_new(ArrayVec::new()).expect("Can't initialize process log vector.");
-            for _pid in 0..MAX_PROCESSES {
-                let log = Arc::try_new(
-                    Log::<<NrProcess<Ring3Process> as Dispatch>::WriteOperation>::new(LARGE_PAGE_SIZE),
-                )
-                .expect("Can't initialize process logs, out of memory.");
-                process_logs.push(log);
-            }
-            process_logs
-        };
-
-        if crate::CMDLINE
-            .get()
-            .map_or(false, |c| c.mode == crate::cmdline::Mode::Controller)
-        {
-            // Reset mem allocator to use per core memory again
-            let pcm = per_core_mem();
-            pcm.set_mem_affinity(0 as atopology::NodeId).expect("Can't change affinity");
-        }
-
-        process_logs
     };
 }
 
+#[cfg(not(feature = "rackscale"))]
 lazy_static! {
     pub(crate) static ref PROCESS_TABLE: ArrayVec<Arc<NodeReplicated<NrProcess<Ring3Process>>>, MAX_PROCESSES> =
         create_process_table();
@@ -175,10 +187,6 @@ lazy_static! {
 
 #[cfg(not(feature = "rackscale"))]
 fn create_process_table() -> ArrayVec<Arc<NodeReplicated<NrProcess<Ring3Process>>>, MAX_PROCESSES> {
-    use crate::arch::kcb;
-    use core::num::NonZeroUsize;
-    use nr2::nr::AffinityChange;
-
     // Want at least one replica...
     let num_replicas =
         NonZeroUsize::new(core::cmp::max(1, atopology::MACHINE_TOPOLOGY.num_nodes())).unwrap();
@@ -214,6 +222,7 @@ fn create_process_table() -> ArrayVec<Arc<NodeReplicated<NrProcess<Ring3Process>
     processes
 }
 
+/*
 #[cfg(feature = "rackscale")]
 fn create_process_table(
 ) -> ArrayVec<ArrayVec<Arc<Replica<'static, NrProcess<Ring3Process>>>, MAX_PROCESSES>, MAX_NUMA_NODES>
@@ -283,7 +292,7 @@ fn create_process_table(
 
     numa_cache
 }
-
+ */
 pub(crate) struct ArchProcessManagement;
 
 impl crate::nrproc::ProcessManager for ArchProcessManagement {

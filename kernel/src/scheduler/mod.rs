@@ -67,7 +67,6 @@ pub(crate) fn schedule() -> ! {
                             // There is no process but we're the "main" thread,
                             // aggressively try and advance the replica
                             let start = rawtime::Instant::now();
-                            crate::nrproc::advance_all();
                             crate::arch::advance_fs_replica();
 
                             if start.elapsed().as_millis() < 1 {

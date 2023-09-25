@@ -80,6 +80,9 @@ pub(crate) fn run() {
     {
     }
 
+    // TODO(dynrep): here is the point where we have all the memory regions and
+    // could create NodeReplicated instances for each client.
+
     #[cfg(feature = "test-controller-shmem-alloc")]
     {
         if mid == 1 {

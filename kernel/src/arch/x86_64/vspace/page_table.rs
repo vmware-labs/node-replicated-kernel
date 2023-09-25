@@ -719,7 +719,7 @@ impl PageTable {
                 return Err(KError::AlreadyMapped { base: vbase });
             } else {
                 panic!(
-                    "An existing mapping already covers the 2 MiB range we're trying to map in?"
+                    "An existing mapping already covers the 2 MiB range we're trying to map in? {vbase}"
                 );
             }
         }

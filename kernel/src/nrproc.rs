@@ -113,11 +113,6 @@ pub(crate) enum ProcessResult<E: Executor> {
     ReadString(String),
 }
 
-/// Advances the replica of all the processes on the current NUMA node.
-pub(crate) fn advance_all() {
-    unreachable!("shouldn't be called anymore dynrep");
-}
-
 pub(crate) trait ProcessManager {
     type Process: Process + Sync;
 

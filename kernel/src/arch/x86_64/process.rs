@@ -106,6 +106,43 @@ lazy_static! {
             return process_logs;
         }
 
+        // TODO(dynrep): here we create the Log on the controller for sending it
+        // to the data-kernels this would probably need to create a
+        // NodeReplicated<DataKernel> NodeReplicated<Process> instance
+
+        // NodeReplicated::new(#data-kernels) ->
+        //  - for data_kernel in 0..#data-kernels {
+        //      - change affinity to data_kernel
+        //      - Box::new(bla) [allocator will go go to DCM if necessary]
+        //      - change affinity back to controller
+        //  }
+
+        /*
+         == Controller:
+            |afc: AffinityChange| {
+            let pcm = kcb::per_core_mem();
+            match afc {
+                AffinityChange::Replica(r: MachineId) => {
+                    // We want to allocate the logs in controller shared memory
+                    use crate::memory::shmem_affinity::local_shmem_affinity;
+                    let pcm = per_core_mem();
+                    pcm.set_mem_affinity(mid_to_shmem_affinity(r)).expect("Can't change affinity");
+                }
+                AffinityChange::Revert(orig) => {
+                    // We want to allocate the logs in controller shared memory
+                    use crate::memory::shmem_affinity::local_shmem_affinity;
+                    let pcm = per_core_mem();
+                    - pcm.set_mem_affinity(local_shmem_affinity()).expect("Can't change affinity");
+                    OR 
+                    - pcm.set_mem_affinity(orig).expect("Can't change affinity");
+                }
+            }
+            return 0; // TODO(dynrep): Return error code
+
+         == Data kernel
+            - The closure when set on controller probably won't work in data-kernel (diff symbol addresses?)
+            - The binary might be fine because it's identical!
+        */
         let process_logs = {
             let mut process_logs = Box::try_new(ArrayVec::new()).expect("Can't initialize process log vector.");
             for _pid in 0..MAX_PROCESSES {

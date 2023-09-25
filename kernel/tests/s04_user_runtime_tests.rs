@@ -31,6 +31,7 @@ fn s04_userspace_multicore() {
         .user_feature("test-scheduler-smp")
         .build();
     let cmdline = RunnerArgs::new_with_build("userspace-smp", &build)
+        .nodes(num_cores / 16)
         .cores(num_cores)
         .memory(4096)
         .timeout(120_000);

@@ -29,6 +29,8 @@ use crate::process::MAX_PROCESSES;
 #[derive(Debug, Eq, PartialEq, PartialOrd, Clone, Copy)]
 #[repr(u8)]
 pub enum ShmemStructure {
+    // TODO(dynrep): remove NrProcLogs/NrLog add NodeReplicated<Process> and
+    // NodeReplicated<KernelNode> instead that gets sent from controller
     NrProcLogs = 0,
     NrLog = 1,
     WorkQueues = 2,

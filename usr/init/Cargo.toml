@@ -55,6 +55,7 @@ test-concurrent-shootdown = []
 bench-vmops = []
 bench-vmops-unmaplat = []
 fxmark = []
+memhash = []
 
 # smoke: A way to tell the micro-benchmarks
 # to only run for a short period, don't consume many

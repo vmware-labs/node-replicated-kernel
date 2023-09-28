@@ -34,6 +34,8 @@ mod histogram;
 mod tests;
 #[cfg(any(feature = "bench-vmops", feature = "bench-vmops-unmaplat"))]
 mod vmops;
+#[cfg(feature = "memhash")]
+mod memhash;
 
 use crate::fs::{run_fio_syscall_proptests, run_fio_syscall_tests};
 
@@ -1024,6 +1026,9 @@ pub extern "C" fn _start() -> ! {
 
     #[cfg(feature = "bench-vmops-unmaplat")]
     vmops::unmaplat::bench(ncores);
+
+    #[cfg(feature = "memhash")]
+    memhash::bench(ncores);
 
     #[cfg(feature = "test-print")]
     print_test();

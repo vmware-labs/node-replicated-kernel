@@ -1046,74 +1046,73 @@ fn s10_memhash_benchmark() {
     let _r = std::fs::remove_file(file_name);
 
     // for &cores in threads.iter() {
-    let cores = 10;
-        let kernel_cmdline = format!("initargs={}", cores);
-        let mut cmdline = RunnerArgs::new_with_build("userspace-smp", &build)
-            .cores(machine.max_cores())
-            .setaffinity(Vec::new())
-            .timeout(12_000 + cores as u64 * 3000)
-            .cmd(kernel_cmdline.as_str());
+    let cores = *threads.iter().max().unwrap();
+    let kernel_cmdline = format!("initargs={}", cores);
+    let mut cmdline = RunnerArgs::new_with_build("userspace-smp", &build)
+        .cores(machine.max_cores())
+        .setaffinity(Vec::new())
+        .timeout(12_000 + cores as u64 * 3000)
+        .cmd(kernel_cmdline.as_str());
 
-        if cfg!(feature = "smoke") {
-            cmdline = cmdline.memory(16 * 1024);
-        } else {
-            cmdline = cmdline.memory(48 * 1024);
-        }
+    if cfg!(feature = "smoke") {
+        cmdline = cmdline.memory(16 * 1024);
+    } else {
+        cmdline = cmdline.memory(48 * 1024);
+    }
 
-        if cfg!(feature = "smoke") && cores > 2 {
-            cmdline = cmdline.nodes(2);
-        } else {
-            cmdline = cmdline.nodes(machine.max_numa_nodes());
-        }
+    if cfg!(feature = "smoke") && cores > 2 {
+        cmdline = cmdline.nodes(2);
+    } else {
+        cmdline = cmdline.nodes(machine.max_numa_nodes());
+    }
 
-        let mut output = String::new();
-        let mut qemu_run = |with_cores: usize| -> Result<WaitStatus> {
-            let mut p = spawn_nrk(&cmdline)?;
+    let mut output = String::new();
+    let mut qemu_run = |with_cores: usize| -> Result<WaitStatus> {
+        let mut p = spawn_nrk(&cmdline)?;
 
-            // Parse lines like
-            // `init::vmops: 1,maponly,1,4096,10000,1000,634948`
-            // write them to a CSV file
-            // let expected_lines = if cfg!(feature = "smoke") {
-            //     1
-            // } else {
-            //     with_cores * 11
-            // };
+        // Parse lines like
+        // `init::vmops: 1,maponly,1,4096,10000,1000,634948`
+        // write them to a CSV file
+        // let expected_lines = if cfg!(feature = "smoke") {
+        //     1
+        // } else {
+        //     with_cores * 11
+        // };
 
-            // for _i in 0..expected_lines {
-            //     let (prev, matched) =
-            //         p.exp_regex(r#"init::vmops: (\d+),(.*),(\d+),(\d+),(\d+),(\d+),(\d+)"#)?;
-            //     output += prev.as_str();
-            //     output += matched.as_str();
+        // for _i in 0..expected_lines {
+        //     let (prev, matched) =
+        //         p.exp_regex(r#"init::vmops: (\d+),(.*),(\d+),(\d+),(\d+),(\d+),(\d+)"#)?;
+        //     output += prev.as_str();
+        //     output += matched.as_str();
 
-            //     // Append parsed results to a CSV file
-            //     let write_headers = !Path::new(file_name).exists();
-            //     let mut csv_file = OpenOptions::new()
-            //         .append(true)
-            //         .create(true)
-            //         .open(file_name)
-            //         .expect("Can't open file");
-            //     if write_headers {
-            //         let row =
-            //             "git_rev,thread_id,benchmark,ncores,memsize,duration_total,duration,operations\n";
-            //         let r = csv_file.write(row.as_bytes());
-            //         assert!(r.is_ok());
-            //     }
+        //     // Append parsed results to a CSV file
+        //     let write_headers = !Path::new(file_name).exists();
+        //     let mut csv_file = OpenOptions::new()
+        //         .append(true)
+        //         .create(true)
+        //         .open(file_name)
+        //         .expect("Can't open file");
+        //     if write_headers {
+        //         let row =
+        //             "git_rev,thread_id,benchmark,ncores,memsize,duration_total,duration,operations\n";
+        //         let r = csv_file.write(row.as_bytes());
+        //         assert!(r.is_ok());
+        //     }
 
-            //     let parts: Vec<&str> = matched.split("init::vmops: ").collect();
-            //     let r = csv_file.write(format!("{},", env!("GIT_HASH")).as_bytes());
-            //     assert!(r.is_ok());
-            //     let r = csv_file.write(parts[1].as_bytes());
-            //     assert!(r.is_ok());
-            //     let r = csv_file.write("\n".as_bytes());
-            //     assert!(r.is_ok());
-            // }
+        //     let parts: Vec<&str> = matched.split("init::vmops: ").collect();
+        //     let r = csv_file.write(format!("{},", env!("GIT_HASH")).as_bytes());
+        //     assert!(r.is_ok());
+        //     let r = csv_file.write(parts[1].as_bytes());
+        //     assert!(r.is_ok());
+        //     let r = csv_file.write("\n".as_bytes());
+        //     assert!(r.is_ok());
+        // }
 
-            output += p.exp_eof()?.as_str();
-            p.process.exit()
-        };
+        output += p.exp_eof()?.as_str();
+        p.process.exit()
+    };
 
-        check_for_successful_exit(&cmdline, qemu_run(cores), output.clone());
-        println!("Output: {:?}", output);
+    check_for_successful_exit(&cmdline, qemu_run(cores), output.clone());
+    println!("Output: {:?}", output);
     // }
-
 }

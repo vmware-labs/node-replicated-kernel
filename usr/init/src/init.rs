@@ -31,11 +31,11 @@ mod fs;
 #[cfg(feature = "fxmark")]
 mod fxmark;
 mod histogram;
+#[cfg(feature = "memhash")]
+mod memhash;
 mod tests;
 #[cfg(any(feature = "bench-vmops", feature = "bench-vmops-unmaplat"))]
 mod vmops;
-#[cfg(feature = "memhash")]
-mod memhash;
 
 use crate::fs::{run_fio_syscall_proptests, run_fio_syscall_tests};
 

@@ -9,12 +9,18 @@ use x86::bits64::paging::VAddr;
 
 use lineup::tls2::{Environment, SchedulerControlBlock};
 
+use base64ct::{Base64, Encoding};
+use md5::{Digest, Md5};
+
 static POOR_MANS_BARRIER: AtomicUsize = AtomicUsize::new(0);
 
 // Hash function
 // Equivalent to 1 operation
-fn hashmem(core_id: usize) -> u64 {
-    0
+fn hashmem(core_id: usize) {
+    let mut hasher = Md5::new();
+    hasher.update(b"hello world");
+    let hash = hasher.finalize();
+    // Base64::encode_string(&hash);
 }
 
 fn thread_routine(core_id: usize, cur_cores: usize, tot_cores: usize) {

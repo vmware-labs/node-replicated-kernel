@@ -1071,12 +1071,12 @@ fn s10_memhash_benchmark() {
         let mut p = spawn_nrk(&cmdline)?;
 
         // Parse lines like
-        // `init::vmops: 1,maponly,1,4096,10000,1000,634948`
+        // `init::memhash: thread_id,memhash,operations,cur_cores,tot_cores`
         // write them to a CSV file
         let expected_lines = if cfg!(feature = "smoke") {
             3
         } else {
-            (cores * (cores + 1)) / 2 // sum from i=1 to n of i
+            (with_cores * (with_cores + 1)) / 2 // sum from i=1 to n of i
         };
 
         for _i in 0..expected_lines {
@@ -1111,5 +1111,4 @@ fn s10_memhash_benchmark() {
     };
 
     check_for_successful_exit(&cmdline, qemu_run(cores), output.clone());
-    // println!("Output: {:?}", output);
 }

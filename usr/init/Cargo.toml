@@ -25,6 +25,8 @@ lazy_static =  { version = "1.4", default_features = false }
 cstr_core = { version = "0.2.3", default-features = false }
 spin = { version = "0.5.2", default_features = false }
 hashbrown = { version = "0.11", features = [ "nightly" ] }
+md-5 = { version = "0.10.6", default-features = false }
+base64ct = "1.6.0"
 
 [features]
 default = []
@@ -41,8 +43,8 @@ test-upcall = []
 test-scheduler = []
 test-scheduler-smp = []
 test-syscalls = []
-test-rump-tmpfs = [ "rumprt" ]
-test-rump-net = [ "rumprt" ]
+test-rump-tmpfs = ["rumprt"]
+test-rump-net = ["rumprt"]
 test-fs = []
 test-fs-prop = []
 test-pmem-alloc = []

@@ -122,25 +122,89 @@ pub fn spawn_nrk(args: &RunnerArgs) -> Result<rexpect::session::PtySession> {
     ret
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum DCMSolver {
+    DCMloc,
+    DCMcap,
+    Random,
+    RoundRobin,
+    FillCurrent,
+}
+
+impl std::fmt::Display for DCMSolver {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            DCMSolver::DCMloc => write!(f, "DCMloc"),
+            DCMSolver::DCMcap => write!(f, "DCMcap"),
+            DCMSolver::Random => write!(f, "R"),
+            DCMSolver::RoundRobin => write!(f, "RR"),
+            DCMSolver::FillCurrent => write!(f, "FC"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct DCMConfig {
+    pub solver: DCMSolver,
+    pub verbose: bool,     // for info on solve time, allocation placement
+    pub dcm_logging: bool, // for debugging
+    pub requests_per_solve: usize,
+    pub poll_interval: usize,
+}
+impl DCMConfig {
+    fn get_cmd(self) -> String {
+        let mut dcm_args = Vec::new();
+        dcm_args.push("-r".to_string());
+        dcm_args.push(format!("{}", self.requests_per_solve));
+
+        // Set a short poll interval
+        dcm_args.push("-p".to_string());
+        dcm_args.push(format!("{}", self.poll_interval));
+
+        if self.verbose {
+            dcm_args.push("-v".to_string());
+        }
+        if self.dcm_logging {
+            dcm_args.push("-l".to_string());
+        }
+
+        dcm_args.push("-s".to_string());
+        dcm_args.push(format!("{}", self.solver));
+
+        // Start DCM
+        let cmd = format!(
+            "java -jar ../target/dcm-scheduler.jar {}",
+            dcm_args.join(" "),
+        );
+
+        cmd
+    }
+}
+
+impl Default for DCMConfig {
+    fn default() -> Self {
+        DCMConfig {
+            solver: DCMSolver::DCMloc,
+            verbose: false,
+            dcm_logging: false,
+            requests_per_solve: 1,
+            poll_interval: 1,
+        }
+    }
+}
+
 /// Spawns a DCM solver
 ///
 /// Uses target/dcm-scheduler.jar that is set up by run.py
 /// -r => number of requests per solve
 /// -p => poll interval
-pub fn spawn_dcm(r: usize) -> Result<rexpect::session::PtySession> {
-    let mut dcm_args = Vec::new();
-    dcm_args.push("-r".to_string());
-    dcm_args.push(format!("{}", r));
+pub fn spawn_dcm(cfg: Option<DCMConfig>) -> Result<rexpect::session::PtySession> {
+    let cmd = if let Some(cfg) = cfg {
+        cfg.get_cmd()
+    } else {
+        DCMConfig::default().get_cmd()
+    };
 
-    // Set a short poll interval
-    dcm_args.push("-p".to_string());
-    dcm_args.push(format!("{}", 1));
-
-    // Start DCM
-    let cmd = format!(
-        "java -jar ../target/dcm-scheduler.jar {}",
-        dcm_args.join(" "),
-    );
     eprintln!("Invoke DCM: {}", cmd);
     let ret = spawn(&cmd, None);
     match ret {

@@ -12,6 +12,7 @@ use rexpect::errors::*;
 use rexpect::session::PtySession;
 
 use testutils::builder::{BuildArgs, Machine};
+use testutils::helpers::{DCMConfig, DCMSolver};
 use testutils::rackscale_runner::RackscaleRun;
 use testutils::runner_args::RackscaleTransport;
 
@@ -355,6 +356,70 @@ fn rackscale_userspace_rumprt_fs(transport: RackscaleTransport) {
     test_run.transport = transport;
     test_run.client_timeout = 120_000;
     test_run.controller_timeout = 120_000;
+    test_run.run_rackscale();
+}
+
+#[cfg(not(feature = "baremetal"))]
+#[test]
+fn s06_rackscale_userspace_scheduler_random_test() {
+    rackscale_userspace_scheduler_test(DCMSolver::Random);
+}
+
+#[cfg(not(feature = "baremetal"))]
+#[test]
+fn s06_rackscale_userspace_scheduler_roundrobin_test() {
+    rackscale_userspace_scheduler_test(DCMSolver::RoundRobin);
+}
+
+#[cfg(not(feature = "baremetal"))]
+#[test]
+fn s06_rackscale_userspace_scheduler_fillcurrent_test() {
+    rackscale_userspace_scheduler_test(DCMSolver::FillCurrent);
+}
+
+/// Tests the rump FS.
+///
+/// Checks that we can initialize a BSD libOS and run FS operations.
+/// This implicitly tests many components such as the scheduler, memory
+/// management, IO and device interrupts.
+///
+/// For the scheduler component, only one core is allocated, but
+/// ~80 memslices are allocated, so it's an okay check for scheduler functionality.
+#[cfg(not(feature = "baremetal"))]
+fn rackscale_userspace_scheduler_test(solver: DCMSolver) {
+    let built = BuildArgs::default()
+        .module("init")
+        .user_feature("test-rump-tmpfs")
+        .user_feature("rumprt")
+        .set_rackscale(true)
+        .release()
+        .build();
+
+    fn controller_match_fn(
+        proc: &mut PtySession,
+        output: &mut String,
+        _cores_per_client: usize,
+        _num_clients: usize,
+        _file_name: &str,
+        _is_baseline: bool,
+        _arg: Option<()>,
+    ) -> Result<()> {
+        *output += proc.exp_string("bytes_written: 12")?.as_str();
+        *output += proc.exp_string("bytes_read: 12")?.as_str();
+        Ok(())
+    }
+
+    let mut dcm_config = DCMConfig::default();
+    dcm_config.solver = solver;
+    dcm_config.verbose = true;
+
+    let mut test_run = RackscaleRun::new("userspace".to_string(), built);
+    test_run.controller_match_fn = controller_match_fn;
+    test_run.num_clients = 2;
+    test_run.transport = RackscaleTransport::Shmem;
+    test_run.client_timeout = 120_000;
+    test_run.controller_timeout = 120_000;
+    test_run.dcm_config = Some(dcm_config);
     test_run.run_rackscale();
 }
 

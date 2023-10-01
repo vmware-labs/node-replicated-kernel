@@ -11,7 +11,7 @@ use rexpect::session::PtySession;
 use crate::builder::{Built, Machine};
 use crate::helpers::{
     get_shmem_names, setup_network, spawn_dcm, spawn_dhcpd, spawn_nrk, spawn_shmem_server,
-    SHMEM_SIZE,
+    DCMConfig, SHMEM_SIZE,
 };
 use crate::runner_args::{
     log_qemu_out_with_name, wait_for_sigterm_or_successful_exit,
@@ -90,6 +90,8 @@ where
     pub run_dhcpd_for_baseline: bool,
     /// Huge huge pages for qemu memory. This requires pre-alloc'ing them on the host before running.
     pub use_qemu_huge_pages: bool,
+    /// DCM config
+    pub dcm_config: Option<DCMConfig>,
 }
 
 impl<T: Clone + Send + 'static> RackscaleRun<T> {
@@ -127,6 +129,7 @@ impl<T: Clone + Send + 'static> RackscaleRun<T> {
             arg: None,
             run_dhcpd_for_baseline: false,
             use_qemu_huge_pages: false,
+            dcm_config: None,
         }
     }
 
@@ -146,7 +149,7 @@ impl<T: Clone + Send + 'static> RackscaleRun<T> {
         }
 
         // Start DCM
-        let mut dcm = spawn_dcm(1).expect("Failed to start DCM");
+        let mut dcm = spawn_dcm(self.dcm_config).expect("Failed to start DCM");
 
         // Start shmem servers
         let mut shmem_files = Vec::new();

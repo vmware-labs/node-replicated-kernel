@@ -134,7 +134,7 @@ pub fn spawn_dcm(r: usize) -> Result<rexpect::session::PtySession> {
 
     // Set a short poll interval
     dcm_args.push("-p".to_string());
-    dcm_args.push(format!("{}", 5));
+    dcm_args.push(format!("{}", 1));
 
     // Start DCM
     let cmd = format!(

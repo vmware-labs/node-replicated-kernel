@@ -81,6 +81,7 @@ all-tests = [
     "test-fs",
     "test-phys-alloc",
     "test-core-alloc",
+    # "test-request-core-remote", TODO: used only for rackscale tests right now
     #"test-fs-prop", # needs userspace
     #"test-pmem-alloc", # needs SMP
 ]

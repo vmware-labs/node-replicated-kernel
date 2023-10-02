@@ -1,5 +1,5 @@
 use alloc::sync::Arc;
-use alloc::vec::Vec;
+use alloc::{vec, vec::Vec};
 use core::ptr;
 
 use core::sync::atomic::{AtomicUsize, Ordering};
@@ -9,21 +9,25 @@ use x86::bits64::paging::VAddr;
 
 use lineup::tls2::{Environment, SchedulerControlBlock};
 
-use base64ct::{Base64, Encoding};
+// use base64ct::{Base64, Encoding};
 use md5::{Digest, Md5};
 
 static POOR_MANS_BARRIER: AtomicUsize = AtomicUsize::new(0);
 
+const CHUNK_SIZE: usize = 1024;
+
 // Hash function
 // Equivalent to 1 operation
-fn hashmem(core_id: usize) {
+fn hashmem(core_id: usize, buffer: &Arc<Vec<u8>>) {
+    let offset = core_id * CHUNK_SIZE;
+    let buffer: [u8; CHUNK_SIZE] = buffer[offset..offset + CHUNK_SIZE].try_into().unwrap();
     let mut hasher = Md5::new();
-    hasher.update(b"hello world");
+    hasher.update(buffer);
     let hash = hasher.finalize();
     // Base64::encode_string(&hash);
 }
 
-fn thread_routine(core_id: usize, cur_cores: usize, tot_cores: usize) {
+fn thread_routine(core_id: usize, cur_cores: usize, tot_cores: usize, buffer: &Arc<Vec<u8>>) {
     // Synchronize all cores
     POOR_MANS_BARRIER.fetch_sub(1, Ordering::Relaxed);
     while POOR_MANS_BARRIER.load(Ordering::Relaxed) != 0 {
@@ -34,7 +38,7 @@ fn thread_routine(core_id: usize, cur_cores: usize, tot_cores: usize) {
 
     let start = rawtime::Instant::now();
     while start.elapsed().as_secs() < 1 {
-        let _ = hashmem(core_id);
+        let _ = hashmem(core_id, buffer);
         ops += 1
     }
     info!("{},memhash,{},{},{}", core_id, ops, cur_cores, tot_cores);
@@ -46,7 +50,8 @@ unsafe extern "C" fn thread_routine_trampoline(thread_params: *mut u8) -> *mut u
     let core_id = params.core_id;
     let cur_cores = params.cur_cores;
     let tot_cores = params.tot_cores;
-    thread_routine(core_id, cur_cores, tot_cores);
+    let buffer = &params.buffer;
+    thread_routine(core_id, cur_cores, tot_cores, buffer);
     ptr::null_mut()
 }
 
@@ -54,6 +59,7 @@ struct ThreadParams {
     core_id: usize,
     cur_cores: usize,
     tot_cores: usize,
+    buffer: Arc<Vec<u8>>,
 }
 
 pub fn bench(ncores: Option<usize>) {
@@ -62,6 +68,9 @@ pub fn bench(ncores: Option<usize>) {
     let cores = ncores.unwrap_or(hwthreads.len());
     let current_core = vibrio::syscalls::System::core_id().expect("Can't get core id");
     let mut core_ids = Vec::with_capacity(cores);
+
+    // Generate byte vector of values
+    let mem_region: Arc<Vec<u8>> = Arc::new(vec![0; ncores.unwrap() * CHUNK_SIZE]);
 
     for hwthread in hwthreads.iter().take(cores) {
         // Reserve next core
@@ -86,6 +95,7 @@ pub fn bench(ncores: Option<usize>) {
 
         let cores_in_use = core_ids.len();
         let core_ids_copy = core_ids.clone();
+        let buffer_ptr = mem_region.clone();
 
         // Spawn threads
         s.spawn(
@@ -99,6 +109,7 @@ pub fn bench(ncores: Option<usize>) {
                         core_id: core_id,
                         cur_cores: cores_in_use.clone(),
                         tot_cores: ncores.unwrap().clone(),
+                        buffer: buffer_ptr.clone(),
                     };
 
                     thandles.push(

@@ -188,7 +188,7 @@ impl Default for DCMConfig {
             verbose: false,
             dcm_logging: false,
             requests_per_solve: 1,
-            poll_interval: 1,
+            poll_interval: 3,
         }
     }
 }

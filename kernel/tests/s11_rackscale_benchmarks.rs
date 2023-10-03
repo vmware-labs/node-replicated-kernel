@@ -736,3 +736,131 @@ fn rackscale_monetdb_benchmark(transport: RackscaleTransport) {
     }
     bench.run_bench(false, is_smoke);
 }
+
+#[test]
+#[cfg(not(feature = "baremetal"))]
+fn s11_rackscale_shmem_memhash_benchmark() {
+    rackscale_memhash_benchmark(RackscaleTransport::Shmem);
+}
+
+#[test]
+#[ignore]
+#[cfg(not(feature = "baremetal"))]
+fn s11_rackscale_ethernet_memhash_benchmark() {
+    rackscale_memhash_benchmark(RackscaleTransport::Ethernet);
+}
+
+#[cfg(not(feature = "baremetal"))]
+fn rackscale_memhash_benchmark(transport: RackscaleTransport) {
+    let file_name = String::from("rackscale_memhash_benchmark.csv");
+    let _ignore = std::fs::remove_file(file_name.clone());
+
+    let mut build = BuildArgs::default()
+        .module("init")
+        .user_feature("memhash")
+        .release();
+    if cfg!(feature = "smoke") {
+        build = build.user_feature("smoke");
+    }
+    let built = build.build();
+
+    fn controller_match_fn(
+        proc: &mut PtySession,
+        output: &mut String,
+        cores_per_client: usize,
+        num_clients: usize,
+        file_name: &str,
+        is_baseline: bool,
+        arg: Option<usize>,
+    ) -> Result<()> {
+        let expected_lines = if cfg!(feature = "smoke") {
+            3
+        } else {
+            cores_per_client * num_clients
+        };
+
+        for _i in 0..expected_lines {
+            let (prev, matched) =
+                proc.exp_regex(r#"init::memhash: (\d+),(.*),(\d+),(\d+),(\d+)"#)?;
+            *output += prev.as_str();
+            *output += matched.as_str();
+
+            // Append parsed results to a CSV file
+            let write_headers = !Path::new(file_name).exists();
+            let mut csv_file = OpenOptions::new()
+                .append(true)
+                .create(true)
+                .open(file_name)
+                .expect("Can't open file");
+            if write_headers {
+                let row = "thread_id,benchmark,operations,ncores,tot_cores\n";
+                let r = csv_file.write(row.as_bytes());
+                assert!(r.is_ok());
+            }
+
+            let parts: Vec<&str> = matched.split("init::memhash: ").collect();
+            assert!(parts.len() >= 2);
+
+            // let r = csv_file.write(format!("{},", env!("GIT_HASH")).as_bytes());
+            // assert!(r.is_ok());
+
+            // let r = if !is_baseline {
+            //     csv_file.write(format!("{},", num_clients).as_bytes())
+            // } else {
+            //     csv_file.write(format!("{},", 0).as_bytes())
+            // };
+            // assert!(r.is_ok());
+
+            // let r = csv_file.write(format!("{},", num_clients).as_bytes());
+            // assert!(r.is_ok());
+
+            let r = csv_file.write(parts[1].as_bytes());
+            assert!(r.is_ok());
+            let r = csv_file.write("\n".as_bytes());
+            assert!(r.is_ok());
+        }
+        Ok(())
+    }
+
+    let mut test = RackscaleRun::new("userspace-smp".to_string(), built);
+    test.controller_match_fn = controller_match_fn;
+    test.transport = transport;
+    test.use_affinity_shmem = cfg!(feature = "affinity-shmem");
+    test.use_qemu_huge_pages = cfg!(feature = "affinity-shmem");
+    test.file_name = file_name.clone();
+    test.arg = Some(1);
+
+    // arg is nclients
+    fn cmd_fn(num_cores: usize, arg: Option<usize>) -> String {
+        format!("initargs={}X{}", num_cores, arg.unwrap())
+    }
+    fn baseline_timeout_fn(num_cores: usize) -> u64 {
+        120_000 + 500 * num_cores as u64
+    }
+    fn rackscale_timeout_fn(num_cores: usize) -> u64 {
+        240_000 + 1_000 * num_cores as u64
+    }
+    fn mem_fn(num_cores: usize, is_smoke: bool) -> usize {
+        if is_smoke {
+            8192
+        } else {
+            if num_cores < 48 {
+                24 * 1024
+            } else {
+                48 * 1024
+            }
+        }
+    }
+    let bench = RackscaleBench {
+        test,
+        cmd_fn,
+        baseline_timeout_fn,
+        rackscale_timeout_fn,
+        mem_fn,
+    };
+
+    if cfg!(feature = "baseline") {
+        bench.run_bench(true, cfg!(feature = "smoke"));
+    }
+    bench.run_bench(false, cfg!(feature = "smoke"));
+}

@@ -1046,7 +1046,7 @@ fn s10_memhash_benchmark() {
     let _r = std::fs::remove_file(file_name);
 
     let cores = *threads.iter().max().unwrap();
-    let kernel_cmdline = format!("initargs={}", cores);
+    let kernel_cmdline = format!("initargs={}X1", cores); // 1 client
     let mut cmdline = RunnerArgs::new_with_build("userspace-smp", &build)
         .setaffinity(Vec::new())
         .timeout(12_000 + cores as u64 * 3000)
@@ -1092,7 +1092,7 @@ fn s10_memhash_benchmark() {
                 .open(file_name)
                 .expect("Can't open file");
             if write_headers {
-                let row = "thread_id,benchmark,operations,cur_cores,tot_cores\n";
+                let row = "thread_id,benchmark,operations,ncores,tot_cores\n";
                 let r = csv_file.write(row.as_bytes());
                 assert!(r.is_ok());
             }

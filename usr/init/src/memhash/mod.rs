@@ -1,6 +1,8 @@
 use alloc::sync::Arc;
 use alloc::{vec, vec::Vec};
+use core::num::ParseIntError;
 use core::ptr;
+use core::str::FromStr;
 
 use core::sync::atomic::{AtomicUsize, Ordering};
 
@@ -16,10 +18,31 @@ static POOR_MANS_BARRIER: AtomicUsize = AtomicUsize::new(0);
 
 const CHUNK_SIZE: usize = 1024;
 
+pub struct ARGs {
+    pub max_cores: usize,
+    pub max_clients: usize,
+}
+
+impl FromStr for ARGs {
+    type Err = ParseIntError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let coords: Vec<&str> = s.split('X').collect();
+
+        let x_fromstr = coords[0].parse::<usize>()?;
+        let max_clients = coords[1].parse::<usize>()?;
+        Ok(ARGs {
+            max_cores: x_fromstr,
+            max_clients: max_clients,
+        })
+    }
+}
+
 // Hash function
 // Equivalent to 1 operation
 fn hashmem(core_id: usize, buffer: &Arc<Vec<u8>>) {
-    let offset = core_id * CHUNK_SIZE;
+    // let offset = core_id * CHUNK_SIZE;
+    let offset = 0;
     let buffer: [u8; CHUNK_SIZE] = buffer[offset..offset + CHUNK_SIZE].try_into().unwrap();
     let mut hasher = Md5::new();
     hasher.update(buffer);
@@ -60,9 +83,11 @@ struct ThreadParams {
     cur_cores: usize,
     tot_cores: usize,
     buffer: Arc<Vec<u8>>,
+    nclients: usize,
+    max_clients: usize,
 }
 
-pub fn bench(ncores: Option<usize>) {
+pub fn bench(ncores: Option<usize>, max_clients: Option<usize>) {
     let hwthreads = vibrio::syscalls::System::threads().expect("Cant get system topology");
     let s = &vibrio::upcalls::PROCESS_SCHEDULER;
     let cores = ncores.unwrap_or(hwthreads.len());
@@ -110,6 +135,8 @@ pub fn bench(ncores: Option<usize>) {
                         cur_cores: cores_in_use.clone(),
                         tot_cores: ncores.unwrap().clone(),
                         buffer: buffer_ptr.clone(),
+                        nclients: 1,
+                        max_clients: max_clients.unwrap(),
                     };
 
                     thandles.push(

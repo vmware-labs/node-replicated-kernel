@@ -59,7 +59,7 @@ pub(crate) fn dcm_resource_alloc(
 ) -> (Vec<MachineId>, Vec<MachineId>) {
     // TODO(rackscale): make debug assert
     assert!(cores > 0 || memslices > 0);
-    log::debug!(
+    log::info!(
         "Asking DCM for {:?} cores and {:?} memslices for pid {:?}",
         cores,
         memslices,
@@ -146,5 +146,12 @@ pub(crate) fn dcm_resource_alloc(
             received_allocations += 1;
         }
     }
+    log::info!(
+        "Received resources from DCM for {:?} cores and {:?} memslices for pid {:?}, assignments: {:?}",
+        cores,
+        memslices,
+        pid,
+        assignments
+    );
     (dcm_node_for_cores, dcm_node_for_memslices)
 }

@@ -73,11 +73,13 @@ pub(crate) fn dcm_affinity_alloc(
     let mut res = AffinityAllocRes { can_satisfy: false };
 
     // Ask DCM to make sure we can safely take from the shmem allocators
+    log::info!("Calling DCM for affinity alloc request");
     DCM_CLIENT.lock().call(
         DCMOps::AffinityAlloc as RPCType,
         unsafe { &[req.as_bytes()] },
         unsafe { &mut [res.as_mut_bytes()] },
     )?;
+    log::info!("Finished calling DCM for affinity alloc request");
 
     // TODO(rackscales): if it fails, ask for memory from somewhere else??
     // Maybe implement this with a boolean "force" mode?

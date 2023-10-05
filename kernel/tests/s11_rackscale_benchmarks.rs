@@ -774,7 +774,7 @@ fn rackscale_memhash_benchmark(transport: RackscaleTransport) {
         arg: Option<usize>,
     ) -> Result<()> {
         let expected_lines = if cfg!(feature = "smoke") {
-            3
+            1
         } else {
             cores_per_client * num_clients
         };

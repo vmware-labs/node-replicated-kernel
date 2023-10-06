@@ -786,12 +786,12 @@ fn rackscale_memhash_benchmark(transport: RackscaleTransport) {
             1
         } else {
             let tot_cores = cores_per_client * num_clients;
-            (tot_cores * (tot_cores + 1)) / 2
+            ((tot_cores * (tot_cores + 1)) / 2) * 2 - tot_cores // account for decrementing cores
         };
 
         for _i in 0..expected_lines {
             let (prev, matched) =
-                proc.exp_regex(r#"init::memhash: (\d+),(.*),(\d+),(\d+),(\d+)"#)?;
+                proc.exp_regex(r#"init::memhash: (\d+),(.*),(\d+),(\d+),(\d+),(\d+)"#)?;
             *output += prev.as_str();
             *output += matched.as_str();
 
@@ -803,7 +803,7 @@ fn rackscale_memhash_benchmark(transport: RackscaleTransport) {
                 .open(file_name)
                 .expect("Can't open file");
             if write_headers {
-                let row = "git_rev,nclients,cores_per_client,thread_id,benchmark,operations,ncores,tot_cores\n";
+                let row = "git_rev,nclients,cores_per_client,thread_id,benchmark,operations,ncores,tot_cores,time\n";
                 let r = csv_file.write(row.as_bytes());
                 assert!(r.is_ok());
             }

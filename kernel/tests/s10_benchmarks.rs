@@ -1045,7 +1045,8 @@ fn s10_memhash_benchmark() {
     let file_name = "memhash_benchmark.csv";
     let _r = std::fs::remove_file(file_name);
 
-    let cores = *threads.iter().max().unwrap();
+    // let cores = *threads.iter().max().unwrap();
+    let cores = (machine.max_cores() / machine.max_numa_nodes()) * (machine.max_numa_nodes() - 1);
     let kernel_cmdline = format!("initargs={}X1", cores); // 1 client
     let mut cmdline = RunnerArgs::new_with_build("userspace-smp", &build)
         .setaffinity(Vec::new())
@@ -1062,8 +1063,8 @@ fn s10_memhash_benchmark() {
         cmdline = cmdline.cores(2);
         cmdline = cmdline.nodes(2);
     } else {
-        cmdline = cmdline.cores(machine.max_cores());
-        cmdline = cmdline.nodes(machine.max_numa_nodes());
+        cmdline = cmdline.cores(cores);
+        cmdline = cmdline.nodes(machine.max_numa_nodes() - 1);
     }
 
     let mut output = String::new();
@@ -1074,13 +1075,14 @@ fn s10_memhash_benchmark() {
         // `init::memhash: thread_id,memhash,operations,cur_cores,tot_cores`
         // write them to a CSV file
         let expected_lines = if cfg!(feature = "smoke") {
-            3
+            4
         } else {
-            (with_cores * (with_cores + 1)) / 2 // sum from i=1 to n of i
+            ((with_cores * (with_cores + 1)) / 2) * 2 - with_cores // sum from i=1 to n of i, account for decrement
         };
 
         for _i in 0..expected_lines {
-            let (prev, matched) = p.exp_regex(r#"init::memhash: (\d+),(.*),(\d+),(\d+),(\d+)"#)?;
+            let (prev, matched) =
+                p.exp_regex(r#"init::memhash: (\d+),(.*),(\d+),(\d+),(\d+),(\d+)"#)?;
             output += prev.as_str();
             output += matched.as_str();
 
@@ -1092,7 +1094,7 @@ fn s10_memhash_benchmark() {
                 .open(file_name)
                 .expect("Can't open file");
             if write_headers {
-                let row = "git_rev,thread_id,benchmark,operations,ncores,tot_cores\n";
+                let row = "git_rev,thread_id,benchmark,operations,ncores,tot_cores,time\n";
                 let r = csv_file.write(row.as_bytes());
                 assert!(r.is_ok());
             }

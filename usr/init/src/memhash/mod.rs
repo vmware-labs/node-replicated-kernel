@@ -23,21 +23,6 @@ pub struct ARGs {
     pub max_clients: usize,
 }
 
-impl FromStr for ARGs {
-    type Err = ParseIntError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let coords: Vec<&str> = s.split('X').collect();
-
-        let x_fromstr = coords[0].parse::<usize>()?;
-        let max_clients = coords[1].parse::<usize>()?;
-        Ok(ARGs {
-            max_cores: x_fromstr,
-            max_clients: max_clients,
-        })
-    }
-}
-
 // Hash function
 // Equivalent to 1 operation
 fn hashmem(core_id: usize, buffer: &Arc<Vec<u8>>) {
@@ -87,15 +72,19 @@ struct ThreadParams {
     max_clients: usize,
 }
 
-pub fn bench(ncores: Option<usize>, max_clients: Option<usize>) {
+pub fn bench() {
+    // let machine = Machine::determine();
+
     let hwthreads = vibrio::syscalls::System::threads().expect("Cant get system topology");
     let s = &vibrio::upcalls::PROCESS_SCHEDULER;
-    let cores = ncores.unwrap_or(hwthreads.len());
+    let cores = hwthreads.len();
     let current_core = vibrio::syscalls::System::core_id().expect("Can't get core id");
     let mut core_ids = Vec::with_capacity(cores);
 
+    // assert!(false, "hwthreads: {:?}, cores: {}", hwthreads, cores);
+
     // Generate byte vector of values
-    let mem_region: Arc<Vec<u8>> = Arc::new(vec![0; ncores.unwrap() * CHUNK_SIZE]);
+    let mem_region: Arc<Vec<u8>> = Arc::new(vec![0; cores * CHUNK_SIZE]);
 
     for hwthread in hwthreads.iter().take(cores) {
         // Reserve next core
@@ -133,10 +122,10 @@ pub fn bench(ncores: Option<usize>, max_clients: Option<usize>) {
                     let params = ThreadParams {
                         core_id: core_id,
                         cur_cores: cores_in_use.clone(),
-                        tot_cores: ncores.unwrap().clone(),
+                        tot_cores: cores.clone(),
                         buffer: buffer_ptr.clone(),
                         nclients: 1,
-                        max_clients: max_clients.unwrap(),
+                        max_clients: 1, //PLACEHOLDER
                     };
 
                     thandles.push(

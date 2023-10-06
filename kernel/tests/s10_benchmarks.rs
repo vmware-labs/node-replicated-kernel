@@ -1092,14 +1092,14 @@ fn s10_memhash_benchmark() {
                 .open(file_name)
                 .expect("Can't open file");
             if write_headers {
-                let row = "thread_id,benchmark,operations,ncores,tot_cores\n";
+                let row = "git_rev,thread_id,benchmark,operations,ncores,tot_cores\n";
                 let r = csv_file.write(row.as_bytes());
                 assert!(r.is_ok());
             }
 
             let parts: Vec<&str> = matched.split("init::memhash: ").collect();
-            // let r = csv_file.write(format!("{},", env!("GIT_HASH")).as_bytes());
-            // assert!(r.is_ok());
+            let r = csv_file.write(format!("{},", env!("GIT_HASH")).as_bytes());
+            assert!(r.is_ok());
             let r = csv_file.write(parts[1].as_bytes());
             assert!(r.is_ok());
             let r = csv_file.write("\n".as_bytes());

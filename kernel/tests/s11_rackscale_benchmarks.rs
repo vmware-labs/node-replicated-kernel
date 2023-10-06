@@ -15,7 +15,7 @@ use std::path::Path;
 use rexpect::errors::*;
 use rexpect::session::PtySession;
 
-use testutils::builder::BuildArgs;
+use testutils::builder::{BuildArgs, Machine};
 use testutils::rackscale_runner::{RackscaleBench, RackscaleRun};
 use testutils::runner_args::RackscaleTransport;
 
@@ -752,12 +752,21 @@ fn s11_rackscale_ethernet_memhash_benchmark() {
 
 #[cfg(not(feature = "baremetal"))]
 fn rackscale_memhash_benchmark(transport: RackscaleTransport) {
-    let file_name = String::from("rackscale_memhash_benchmark.csv");
+    let machine = Machine::determine();
+    let max_cores = machine.max_cores();
+    let max_numa_nodes = machine.max_numa_nodes();
+    println!(
+        "Max cores: {:?}, Max numa nodes: {:?}",
+        max_cores, max_numa_nodes
+    );
+
+    let file_name = format!("rackscale_{}_memhash_benchmark.csv", transport.to_string());
     let _ignore = std::fs::remove_file(file_name.clone());
 
     let mut build = BuildArgs::default()
         .module("init")
         .user_feature("memhash")
+        .set_rackscale(true)
         .release();
     if cfg!(feature = "smoke") {
         build = build.user_feature("smoke");
@@ -770,13 +779,14 @@ fn rackscale_memhash_benchmark(transport: RackscaleTransport) {
         cores_per_client: usize,
         num_clients: usize,
         file_name: &str,
-        is_baseline: bool,
-        arg: Option<usize>,
+        _is_baseline: bool,
+        _arg: Option<()>,
     ) -> Result<()> {
         let expected_lines = if cfg!(feature = "smoke") {
             1
         } else {
-            cores_per_client * num_clients
+            let tot_cores = cores_per_client * num_clients;
+            (tot_cores * (tot_cores + 1)) / 2
         };
 
         for _i in 0..expected_lines {
@@ -793,7 +803,7 @@ fn rackscale_memhash_benchmark(transport: RackscaleTransport) {
                 .open(file_name)
                 .expect("Can't open file");
             if write_headers {
-                let row = "thread_id,benchmark,operations,ncores,tot_cores\n";
+                let row = "git_rev,nclients,cores_per_client,thread_id,benchmark,operations,ncores,tot_cores\n";
                 let r = csv_file.write(row.as_bytes());
                 assert!(r.is_ok());
             }
@@ -801,18 +811,14 @@ fn rackscale_memhash_benchmark(transport: RackscaleTransport) {
             let parts: Vec<&str> = matched.split("init::memhash: ").collect();
             assert!(parts.len() >= 2);
 
-            // let r = csv_file.write(format!("{},", env!("GIT_HASH")).as_bytes());
-            // assert!(r.is_ok());
+            let r = csv_file.write(format!("{},", env!("GIT_HASH")).as_bytes());
+            assert!(r.is_ok());
 
-            // let r = if !is_baseline {
-            //     csv_file.write(format!("{},", num_clients).as_bytes())
-            // } else {
-            //     csv_file.write(format!("{},", 0).as_bytes())
-            // };
-            // assert!(r.is_ok());
+            let r = csv_file.write(format!("{},", num_clients).as_bytes());
+            assert!(r.is_ok());
 
-            // let r = csv_file.write(format!("{},", num_clients).as_bytes());
-            // assert!(r.is_ok());
+            let r = csv_file.write(format!("{},", cores_per_client).as_bytes());
+            assert!(r.is_ok());
 
             let r = csv_file.write(parts[1].as_bytes());
             assert!(r.is_ok());
@@ -822,45 +828,15 @@ fn rackscale_memhash_benchmark(transport: RackscaleTransport) {
         Ok(())
     }
 
-    let mut test = RackscaleRun::new("userspace-smp".to_string(), built);
-    test.controller_match_fn = controller_match_fn;
-    test.transport = transport;
-    test.use_affinity_shmem = cfg!(feature = "affinity-shmem");
-    test.use_qemu_huge_pages = cfg!(feature = "affinity-shmem");
-    test.file_name = file_name.clone();
-    test.arg = Some(1);
-
-    // arg is nclients
-    fn cmd_fn(num_cores: usize, arg: Option<usize>) -> String {
-        format!("initargs={}X{}", num_cores, arg.unwrap())
-    }
-    fn baseline_timeout_fn(num_cores: usize) -> u64 {
-        120_000 + 500 * num_cores as u64
-    }
-    fn rackscale_timeout_fn(num_cores: usize) -> u64 {
-        240_000 + 1_000 * num_cores as u64
-    }
-    fn mem_fn(num_cores: usize, is_smoke: bool) -> usize {
-        if is_smoke {
-            8192
-        } else {
-            if num_cores < 48 {
-                24 * 1024
-            } else {
-                48 * 1024
-            }
-        }
-    }
-    let bench = RackscaleBench {
-        test,
-        cmd_fn,
-        baseline_timeout_fn,
-        rackscale_timeout_fn,
-        mem_fn,
-    };
-
-    if cfg!(feature = "baseline") {
-        bench.run_bench(true, cfg!(feature = "smoke"));
-    }
-    bench.run_bench(false, cfg!(feature = "smoke"));
+    let mut test_run = RackscaleRun::new("userspace-smp".to_string(), built);
+    test_run.controller_match_fn = controller_match_fn;
+    test_run.transport = transport;
+    test_run.use_affinity_shmem = cfg!(feature = "affinity-shmem");
+    test_run.use_qemu_huge_pages = cfg!(feature = "affinity-shmem");
+    test_run.file_name = file_name.clone();
+    test_run.num_clients = max_numa_nodes - 1; // Reserve node for controller
+    test_run.cores_per_client = max_cores / max_numa_nodes; // May actually be max_cores / num_hwthread_per_cpu
+    test_run.client_timeout = 120_000;
+    test_run.controller_timeout = 120_000;
+    test_run.run_rackscale();
 }

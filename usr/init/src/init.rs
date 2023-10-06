@@ -1028,14 +1028,7 @@ pub extern "C" fn _start() -> ! {
     vmops::unmaplat::bench(ncores);
 
     #[cfg(feature = "memhash")]
-    {
-        use core::str::FromStr;
-        let (max_cores, max_clients) = match memhash::ARGs::from_str(pinfo.cmdline) {
-            Ok(args) => (Some(args.max_cores), Some(args.max_clients)),
-            Err(_) => unreachable!(),
-        };
-        memhash::bench(max_cores, max_clients);
-    }
+    memhash::bench();
 
     #[cfg(feature = "test-print")]
     print_test();

@@ -3,5 +3,6 @@
 
 pub mod allocate_physical;
 pub mod print;
+pub mod release_core;
 pub mod release_physical;
 pub mod request_core;

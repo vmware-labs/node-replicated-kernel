@@ -47,15 +47,17 @@ pub(crate) enum KernelRpc {
     ReleasePhysical = 14,
     /// Allocate a core for a process
     RequestCore = 15,
+    /// Release a core from a process.
+    ReleaseCore = 16,
 
     /// Get the hardware threads for the rack
-    GetHardwareThreads = 16,
+    GetHardwareThreads = 17,
 
     /// send process logs reference to client
-    GetShmemStructure = 17,
+    GetShmemStructure = 18,
 
     /// request shmem frames
-    GetShmemFrames = 18,
+    GetShmemFrames = 19,
 }
 
 impl TryFrom<RPCType> for KernelRpc {
@@ -78,11 +80,12 @@ impl TryFrom<RPCType> for KernelRpc {
             11 => Ok(KernelRpc::MkDir),
             12 => Ok(KernelRpc::Log),
             13 => Ok(KernelRpc::AllocatePhysical),
-            15 => Ok(KernelRpc::ReleasePhysical),
+            14 => Ok(KernelRpc::ReleasePhysical),
             15 => Ok(KernelRpc::RequestCore),
-            16 => Ok(KernelRpc::GetHardwareThreads),
-            17 => Ok(KernelRpc::GetShmemStructure),
-            18 => Ok(KernelRpc::GetShmemFrames),
+            16 => Ok(KernelRpc::ReleaseCore),
+            17 => Ok(KernelRpc::GetHardwareThreads),
+            18 => Ok(KernelRpc::GetShmemStructure),
+            19 => Ok(KernelRpc::GetShmemFrames),
             _ => Err(KError::InvalidRpcType),
         }
     }

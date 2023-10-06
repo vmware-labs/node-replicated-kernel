@@ -98,10 +98,12 @@ pub enum ProcessOperation {
     GetProcessInfo = 6,
     /// Request a new core for the process.
     RequestCore = 7,
+    /// Request a new core for the process.
+    ReleaseCore = 8,
     /// Allocate a physical memory page as a mem object to the process.
-    AllocatePhysical = 8,
+    AllocatePhysical = 9,
     /// Release a physical memory page from the process.
-    ReleasePhysical = 9,
+    ReleasePhysical = 10,
 }
 
 impl ProcessOperation {
@@ -115,8 +117,9 @@ impl ProcessOperation {
             5 => Some(Self::SubscribeEvent),
             6 => Some(Self::GetProcessInfo),
             7 => Some(Self::RequestCore),
-            8 => Some(Self::AllocatePhysical),
-            9 => Some(Self::ReleasePhysical),
+            8 => Some(Self::ReleaseCore),
+            9 => Some(Self::AllocatePhysical),
+            10 => Some(Self::ReleasePhysical),
             _ => None,
         }
     }

@@ -27,6 +27,7 @@ use super::fileops::rename::rpc_rename;
 use super::fileops::rw::{rpc_read, rpc_readat, rpc_write, rpc_writeat};
 use super::processops::allocate_physical::rpc_allocate_physical;
 use super::processops::print::rpc_log;
+use super::processops::release_core::rpc_release_core;
 use super::processops::release_physical::rpc_release_physical;
 use super::processops::request_core::rpc_request_core;
 use super::systemops::get_hardware_threads::rpc_get_hardware_threads;
@@ -302,6 +303,11 @@ impl ProcessDispatch<u64> for Arch86LwkSystemCall {
     fn request_core(&self, _core_id: u64, entry_point: u64) -> KResult<(u64, u64)> {
         let pid = current_pid()?;
         rpc_request_core(pid, false, entry_point).map_err(|e| e.into())
+    }
+
+    fn release_core(&self, core_id: u64) -> KResult<(u64, u64)> {
+        let pid = current_pid()?;
+        rpc_release_core(pid, core_id as kpi::system::ThreadId).map_err(|e| e.into())
     }
 
     fn allocate_physical(&self, page_size: u64, affinity: u64) -> KResult<(u64, u64)> {

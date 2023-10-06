@@ -81,6 +81,7 @@ pub(crate) enum Op {
         Option<kpi::system::GlobalThreadId>,
         VAddr,
     ),
+    SchedReleaseCore(Pid, Option<atopology::NodeId>, kpi::system::GlobalThreadId),
 }
 
 #[derive(Debug, Clone)]
@@ -89,6 +90,7 @@ pub(crate) enum NodeResult {
     PidReturned,
     CoreInfo(CoreInfo),
     CoreAllocated(kpi::system::GlobalThreadId),
+    CoreReleased,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -135,6 +137,25 @@ impl KernelNode {
 
                 match response {
                     Ok(NodeResult::CoreAllocated(rgtid)) => Ok(rgtid),
+                    Err(e) => Err(e),
+                    Ok(_) => unreachable!("Got unexpected response"),
+                }
+            })
+    }
+
+    pub(crate) fn release_core_from_process(
+        pid: Pid,
+        affinity: Option<atopology::NodeId>,
+        gtid: kpi::system::GlobalThreadId,
+    ) -> Result<(), KError> {
+        NR_REPLICA
+            .get()
+            .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
+                let op = Op::SchedReleaseCore(pid, affinity, gtid);
+                let response = replica.execute_mut(op, *token);
+
+                match response {
+                    Ok(NodeResult::CoreReleased) => Ok(()),
                     Err(e) => Err(e),
                     Ok(_) => unreachable!("Got unexpected response"),
                 }
@@ -202,6 +223,25 @@ impl Dispatch for KernelNode {
                 }
             }
             Op::SchedAllocateCore(_pid, _affinity, _gtid, _entry_point) => unimplemented!(),
+            Op::SchedReleaseCore(pid, _affinity, gtid) => {
+                #[cfg(not(feature = "rackscale"))]
+                assert!(gtid < crate::arch::MAX_CORES, "Invalid gtid");
+
+                match self.scheduler_map.get(&gtid) {
+                    Some(cinfo) => {
+                        trace!("Op::SchedReleaseCore pid={}, gtid={}", pid, gtid);
+
+                        if cinfo.pid == pid {
+                            let r = self.scheduler_map.remove(&gtid);
+                            assert!(!r.is_none(), "remove() -> None");
+                            Ok(NodeResult::CoreReleased)
+                        } else {
+                            Err(KError::CoreAllocatedToDifferentProcess)
+                        }
+                    }
+                    None => Err(KError::CoreNotAllocated),
+                }
+            }
         }
     }
 }

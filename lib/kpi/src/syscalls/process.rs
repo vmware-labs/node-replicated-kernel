@@ -33,6 +33,24 @@ impl Process {
         }
     }
 
+    /// Request to release on `core_id` that was previously requested.
+    pub fn release_core(core_id: usize) -> Result<(), SystemCallError> {
+        let (r, _unused, _eid) = unsafe {
+            syscall!(
+                SystemCall::Process as u64,
+                ProcessOperation::ReleaseCore as u64,
+                core_id as u64,
+                3
+            )
+        };
+
+        if r == 0 {
+            Ok(())
+        } else {
+            Err(SystemCallError::from(r))
+        }
+    }
+
     /// Print `buffer` on the console.
     pub fn print(buffer: &str) -> Result<(), SystemCallError> {
         let r = unsafe {

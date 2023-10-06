@@ -47,6 +47,10 @@ impl ProcessDispatch<u64> for UnixSystemCalls {
         todo!()
     }
 
+    fn release_core(&self, _core_id: u64) -> KResult<(u64, u64)> {
+        todo!()
+    }
+
     fn allocate_physical(&self, _page_size: u64, _affinity: u64) -> KResult<(u64, u64)> {
         todo!()
     }

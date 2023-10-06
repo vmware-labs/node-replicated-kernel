@@ -16,7 +16,6 @@ use super::super::kernelrpc::*;
 use crate::arch::process::Ring3Process;
 use crate::arch::rackscale::CLIENT_STATE;
 use crate::error::{KError, KResult};
-use crate::fs::fd::FileDescriptor;
 use crate::memory::backends::PhysicalPageProvider;
 use crate::memory::{Frame, PAddr, BASE_PAGE_SIZE};
 use crate::nrproc::NrProcess;
@@ -28,7 +27,7 @@ pub(crate) struct AllocatePhysicalReq {
     pub size: u64,
     pub affinity: u64,
 }
-unsafe_abomonate!(AllocatePhysicalReq: size, affinity);
+unsafe_abomonate!(AllocatePhysicalReq: pid, size, affinity);
 
 /// RPC to forward physical memory allocation request to controller.
 pub(crate) fn rpc_allocate_physical(pid: Pid, size: u64, affinity: u64) -> KResult<(u64, u64)> {

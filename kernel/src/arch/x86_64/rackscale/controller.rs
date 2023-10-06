@@ -211,6 +211,9 @@ fn register_rpcs(server: &mut Server) {
         .register(KernelRpc::RequestCore as RPCType, &REQUEST_CORE_HANDLER)
         .unwrap();
     server
+        .register(KernelRpc::ReleaseCore as RPCType, &REQUEST_CORE_HANDLER)
+        .unwrap();
+    server
         .register(
             KernelRpc::GetHardwareThreads as RPCType,
             &GET_HARDWARE_THREADS_HANDLER,

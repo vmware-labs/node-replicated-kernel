@@ -110,6 +110,7 @@ pub(crate) trait ProcessDispatch<W: Into<u64> + LowerHex + Debug + Copy + Clone>
     fn allocate_vector(&self, vector: W, core: W) -> KResult<(W, W)>;
     fn get_process_info(&self, vaddr_buf: W, vaddr_buf_len: W) -> KResult<(W, W)>;
     fn request_core(&self, core_id: W, entry_point: W) -> KResult<(W, W)>;
+    fn release_core(&self, cord_id: W) -> KResult<(W, W)>;
     fn allocate_physical(&self, page_size: W, affinity: W) -> KResult<(W, W)>;
     fn release_physical(&self, page_id: W) -> KResult<(W, W)>;
     fn exit(&self, code: W) -> KResult<(W, W)>;
@@ -123,6 +124,7 @@ enum ProcessOperationArgs<W> {
     AllocateVector(W, W),
     GetProcessInfo(W, W),
     RequestCore(W, W),
+    ReleaseCore(W),
     AllocatePhysical(W, W),
     ReleasePhysical(W),
 }
@@ -144,6 +146,7 @@ impl<W: Into<u64> + LowerHex + Debug + Copy + Clone> ProcessOperationArgs<W> {
             ProcessOperation::Exit => Ok(Self::Exit(arg2)),
             ProcessOperation::GetProcessInfo => Ok(Self::GetProcessInfo(arg2, arg3)),
             ProcessOperation::RequestCore => Ok(Self::RequestCore(arg2, arg3)),
+            ProcessOperation::ReleaseCore => Ok(Self::ReleaseCore(arg2)),
             ProcessOperation::AllocatePhysical => Ok(Self::AllocatePhysical(arg2, arg3)),
             ProcessOperation::ReleasePhysical => Ok(Self::ReleasePhysical(arg2)),
             ProcessOperation::SubscribeEvent => {
@@ -276,6 +279,7 @@ pub(crate) trait SystemCallDispatch<W: Into<u64> + LowerHex + Debug + Copy + Clo
                 self.get_process_info(vaddr_buf, vaddr_len)
             }
             Poa::RequestCore(core_id, entry_point) => self.request_core(core_id, entry_point),
+            Poa::ReleaseCore(core_id) => self.release_core(core_id),
             Poa::AllocatePhysical(page_size, affinity) => {
                 self.allocate_physical(page_size, affinity)
             }

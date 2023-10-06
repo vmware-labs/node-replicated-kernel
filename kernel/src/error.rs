@@ -23,6 +23,10 @@ pub enum KError {
     GlobalMemoryNotSet,
     /// The requested core is already allocated by another process
     CoreAlreadyAllocated,
+    /// The core requested for release is allocated to a different process
+    CoreAllocatedToDifferentProcess,
+    /// The core requested for release has not been allocated
+    CoreNotAllocated,
     /// Ran out of memory while performing an allocation
     OutOfMemory,
     /// Replica is not set-up in the KCB

@@ -196,6 +196,26 @@ impl<T: Arch86ProcessDispatch> ProcessDispatch<u64> for T {
         Ok((core_id, 0))
     }
 
+    fn release_core(&self, core_id: u64) -> Result<(u64, u64), KError> {
+        let mtid: usize = kpi::system::mtid_from_gtid(core_id.try_into().unwrap());
+        let mut affinity = None;
+        for thread in atopology::MACHINE_TOPOLOGY.threads() {
+            if thread.id == mtid {
+                affinity = Some(thread.node_id.unwrap_or(0));
+            }
+        }
+        let affinity = affinity.ok_or(KError::InvalidGlobalThreadId)?;
+        let pid = current_pid()?;
+
+        nr::KernelNode::release_core_from_process(
+            pid,
+            Some(affinity),
+            core_id as kpi::system::ThreadId,
+        )?;
+
+        Ok((0, 0))
+    }
+
     fn allocate_physical(&self, page_size: u64, _affinity: u64) -> Result<(u64, u64), KError> {
         let page_size: usize = page_size.try_into().unwrap_or(0);
         //let affinity: usize = arg3.try_into().unwrap_or(0);

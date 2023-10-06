@@ -11,8 +11,9 @@ use x86::bits64::paging::VAddr;
 
 use lineup::tls2::{Environment, SchedulerControlBlock};
 
-// use base64ct::{Base64, Encoding};
 use md5::{Digest, Md5};
+
+use vibrio::system::mtid_from_gtid;
 
 static POOR_MANS_BARRIER: AtomicUsize = AtomicUsize::new(0);
 
@@ -25,14 +26,15 @@ pub struct ARGs {
 
 // Hash function
 // Equivalent to 1 operation
+// Currently not doing anything with the hash
 fn hashmem(core_id: usize, buffer: &Arc<Vec<u8>>) {
-    // let offset = core_id * CHUNK_SIZE;
-    let offset = 0;
+    let mtid = mtid_from_gtid(core_id);
+
+    let offset = mtid * CHUNK_SIZE;
     let buffer: [u8; CHUNK_SIZE] = buffer[offset..offset + CHUNK_SIZE].try_into().unwrap();
     let mut hasher = Md5::new();
     hasher.update(buffer);
     let hash = hasher.finalize();
-    // Base64::encode_string(&hash);
 }
 
 fn thread_routine(
@@ -90,8 +92,12 @@ pub fn bench() {
     let current_core = vibrio::syscalls::System::core_id().expect("Can't get core id");
     let mut core_ids = Vec::with_capacity(cores);
 
-    // Generate byte vector of values
-    let mem_region: Arc<Vec<u8>> = Arc::new(vec![0; cores * CHUNK_SIZE]);
+    // Allocate memory region and populate it
+    let mut mem_region: Vec<u8> = vec![0; cores * CHUNK_SIZE];
+    for i in 0..cores * CHUNK_SIZE {
+        mem_region[i] = (i % 256) as u8;
+    }
+    let mem_region: Arc<Vec<u8>> = Arc::new(mem_region);
 
     let mut time = 0;
 

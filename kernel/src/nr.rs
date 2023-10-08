@@ -233,7 +233,7 @@ impl Dispatch for KernelNode {
 
                         if cinfo.pid == pid {
                             let r = self.scheduler_map.remove(&gtid);
-                            assert!(!r.is_none(), "remove() -> None");
+                            assert!(r.is_some(), "remove() -> None");
                             Ok(NodeResult::CoreReleased)
                         } else {
                             Err(KError::CoreAllocatedToDifferentProcess)

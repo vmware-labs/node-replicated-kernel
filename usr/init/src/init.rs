@@ -311,6 +311,45 @@ fn concurrent_shootdown_test() {
     }
 }
 
+fn core_alloc_test() {
+    let s = &vibrio::upcalls::PROCESS_SCHEDULER;
+
+    let threads = vibrio::syscalls::System::threads().expect("Can't get system topology");
+    let current_gtid = vibrio::syscalls::System::core_id().expect("Can't get core id");
+    let current_mid = kpi::system::mid_from_gtid(current_gtid);
+    let pinfo = vibrio::syscalls::Process::process_info().expect("Can't read process info");
+
+    // for rackscale, this ensures only one process tries to take all threads.
+    if pinfo.pid == 0 {
+        // for rackscale, core given will likely not be core asked for, so we'll do some bookkeeping.
+        let mut core_ids = Vec::with_capacity(threads.len());
+
+        for thread in threads.iter() {
+            if thread.id != current_gtid {
+                assert!(vibrio::syscalls::Process::release_core(thread.id).is_err());
+
+                let r = vibrio::syscalls::Process::request_core(
+                    thread.id,
+                    VAddr::from(vibrio::upcalls::upcall_while_enabled as *const fn() as u64),
+                );
+                match r {
+                    Ok(ctoken) => {
+                        info!("Spawned core on {:?} <-> {}", ctoken, thread.id);
+                        core_ids.push(ctoken.gtid());
+
+                        let r = vibrio::syscalls::Process::release_core(ctoken.gtid());
+                        match r {
+                            Ok(()) => info!("Released core {:?}", ctoken.gtid()),
+                            Err(_e) => panic!("Failed to release core {}", ctoken.gtid()),
+                        }
+                    }
+                    Err(_e) => panic!("Failed to spawn to core {}", thread.id),
+                }
+            }
+        }
+    }
+}
+
 fn scheduler_smp_test() {
     let s = &vibrio::upcalls::PROCESS_SCHEDULER;
 
@@ -1015,6 +1054,9 @@ pub extern "C" fn _start() -> ! {
 
     #[cfg(feature = "test-concurrent-shootdown")]
     concurrent_shootdown_test();
+
+    #[cfg(feature = "test-core-alloc")]
+    core_alloc_test();
 
     #[cfg(feature = "test-scheduler")]
     scheduler_test();

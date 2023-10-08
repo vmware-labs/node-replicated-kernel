@@ -98,6 +98,36 @@ fn s06_rackscale_phys_alloc_test() {
 
 #[cfg(not(feature = "baremetal"))]
 #[test]
+fn s06_rackscale_core_alloc_test() {
+    let built = BuildArgs::default()
+        .module("init")
+        .user_feature("test-core-alloc")
+        .set_rackscale(true)
+        .release()
+        .build();
+
+    fn controller_match_fn(
+        proc: &mut PtySession,
+        output: &mut String,
+        _cores_per_client: usize,
+        _num_clients: usize,
+        _file_name: &str,
+        _is_baseline: bool,
+        _arg: Option<()>,
+    ) -> Result<()> {
+        *output += proc.exp_string("Released core")?.as_str();
+        Ok(())
+    }
+
+    let mut test_run = RackscaleRun::new("userspace-smp".to_string(), built);
+    test_run.controller_match_fn = controller_match_fn;
+    let machine = Machine::determine();
+    test_run.cores_per_client = core::cmp::min(4, (machine.max_cores() - 1) / 2);
+    test_run.num_clients = 2;
+}
+
+#[cfg(not(feature = "baremetal"))]
+#[test]
 fn s06_rackscale_shmem_fs_test() {
     rackscale_fs_test(RackscaleTransport::Shmem);
 }

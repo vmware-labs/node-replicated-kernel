@@ -34,6 +34,8 @@ impl Process {
     }
 
     /// Request to release on `core_id` that was previously requested.
+    /// This is an unsafe function and should only be called when the
+    /// executor spawned on the thread has completed.
     pub fn release_core(core_id: usize) -> Result<(), SystemCallError> {
         let (r, _unused, _eid) = unsafe {
             syscall!(

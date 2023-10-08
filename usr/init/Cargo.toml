@@ -47,6 +47,7 @@ test-fs = []
 test-fs-prop = []
 test-pmem-alloc = []
 test-phys-alloc = []
+test-core-alloc = []
 test-rackscale-shootdown = []
 test-concurrent-shootdown = []
 
@@ -76,7 +77,7 @@ all-tests = [
     "test-rump-net",
     "test-fs",
     "test-phys-alloc",
-    # "test-request-core-remote", TODO: used only for rackscale tests right now
+    "test-core-alloc",
     #"test-fs-prop", # needs userspace
     #"test-pmem-alloc", # needs SMP
 ]

@@ -16,6 +16,7 @@ use rexpect::errors::*;
 use rexpect::session::PtySession;
 
 use testutils::builder::{BuildArgs, Machine};
+use testutils::helpers::{DCMConfig, DCMSolver};
 use testutils::rackscale_runner::{RackscaleBench, RackscaleRun};
 use testutils::runner_args::RackscaleTransport;
 
@@ -467,17 +468,48 @@ struct MemcachedInternalConfig {
 #[test]
 #[cfg(not(feature = "baremetal"))]
 fn s11_rackscale_memcached_benchmark_internal() {
-    rackscale_memcached_benchmark(RackscaleTransport::Shmem);
+    rackscale_memcached_benchmark(RackscaleTransport::Shmem, None);
+}
+
+#[test]
+#[cfg(not(feature = "baremetal"))]
+fn s11_rackscale_dcmconfig_benchmark() {
+    let mut dcm_config = DCMConfig::default();
+
+    dcm_config.solver = DCMSolver::DCMloc;
+    rackscale_memcached_benchmark(RackscaleTransport::Shmem, Some(dcm_config.clone()));
+
+    dcm_config.solver = DCMSolver::DCMcap;
+    rackscale_memcached_benchmark(RackscaleTransport::Shmem, Some(dcm_config.clone()));
+
+    dcm_config.solver = DCMSolver::Random;
+    rackscale_memcached_benchmark(RackscaleTransport::Shmem, Some(dcm_config.clone()));
+
+    dcm_config.solver = DCMSolver::RoundRobin;
+    rackscale_memcached_benchmark(RackscaleTransport::Shmem, Some(dcm_config.clone()));
+
+    dcm_config.solver = DCMSolver::FillCurrent;
+    rackscale_memcached_benchmark(RackscaleTransport::Shmem, Some(dcm_config.clone()));
 }
 
 #[cfg(not(feature = "baremetal"))]
-fn rackscale_memcached_benchmark(transport: RackscaleTransport) {
+fn rackscale_memcached_benchmark(transport: RackscaleTransport, dcm_config: Option<DCMConfig>) {
     let is_smoke = cfg!(feature = "smoke");
 
-    let file_name = format!(
-        "rackscale_{}_memcached_benchmark.csv",
-        transport.to_string(),
-    );
+    let file_name = match dcm_config {
+        Some(config) => match config.solver {
+            DCMSolver::DCMloc => "rackscale_DCMloc_memcached_benchmark.csv".to_string(),
+            DCMSolver::DCMcap => "rackscale_DCMcap_memcached_benchmark.csv".to_string(),
+            DCMSolver::Random => "rackscale_Random_memcached_benchmark.csv".to_string(),
+            DCMSolver::RoundRobin => "rackscale_RoundRobin_memcached_benchmark.csv".to_string(),
+            DCMSolver::FillCurrent => "rackscale_FillCurrent_memcached_benchmark.csv".to_string(),
+        },
+        None => format!(
+            "rackscale_{}_memcached_benchmark.csv",
+            transport.to_string(),
+        ),
+    };
+
     let _ignore = std::fs::remove_file(file_name.clone());
 
     let built = BuildArgs::default()
@@ -485,6 +517,7 @@ fn rackscale_memcached_benchmark(transport: RackscaleTransport) {
         .user_feature("rkapps:memcached-bench")
         .kernel_feature("pages-4k")
         .release()
+        .set_rackscale(true)
         .build();
 
     fn controller_match_fn(
@@ -614,43 +647,62 @@ fn rackscale_memcached_benchmark(transport: RackscaleTransport) {
     test.arg = Some(config);
     test.run_dhcpd_for_baseline = true;
 
-    fn cmd_fn(num_cores: usize, arg: Option<MemcachedInternalConfig>) -> String {
-        let config = arg.expect("missing leveldb config");
-        format!(
-            r#"init=memcachedbench.bin initargs={} appcmd='--x-benchmark-mem={} --x-benchmark-queries={}'"#,
-            num_cores, config.mem_size, config.num_queries
-        )
-    }
+    match dcm_config {
+        Some(dcm_config) => {
+            test.dcm_config = Some(dcm_config);
+            test.shmem_size /= 2;
+            // let machine = Machine::determine();
+            // let max_cores = machine.max_cores();
+            // let max_numa_nodes = machine.max_numa_nodes();
 
-    fn baseline_timeout_fn(num_cores: usize) -> u64 {
-        120_000 + 500 * num_cores as u64
-    }
-
-    fn rackscale_timeout_fn(num_cores: usize) -> u64 {
-        240_000 + 5_000 * num_cores as u64
-    }
-
-    fn mem_fn(num_cores: usize, is_smoke: bool) -> usize {
-        if is_smoke {
-            8192
-        } else {
-            // Memory must also be divisible by number of nodes, which could be 1, 2, 3, or 4
-            2048 * (((((num_cores + 1) / 2) + 3 - 1) / 3) * 3)
+            // test.num_clients = max_numa_nodes - 1; // Reserve node for controller
+            // test.cores_per_client = max_cores / max_numa_nodes; // May actually be max_cores / num_hwthread_per_cpu
+            test.num_clients = 3;
+            test.cores_per_client = 2;
+            test.client_timeout = 60_000;
+            test.controller_timeout = 60_000;
+            test.run_rackscale();
         }
-    }
+        None => {
+            fn cmd_fn(num_cores: usize, arg: Option<MemcachedInternalConfig>) -> String {
+                let config = arg.expect("missing leveldb config");
+                format!(
+                    r#"init=memcachedbench.bin initargs={} appcmd='--x-benchmark-mem={} --x-benchmark-queries={}'"#,
+                    num_cores, config.mem_size, config.num_queries
+                )
+            }
 
-    let bench = RackscaleBench {
-        test,
-        cmd_fn,
-        baseline_timeout_fn,
-        rackscale_timeout_fn,
-        mem_fn,
+            fn baseline_timeout_fn(num_cores: usize) -> u64 {
+                120_000 + 500 * num_cores as u64
+            }
+
+            fn rackscale_timeout_fn(num_cores: usize) -> u64 {
+                240_000 + 5_000 * num_cores as u64
+            }
+
+            fn mem_fn(num_cores: usize, is_smoke: bool) -> usize {
+                if is_smoke {
+                    8192
+                } else {
+                    // Memory must also be divisible by number of nodes, which could be 1, 2, 3, or 4
+                    2048 * (((((num_cores + 1) / 2) + 3 - 1) / 3) * 3)
+                }
+            }
+
+            let bench = RackscaleBench {
+                test,
+                cmd_fn,
+                baseline_timeout_fn,
+                rackscale_timeout_fn,
+                mem_fn,
+            };
+
+            if cfg!(feature = "baseline") {
+                bench.run_bench(true, is_smoke);
+            }
+            bench.run_bench(false, is_smoke);
+        }
     };
-
-    if cfg!(feature = "baseline") {
-        bench.run_bench(true, is_smoke);
-    }
-    bench.run_bench(false, is_smoke);
 }
 
 #[test]
@@ -756,7 +808,7 @@ fn rackscale_memhash_benchmark(transport: RackscaleTransport) {
     let max_cores = machine.max_cores();
     let max_numa_nodes = machine.max_numa_nodes();
     println!(
-        "Max cores: {:?}, Max numa nodes: {:?}",
+        "\nMax cores: {:?}, Max numa nodes: {:?}",
         max_cores, max_numa_nodes
     );
 

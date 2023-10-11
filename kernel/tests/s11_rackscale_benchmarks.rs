@@ -650,17 +650,19 @@ fn rackscale_memcached_benchmark(transport: RackscaleTransport, dcm_config: Opti
     match dcm_config {
         Some(dcm_config) => {
             test.dcm_config = Some(dcm_config);
-            test.shmem_size /= 2;
+
             // let machine = Machine::determine();
             // let max_cores = machine.max_cores();
             // let max_numa_nodes = machine.max_numa_nodes();
 
-            // test.num_clients = max_numa_nodes - 1; // Reserve node for controller
-            // test.cores_per_client = max_cores / max_numa_nodes; // May actually be max_cores / num_hwthread_per_cpu
+            let cores_per_client = 2;
             test.num_clients = 3;
-            test.cores_per_client = 2;
-            test.client_timeout = 60_000;
-            test.controller_timeout = 60_000;
+            test.cores_per_client = cores_per_client;
+            test.memory = 2048 * (((((cores_per_client + 1) / 2) + 3 - 1) / 3) * 3);
+            // TODO: ensure initargs=cores_per_client
+            test.cmd = "init=memcachedbench.bin initargs=2 appcmd=\'--x-benchmark-mem=16 --x-benchmark-queries=1000000\'".to_string();
+            test.client_timeout = 120_000;
+            test.controller_timeout = 120_000;
             test.run_rackscale();
         }
         None => {

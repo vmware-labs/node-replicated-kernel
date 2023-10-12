@@ -54,13 +54,18 @@ fn thread_routine(
 
     let start = rawtime::Instant::now();
     while start.elapsed().as_secs() < 1 {
-        let _ = hashmem(core_id, buffer);
-        ops += 1
+        for i in 0..64 {
+            let _ = hashmem(core_id, buffer);
+            ops += 1;
+        }
     }
     info!(
         "{},memhash,{},{},{},{}",
         core_id, ops, cur_cores, tot_cores, time
     );
+
+    // Signal that thread is complete
+    POOR_MANS_BARRIER.fetch_add(1, Ordering::Relaxed);
 }
 
 unsafe extern "C" fn thread_routine_trampoline(thread_params: *mut u8) -> *mut u8 {
@@ -105,6 +110,10 @@ pub fn bench() {
     for i in 0..2 {
         // let hwthreads_copy = hwthreads.clone();
         for hwthread in hwthreads.iter().take(cores) {
+            while POOR_MANS_BARRIER.load(Ordering::Relaxed) != core_ids.len() {
+                core::hint::spin_loop();
+            }
+
             // incrementing cores
             if i == 0 {
                 // Reserve next core
@@ -126,8 +135,8 @@ pub fn bench() {
                 }
             } else {
                 // free core from program when decrementing
-                // TODO: actually relinquish core using syscall
-                core_ids.pop();
+                let cid = core_ids.pop().unwrap();
+                // vibrio::syscalls::Process::release_core(cid).expect("Cannot release core!");
             }
 
             // info!("Running memhash benchmark with cores: {:?}", core_ids);

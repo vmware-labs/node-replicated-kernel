@@ -474,6 +474,19 @@ fn s11_rackscale_memcached_benchmark_internal() {
 #[test]
 #[cfg(not(feature = "baremetal"))]
 fn s11_rackscale_dcmconfig_benchmark() {
+    let file_name = "rackscale_dcmconfig_benchmark.csv";
+    let _ignore = std::fs::remove_file(file_name.clone());
+    let write_headers = !Path::new(file_name).exists();
+    let mut csv_file = OpenOptions::new()
+        .append(true)
+        .create(true)
+        .open(file_name)
+        .expect("Can't open file");
+
+    let row = "git_rev,benchmark,nthreads,mem,queries,time,thpt,num_clients,num_replicas,solver\n";
+    let r = csv_file.write(row.as_bytes());
+    assert!(r.is_ok());
+
     let mut dcm_config = DCMConfig::default();
 
     dcm_config.solver = DCMSolver::DCMloc;
@@ -490,6 +503,18 @@ fn s11_rackscale_dcmconfig_benchmark() {
 
     dcm_config.solver = DCMSolver::FillCurrent;
     rackscale_memcached_benchmark(RackscaleTransport::Shmem, Some(dcm_config.clone()));
+
+    let solvers = vec!["DCMloc", "DCMcap", "Random", "RoundRobin", "FillCurrent"];
+
+    for solver in solvers {
+        let data = std::fs::read_to_string(format!("/tmp/dcm_{}.csv", solver))
+            .expect("Cannot open dcm benchmark file");
+        // Ignore csv header
+        let lines: Vec<&str> = data.lines().collect();
+        let r = csv_file.write(format!("{},{}\n", lines[1], solver).as_bytes());
+        assert!(r.is_ok());
+        let _ignore = std::fs::remove_file(format!("/tmp/dcm_{}.csv", solver));
+    }
 }
 
 #[cfg(not(feature = "baremetal"))]
@@ -498,11 +523,11 @@ fn rackscale_memcached_benchmark(transport: RackscaleTransport, dcm_config: Opti
 
     let file_name = match dcm_config {
         Some(config) => match config.solver {
-            DCMSolver::DCMloc => "rackscale_DCMloc_memcached_benchmark.csv".to_string(),
-            DCMSolver::DCMcap => "rackscale_DCMcap_memcached_benchmark.csv".to_string(),
-            DCMSolver::Random => "rackscale_Random_memcached_benchmark.csv".to_string(),
-            DCMSolver::RoundRobin => "rackscale_RoundRobin_memcached_benchmark.csv".to_string(),
-            DCMSolver::FillCurrent => "rackscale_FillCurrent_memcached_benchmark.csv".to_string(),
+            DCMSolver::DCMloc => "/tmp/dcm_DCMloc.csv".to_string(),
+            DCMSolver::DCMcap => "/tmp/dcm_DCMcap.csv".to_string(),
+            DCMSolver::Random => "/tmp/dcm_Random.csv".to_string(),
+            DCMSolver::RoundRobin => "/tmp/dcm_RoundRobin.csv".to_string(),
+            DCMSolver::FillCurrent => "/tmp/dcm_FillCurrent.csv".to_string(),
         },
         None => format!(
             "rackscale_{}_memcached_benchmark.csv",
@@ -651,16 +676,15 @@ fn rackscale_memcached_benchmark(transport: RackscaleTransport, dcm_config: Opti
         Some(dcm_config) => {
             test.dcm_config = Some(dcm_config);
 
-            // let machine = Machine::determine();
-            // let max_cores = machine.max_cores();
-            // let max_numa_nodes = machine.max_numa_nodes();
+            let machine = Machine::determine();
+            let max_cores = machine.max_cores();
+            let max_numa_nodes = machine.max_numa_nodes();
 
-            let cores_per_client = 2;
-            test.num_clients = 3;
+            let cores_per_client = max_cores / max_numa_nodes;
+            test.num_clients = max_numa_nodes - 1;
             test.cores_per_client = cores_per_client;
             test.memory = 2048 * (((((cores_per_client + 1) / 2) + 3 - 1) / 3) * 3);
-            // TODO: ensure initargs=cores_per_client
-            test.cmd = "init=memcachedbench.bin initargs=2 appcmd=\'--x-benchmark-mem=16 --x-benchmark-queries=1000000\'".to_string();
+            test.cmd = format!("init=memcachedbench.bin initargs={} appcmd=\'--x-benchmark-mem=16 --x-benchmark-queries=1000000\'", cores_per_client);
             test.client_timeout = 120_000;
             test.controller_timeout = 120_000;
             test.run_rackscale();

@@ -141,6 +141,24 @@ impl<P: Process> NrProcess<P> {
 }
 
 impl<P: Process> NrProcess<P> {
+    pub(crate) fn add_replica(pid: Pid, rid: usize) -> Result<(), KError>{
+        debug_assert!(pid < MAX_PROCESSES, "Invalid PID");
+        let max_nodes = *crate::environment::NUM_MACHINES;
+        debug_assert!(rid < max_nodes, "Invalid Node ID");
+        log::info!("add_replica {pid} {rid}");
+        PROCESS_TABLE[pid].add_replica(rid).expect("add_replica failed");
+        Ok(())
+    }
+
+    pub(crate) fn remove_replica(pid: Pid, rid: usize) -> Result<(), KError>{
+        debug_assert!(pid < MAX_PROCESSES, "Invalid PID");
+        let max_nodes = *crate::environment::NUM_MACHINES;
+        debug_assert!(rid < max_nodes, "Invalid Node ID");
+        log::info!("remove_replica {pid} {rid}");
+        PROCESS_TABLE[pid].remove_replica(rid).expect("remove_replica failed");
+        Ok(())    
+    }
+
     pub(crate) fn load(
         pid: Pid,
         module_name: String,

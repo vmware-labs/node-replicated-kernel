@@ -20,7 +20,7 @@ use kpi::arch::SaveArea;
 use kpi::process::{FrameId, ELF_OFFSET, EXECUTOR_OFFSET};
 use lazy_static::lazy_static;
 use log::{debug, info, trace, warn};
-use crate::arch::kcb::{self, per_core_mem};
+use crate::arch::kcb;
 use core::num::NonZeroUsize;
 use nr2::nr::{NodeReplicated, AffinityChange};
 use x86::bits64::paging::*;
@@ -74,28 +74,28 @@ pub(crate) fn current_pid() -> KResult<Pid> {
 lazy_static! {
     pub(crate) static ref PROCESS_TABLE: ArrayVec<Arc<NodeReplicated<NrProcess<Ring3Process>>>, MAX_PROCESSES> = {
         use crate::memory::shmem_affinity::mid_to_shmem_affinity;
+        use crate::arch::kcb::per_core_mem;
 
         if !crate::CMDLINE
             .get()
             .map_or(false, |c| c.mode == crate::cmdline::Mode::Controller)
         {
-            // Get location of the logs from the controller, who will have created them in shared memory
-            
-            /*use crate::arch::rackscale::get_shmem_structure::{rpc_get_shmem_structure, ShmemStructure};
+            // Get the NodeReplicated instances from the controller, 
+            // who will have created them in shared memory
+            use crate::arch::rackscale::get_shmem_structure::{rpc_get_shmem_structure, ShmemStructure};
 
-            let mut log_ptrs = [0u64; MAX_PROCESSES];
-            rpc_get_shmem_structure(ShmemStructure::NrProcLogs, &mut log_ptrs[..]).expect("Failed to get process log pointers");
-            let mut process_logs = Box::new(ArrayVec::new());
-            for i in 0..log_ptrs.len() {
-                let log_ptr = paddr_to_kernel_vaddr(PAddr::from(log_ptrs[i]));
-                let local_log_arc = unsafe {
-                    Arc::from_raw(log_ptr.as_u64()
-                        as *const Log<'static, <NrProcess<Ring3Process> as Dispatch>::WriteOperation>)
+            let mut nr_ptrs = [0u64; MAX_PROCESSES];
+            rpc_get_shmem_structure(ShmemStructure::NrProcess, &mut nr_ptrs[..]).expect("Failed to get process log pointers");
+            let mut processes = ArrayVec::new();
+            for i in 0..nr_ptrs.len() {
+                let nrproc_ptr = paddr_to_kernel_vaddr(PAddr::from(nr_ptrs[i]));
+                let nr_process = unsafe {
+                    Arc::from_raw(nrproc_ptr.as_u64()
+                        as *const NodeReplicated<NrProcess<Ring3Process>>)
                 };
-                process_logs.push(local_log_arc);
+                processes.push(nr_process);
             }
-            return process_logs;*/
-            unimplemented!("Need to get NodeReplicated from controller")
+            return processes;
         }
 
         // We want to allocate the logs in controller shared memory
@@ -1671,14 +1671,12 @@ impl FrameManagement for Ring3Process {
 #[cfg(target_os = "none")]
 pub(crate) fn spawn(binary: &'static str) -> Result<Pid, KError> {
     use crate::process::make_process;
-
     let pid = make_process::<Ring3Process>(binary)?;
 
     // Let the controller pick the initial core for the process
     #[cfg(feature = "rackscale")]
     {
         use crate::arch::rackscale::processops::request_core::rpc_request_core;
-
         let (_gtid, _) = rpc_request_core(pid, true, INVALID_EXECUTOR_START.as_u64())
             .expect("Failed to get core for newly spawned process");
     }

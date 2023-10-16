@@ -292,6 +292,18 @@ impl<T: Arch86ProcessDispatch> ProcessDispatch<u64> for T {
         Ok((0, 0))
     }
 
+    fn set_replicas(&self, add: u64, rid: u64) -> crate::error::KResult<(u64, u64)> {
+        let pid = current_pid()?;
+        if add > 0 {
+            NrProcess::<Ring3Process>::add_replica(pid, rid as usize).expect("add_replica");
+        }
+        else {
+            NrProcess::<Ring3Process>::remove_replica(pid, rid as usize).expect("remove_replica");
+        }
+
+        Ok((0,0))
+    }
+
     fn exit(&self, code: u64) -> Result<(u64, u64), KError> {
         debug!("Process got exit, we are done for now...");
         // TODO: For now just a dummy version that exits Qemu

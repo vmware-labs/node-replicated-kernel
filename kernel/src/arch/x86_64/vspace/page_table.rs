@@ -819,7 +819,7 @@ impl PageTable {
 
     fn alloc_frame(&self) -> Frame {
         let frame_ptr = unsafe {
-            let ptr = alloc::alloc::alloc(PT_LAYOUT);
+            let ptr = alloc::alloc::alloc_zeroed(PT_LAYOUT);
             debug_assert!(!ptr.is_null());
 
             let nptr = NonNull::new_unchecked(ptr);

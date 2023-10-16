@@ -121,7 +121,6 @@ impl AddressSpace for VSpace {
             // virtual addr should be aligned to page-size
             return Err(KError::InvalidBase);
         }
-
         let tomap_range = base.as_usize()..base.as_usize() + frame.size;
 
         // Check all mapping in that region to see if we can allow this map:
@@ -149,9 +148,8 @@ impl AddressSpace for VSpace {
                 });
             }
         }
-
-        self.mappings
-            .try_insert(base, MappingInfo::new(frame, action))?;
+        //self.mappings
+        //    .try_insert(base, MappingInfo::new(frame, action))?;
         let r = self.page_table.map_frame(base, frame, action);
         r
     }
@@ -200,6 +198,9 @@ impl Drop for VSpace {
 
 impl VSpace {
     pub(crate) fn new() -> Result<Self, KError> {
+        let mut btree = BTreeMap::new();
+        btree.try_insert(VAddr(0x0), MappingInfo::new(Frame::empty(), MapAction::none())).expect("fail");
+
         Ok(VSpace {
             mappings: BTreeMap::new(),
             page_table: PageTable::new()?,

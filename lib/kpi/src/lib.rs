@@ -104,6 +104,8 @@ pub enum ProcessOperation {
     AllocatePhysical = 9,
     /// Release a physical memory page from the process.
     ReleasePhysical = 10,
+    /// Set Replicas
+    SetReplicas = 11
 }
 
 impl ProcessOperation {
@@ -120,6 +122,7 @@ impl ProcessOperation {
             8 => Some(Self::ReleaseCore),
             9 => Some(Self::AllocatePhysical),
             10 => Some(Self::ReleasePhysical),
+            11 => Some(Self::SetReplicas),
             _ => None,
         }
     }

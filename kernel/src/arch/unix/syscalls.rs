@@ -27,6 +27,10 @@ impl SystemDispatch<u64> for UnixSystemCalls {
 }
 
 impl ProcessDispatch<u64> for UnixSystemCalls {
+    fn set_replicas(&self, add: u64, rid: u64) -> KResult<(u64, u64)> {
+        todo!()
+    }
+
     fn log(&self, _buffer_arg: UserSlice) -> KResult<(u64, u64)> {
         todo!()
     }

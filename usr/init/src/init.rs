@@ -987,8 +987,15 @@ pub fn upcall_test() {
     info!("upcall_test OK");
 }
 
+pub fn dynamic_replication_test() {
+    vibrio::syscalls::Process::set_replicas(false, 1).expect("Can't read vcpu control area.");
+    vibrio::syscalls::Process::set_replicas(true, 1).expect("Can't read vcpu control area.");
+    info!("dynamic_replication OK");
+}
+
 #[no_mangle]
 pub extern "C" fn _start() -> ! {
+    sys_println!("_start()");
     unsafe {
         log::set_logger(&vibrio::writer::LOGGER)
             .map(|()| log::set_max_level(Level::Debug.to_level_filter()))
@@ -1062,6 +1069,8 @@ pub extern "C" fn _start() -> ! {
 
     #[cfg(feature = "test-core-alloc")]
     core_alloc_test();
+    
+    dynamic_replication_test();
 
     #[cfg(feature = "test-scheduler")]
     scheduler_test();

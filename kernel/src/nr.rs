@@ -1,16 +1,14 @@
 // Copyright © 2021 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
-
+#![allow(dead_code, warnings)]
 use crate::prelude::*;
 use core::fmt::Debug;
-use core::num::NonZeroUsize;
 
 use alloc::sync::Arc;
 use hashbrown::HashMap;
 use log::{error, trace};
-use nr2::nr::{Dispatch, NodeReplicated, ThreadToken, AffinityChange};
+use nr2::nr::{Dispatch, NodeReplicated, ThreadToken};
 use spin::Once;
-use crate::arch::kcb;
 
 #[cfg(feature = "rackscale")]
 use lazy_static::lazy_static;
@@ -28,8 +26,11 @@ pub(crate) static NR_REPLICA: Once<(Arc<NodeReplicated<KernelNode>>, ThreadToken
 #[cfg(feature = "rackscale")]
 lazy_static! {
     pub(crate) static ref KERNEL_NODE_INSTANCE: Arc<NodeReplicated<KernelNode>> = {
+        use core::num::NonZeroUsize;
+        use nr2::nr::AffinityChange;
         use crate::memory::shmem_affinity::mid_to_shmem_affinity;
         use crate::memory::shmem_affinity::local_shmem_affinity;
+        use crate::arch::kcb;
 
         if crate::CMDLINE
             .get()
@@ -37,10 +38,19 @@ lazy_static! {
         {
             // Want at least one replica...
             let num_replicas =
-                NonZeroUsize::new(core::cmp::max(1, atopology::MACHINE_TOPOLOGY.num_nodes())).unwrap();
-            Arc::try_new(
+                NonZeroUsize::new(core::cmp::max(1, *crate::environment::NUM_MACHINES-1)).unwrap();
+            log::info!("NodeReplicated<KernelNode> creating with {} replicas", num_replicas);
+
+            let cur_affinity = {
+                let pcm = kcb::per_core_mem();
+                let cur_affinity = pcm.physical_memory.borrow().affinity;
+                let ret = pcm.set_mem_affinity(local_shmem_affinity()).expect("Can't set affinity");
+                cur_affinity
+            };
+
+            let nr  = Arc::try_new(
                 NodeReplicated::new(num_replicas, |afc: AffinityChange| {
-                    let pcm = kcb::per_core_mem();
+                    /*let pcm = kcb::per_core_mem();
                     match afc {
                         AffinityChange::Replica(r) => {
                             pcm.set_mem_affinity(mid_to_shmem_affinity(r)).expect("Can't change affinity");
@@ -48,12 +58,19 @@ lazy_static! {
                         AffinityChange::Revert(_orig) => {
                             pcm.set_mem_affinity(local_shmem_affinity()).expect("Can't set affinity")
                         }
-                    }
+                    }*/
                     return 0; // TODO(dynrep): Return error code
                 })
                 .expect("Not enough memory to initialize system"),
             )
-            .expect("Not enough memory to initialize system")
+            .expect("Not enough memory to initialize system");
+
+            {
+                let pcm = kcb::per_core_mem();
+                pcm.set_mem_affinity(cur_affinity).expect("Can't set affinity");
+            }
+
+            nr
         } else {
             use crate::memory::{paddr_to_kernel_vaddr, PAddr};
             use crate::arch::rackscale::get_shmem_structure::{rpc_get_shmem_structure, ShmemStructure};
@@ -113,10 +130,11 @@ pub(crate) struct KernelNode {
 
 impl Default for KernelNode {
     fn default() -> KernelNode {
-        KernelNode {
-            process_map: HashMap::new(),   // with_capacity(MAX_PROCESSES),
-            scheduler_map: HashMap::new(), // with_capacity(MAX_CORES), or, for rackscale, with_capacity(MAX_CORES * MAX_MACHINES)
-        }
+        let k = KernelNode {
+            process_map: HashMap::with_capacity(MAX_PROCESSES),   // with_capacity(MAX_PROCESSES),
+            scheduler_map: HashMap::with_capacity(24), // with_capacity(MAX_CORES), or, for rackscale, with_capacity(MAX_CORES * MAX_MACHINES)
+        };
+        k
     }
 }
 

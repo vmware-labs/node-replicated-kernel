@@ -542,6 +542,7 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
         let kernel_node = crate::nr::KERNEL_NODE_INSTANCE.clone();
 
         let local_ridx = kernel_node.register(0).unwrap();
+        log::info!("Kernel node replica idx is {:?}", local_ridx);
         crate::nr::NR_REPLICA.call_once(|| (kernel_node.clone(), local_ridx));
         kernel_node
     };

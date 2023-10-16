@@ -52,6 +52,7 @@ test-phys-alloc = []
 test-core-alloc = []
 test-rackscale-shootdown = []
 test-concurrent-shootdown = []
+test-dynamic-replication = []
 
 # Simple micro-benchmarks
 bench-vmops = []

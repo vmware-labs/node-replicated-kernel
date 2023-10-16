@@ -104,7 +104,7 @@ pub fn bench() {
     }
     let mem_region: Arc<Vec<u8>> = Arc::new(mem_region);
 
-    let mut time = 0;
+    let mut time = 1;
 
     // increment cores first, then decrement
     for i in 0..2 {

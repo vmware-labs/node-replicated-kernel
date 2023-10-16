@@ -57,7 +57,7 @@ pub(crate) fn dcm_resource_release(mid: MachineId, pid: usize, is_core: bool) ->
         memslices: if is_core { 0 } else { 1 },
     };
     let mut res = ResourceReleaseResponse { is_success: 0 };
-    log::info!("Sending DCM a resource release request");
+    log::debug!("Sending DCM a resource release request");
 
     // Send call, get allocation response in return
     {
@@ -70,7 +70,7 @@ pub(crate) fn dcm_resource_release(mid: MachineId, pid: usize, is_core: bool) ->
             )
             .expect("Failed to send resource release RPC to DCM");
     }
-    log::info!(
+    log::debug!(
         "Received is_success for DCM resource release: {:?}",
         res.is_success
     );

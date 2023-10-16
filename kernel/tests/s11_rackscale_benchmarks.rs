@@ -476,7 +476,6 @@ fn s11_rackscale_memcached_benchmark_internal() {
 fn s11_rackscale_dcmconfig_benchmark() {
     let file_name = "rackscale_dcmconfig_benchmark.csv";
     let _ignore = std::fs::remove_file(file_name.clone());
-    let write_headers = !Path::new(file_name).exists();
     let mut csv_file = OpenOptions::new()
         .append(true)
         .create(true)
@@ -511,8 +510,10 @@ fn s11_rackscale_dcmconfig_benchmark() {
             .expect("Cannot open dcm benchmark file");
         // Ignore csv header
         let lines: Vec<&str> = data.lines().collect();
-        let r = csv_file.write(format!("{},{}\n", lines[1], solver).as_bytes());
-        assert!(r.is_ok());
+        for i in 1..lines.len() {
+            let r = csv_file.write(format!("{},{}\n", lines[i], solver).as_bytes());
+            assert!(r.is_ok());
+        }
         let _ignore = std::fs::remove_file(format!("/tmp/dcm_{}.csv", solver));
     }
 }
@@ -537,198 +538,204 @@ fn rackscale_memcached_benchmark(transport: RackscaleTransport, dcm_config: Opti
 
     let _ignore = std::fs::remove_file(file_name.clone());
 
-    let built = BuildArgs::default()
-        .module("rkapps")
-        .user_feature("rkapps:memcached-bench")
-        .kernel_feature("pages-4k")
-        .release()
-        .set_rackscale(true)
-        .build();
+    let iterations = if dcm_config.is_some() { 2 } else { 1 };
 
-    fn controller_match_fn(
-        proc: &mut PtySession,
-        output: &mut String,
-        _cores_per_client: usize,
-        num_clients: usize,
-        file_name: &str,
-        is_baseline: bool,
-        arg: Option<MemcachedInternalConfig>,
-    ) -> Result<()> {
-        let _config = arg.expect("match function expects a memcached config");
+    for _ in 0..iterations {
+        let built = BuildArgs::default()
+            .module("rkapps")
+            .user_feature("rkapps:memcached-bench")
+            .kernel_feature("pages-4k")
+            .release()
+            .set_rackscale(true)
+            .build();
 
-        // match the title
-        let (prev, matched) = proc.exp_regex(r#"INTERNAL BENCHMARK CONFIGURE"#)?;
+        fn controller_match_fn(
+            proc: &mut PtySession,
+            output: &mut String,
+            _cores_per_client: usize,
+            num_clients: usize,
+            file_name: &str,
+            is_baseline: bool,
+            arg: Option<MemcachedInternalConfig>,
+        ) -> Result<()> {
+            let _config = arg.expect("match function expects a memcached config");
 
-        *output += prev.as_str();
-        *output += matched.as_str();
+            // match the title
+            let (prev, matched) = proc.exp_regex(r#"INTERNAL BENCHMARK CONFIGURE"#)?;
 
-        // x_benchmark_mem = 10 MB
-        let (prev, matched) = proc.exp_regex(r#"x_benchmark_mem = (\d+) MB"#)?;
-        println!("> {}", matched);
-        let b_mem = matched.replace("x_benchmark_mem = ", "").replace(" MB", "");
+            *output += prev.as_str();
+            *output += matched.as_str();
 
-        *output += prev.as_str();
-        *output += matched.as_str();
+            // x_benchmark_mem = 10 MB
+            let (prev, matched) = proc.exp_regex(r#"x_benchmark_mem = (\d+) MB"#)?;
+            println!("> {}", matched);
+            let b_mem = matched.replace("x_benchmark_mem = ", "").replace(" MB", "");
 
-        // number of threads: 3
-        let (prev, matched) = proc.exp_regex(r#"number of threads: (\d+)"#)?;
-        println!("> {}", matched);
-        let b_threads = matched.replace("number of threads: ", "");
+            *output += prev.as_str();
+            *output += matched.as_str();
 
-        *output += prev.as_str();
-        *output += matched.as_str();
+            // number of threads: 3
+            let (prev, matched) = proc.exp_regex(r#"number of threads: (\d+)"#)?;
+            println!("> {}", matched);
+            let b_threads = matched.replace("number of threads: ", "");
 
-        // number of keys: 131072
-        let (prev, matched) = proc.exp_regex(r#"number of keys: (\d+)"#)?;
-        println!("> {}", matched);
+            *output += prev.as_str();
+            *output += matched.as_str();
 
-        *output += prev.as_str();
-        *output += matched.as_str();
+            // number of keys: 131072
+            let (prev, matched) = proc.exp_regex(r#"number of keys: (\d+)"#)?;
+            println!("> {}", matched);
 
-        let (prev, matched) = proc.exp_regex(r#"Executing (\d+) queries with (\d+) threads"#)?;
-        println!("> {}", matched);
+            *output += prev.as_str();
+            *output += matched.as_str();
 
-        *output += prev.as_str();
-        *output += matched.as_str();
+            let (prev, matched) =
+                proc.exp_regex(r#"Executing (\d+) queries with (\d+) threads"#)?;
+            println!("> {}", matched);
 
-        // benchmark took 129 seconds
-        let (prev, matched) = proc.exp_regex(r#"benchmark took (\d+) ms"#)?;
-        println!("> {}", matched);
-        let b_time = matched.replace("benchmark took ", "").replace(" ms", "");
+            *output += prev.as_str();
+            *output += matched.as_str();
 
-        *output += prev.as_str();
-        *output += matched.as_str();
+            // benchmark took 129 seconds
+            let (prev, matched) = proc.exp_regex(r#"benchmark took (\d+) ms"#)?;
+            println!("> {}", matched);
+            let b_time = matched.replace("benchmark took ", "").replace(" ms", "");
 
-        // benchmark took 7937984 queries / second
-        let (prev, matched) = proc.exp_regex(r#"benchmark took (\d+) queries / second"#)?;
-        println!("> {}", matched);
-        let b_thpt = matched
-            .replace("benchmark took ", "")
-            .replace(" queries / second", "");
+            *output += prev.as_str();
+            *output += matched.as_str();
 
-        *output += prev.as_str();
-        *output += matched.as_str();
+            // benchmark took 7937984 queries / second
+            let (prev, matched) = proc.exp_regex(r#"benchmark took (\d+) queries / second"#)?;
+            println!("> {}", matched);
+            let b_thpt = matched
+                .replace("benchmark took ", "")
+                .replace(" queries / second", "");
 
-        let (prev, matched) = proc.exp_regex(r#"benchmark executed (\d+)"#)?;
-        println!("> {}", matched);
-        let b_queries = matched
-            .replace("benchmark executed ", "")
-            .split(" ")
-            .next()
-            .unwrap()
-            .to_string();
+            *output += prev.as_str();
+            *output += matched.as_str();
 
-        *output += prev.as_str();
-        *output += matched.as_str();
+            let (prev, matched) = proc.exp_regex(r#"benchmark executed (\d+)"#)?;
+            println!("> {}", matched);
+            let b_queries = matched
+                .replace("benchmark executed ", "")
+                .split(" ")
+                .next()
+                .unwrap()
+                .to_string();
 
-        // Append parsed results to a CSV file
-        let write_headers = !Path::new(file_name).exists();
-        let mut csv_file = OpenOptions::new()
-            .append(true)
-            .create(true)
-            .open(file_name)
-            .expect("Can't open file");
-        if write_headers {
-            let row = "git_rev,benchmark,nthreads,mem,queries,time,thpt,num_clients,num_replicas\n";
-            let r = csv_file.write(row.as_bytes());
+            *output += prev.as_str();
+            *output += matched.as_str();
+
+            // Append parsed results to a CSV file
+            let write_headers = !Path::new(file_name).exists();
+            let mut csv_file = OpenOptions::new()
+                .append(true)
+                .create(true)
+                .open(file_name)
+                .expect("Can't open file");
+            if write_headers {
+                let row =
+                    "git_rev,benchmark,nthreads,mem,queries,time,thpt,num_clients,num_replicas\n";
+                let r = csv_file.write(row.as_bytes());
+                assert!(r.is_ok());
+            }
+
+            let actual_num_clients = if is_baseline { 0 } else { num_clients };
+
+            let r = csv_file.write(format!("{},", env!("GIT_HASH")).as_bytes());
             assert!(r.is_ok());
+            let out = format!(
+                "memcached,{},{},{},{},{},{},{}",
+                b_threads, b_mem, b_queries, b_time, b_thpt, actual_num_clients, num_clients
+            );
+            let r = csv_file.write(out.as_bytes());
+            assert!(r.is_ok());
+            let r = csv_file.write("\n".as_bytes());
+            assert!(r.is_ok());
+
+            Ok(())
         }
 
-        let actual_num_clients = if is_baseline { 0 } else { num_clients };
-
-        let r = csv_file.write(format!("{},", env!("GIT_HASH")).as_bytes());
-        assert!(r.is_ok());
-        let out = format!(
-            "memcached,{},{},{},{},{},{},{}",
-            b_threads, b_mem, b_queries, b_time, b_thpt, actual_num_clients, num_clients
-        );
-        let r = csv_file.write(out.as_bytes());
-        assert!(r.is_ok());
-        let r = csv_file.write("\n".as_bytes());
-        assert!(r.is_ok());
-
-        Ok(())
-    }
-
-    let config = if is_smoke {
-        MemcachedInternalConfig {
-            num_queries: 100_000,
-            mem_size: 16,
-        }
-    } else {
-        MemcachedInternalConfig {
-            num_queries: 1_000_000, // TODO(rackscale): should be 100_000_000,
-            mem_size: 16,           // TODO(rackscale): should be 32_000,
-        }
-    };
-
-    let mut test = RackscaleRun::new("userspace-smp".to_string(), built);
-    test.controller_match_fn = controller_match_fn;
-    test.transport = transport;
-    test.shmem_size *= 2;
-    test.use_affinity_shmem = cfg!(feature = "affinity-shmem");
-    test.use_qemu_huge_pages = cfg!(feature = "affinity-shmem");
-    test.file_name = file_name.to_string();
-    test.arg = Some(config);
-    test.run_dhcpd_for_baseline = true;
-
-    match dcm_config {
-        Some(dcm_config) => {
-            test.dcm_config = Some(dcm_config);
-
-            let machine = Machine::determine();
-            let max_cores = machine.max_cores();
-            let max_numa_nodes = machine.max_numa_nodes();
-
-            let cores_per_client = max_cores / max_numa_nodes;
-            test.num_clients = max_numa_nodes - 1;
-            test.cores_per_client = cores_per_client;
-            test.memory = 2048 * (((((cores_per_client + 1) / 2) + 3 - 1) / 3) * 3);
-            test.cmd = format!("init=memcachedbench.bin initargs={} appcmd=\'--x-benchmark-mem=16 --x-benchmark-queries=1000000\'", cores_per_client);
-            test.client_timeout = 120_000;
-            test.controller_timeout = 120_000;
-            test.run_rackscale();
-        }
-        None => {
-            fn cmd_fn(num_cores: usize, arg: Option<MemcachedInternalConfig>) -> String {
-                let config = arg.expect("missing leveldb config");
-                format!(
-                    r#"init=memcachedbench.bin initargs={} appcmd='--x-benchmark-mem={} --x-benchmark-queries={}'"#,
-                    num_cores, config.mem_size, config.num_queries
-                )
+        let config = if is_smoke {
+            MemcachedInternalConfig {
+                num_queries: 100_000,
+                mem_size: 16,
             }
-
-            fn baseline_timeout_fn(num_cores: usize) -> u64 {
-                120_000 + 500 * num_cores as u64
+        } else {
+            MemcachedInternalConfig {
+                num_queries: 1_000_000, // TODO(rackscale): should be 100_000_000,
+                mem_size: 16,           // TODO(rackscale): should be 32_000,
             }
+        };
 
-            fn rackscale_timeout_fn(num_cores: usize) -> u64 {
-                240_000 + 5_000 * num_cores as u64
+        let mut test = RackscaleRun::new("userspace-smp".to_string(), built);
+        test.controller_match_fn = controller_match_fn;
+        test.transport = transport;
+        test.shmem_size *= 2;
+        test.use_affinity_shmem = cfg!(feature = "affinity-shmem");
+        test.use_qemu_huge_pages = cfg!(feature = "affinity-shmem");
+        test.file_name = file_name.to_string();
+        test.arg = Some(config);
+        test.run_dhcpd_for_baseline = true;
+
+        match dcm_config {
+            Some(dcm_config) => {
+                test.dcm_config = Some(dcm_config);
+
+                let machine = Machine::determine();
+                let max_cores = machine.max_cores();
+                let max_numa_nodes = machine.max_numa_nodes();
+
+                let cores_per_client = max_cores / max_numa_nodes;
+                test.num_clients = max_numa_nodes - 1;
+                test.cores_per_client = cores_per_client;
+                test.memory = 2048 * (((((cores_per_client + 1) / 2) + 3 - 1) / 3) * 3);
+                test.cmd = format!("init=memcachedbench.bin initargs={} appcmd=\'--x-benchmark-mem=16 --x-benchmark-queries=1000000\'", cores_per_client);
+                test.client_timeout = 120_000;
+                test.controller_timeout = 120_000;
+                test.run_rackscale();
             }
-
-            fn mem_fn(num_cores: usize, is_smoke: bool) -> usize {
-                if is_smoke {
-                    8192
-                } else {
-                    // Memory must also be divisible by number of nodes, which could be 1, 2, 3, or 4
-                    2048 * (((((num_cores + 1) / 2) + 3 - 1) / 3) * 3)
+            None => {
+                fn cmd_fn(num_cores: usize, arg: Option<MemcachedInternalConfig>) -> String {
+                    let config = arg.expect("missing leveldb config");
+                    format!(
+                        r#"init=memcachedbench.bin initargs={} appcmd='--x-benchmark-mem={} --x-benchmark-queries={}'"#,
+                        num_cores, config.mem_size, config.num_queries
+                    )
                 }
-            }
 
-            let bench = RackscaleBench {
-                test,
-                cmd_fn,
-                baseline_timeout_fn,
-                rackscale_timeout_fn,
-                mem_fn,
-            };
+                fn baseline_timeout_fn(num_cores: usize) -> u64 {
+                    120_000 + 500 * num_cores as u64
+                }
 
-            if cfg!(feature = "baseline") {
-                bench.run_bench(true, is_smoke);
+                fn rackscale_timeout_fn(num_cores: usize) -> u64 {
+                    240_000 + 5_000 * num_cores as u64
+                }
+
+                fn mem_fn(num_cores: usize, is_smoke: bool) -> usize {
+                    if is_smoke {
+                        8192
+                    } else {
+                        // Memory must also be divisible by number of nodes, which could be 1, 2, 3, or 4
+                        2048 * (((((num_cores + 1) / 2) + 3 - 1) / 3) * 3)
+                    }
+                }
+
+                let bench = RackscaleBench {
+                    test,
+                    cmd_fn,
+                    baseline_timeout_fn,
+                    rackscale_timeout_fn,
+                    mem_fn,
+                };
+
+                if cfg!(feature = "baseline") {
+                    bench.run_bench(true, is_smoke);
+                }
+                bench.run_bench(false, is_smoke);
             }
-            bench.run_bench(false, is_smoke);
-        }
-    };
+        };
+    }
 }
 
 #[test]
@@ -821,13 +828,6 @@ fn s11_rackscale_shmem_memhash_benchmark() {
     rackscale_memhash_benchmark(RackscaleTransport::Shmem);
 }
 
-#[test]
-#[ignore]
-#[cfg(not(feature = "baremetal"))]
-fn s11_rackscale_ethernet_memhash_benchmark() {
-    rackscale_memhash_benchmark(RackscaleTransport::Ethernet);
-}
-
 #[cfg(not(feature = "baremetal"))]
 fn rackscale_memhash_benchmark(transport: RackscaleTransport) {
     let machine = Machine::determine();
@@ -914,7 +914,8 @@ fn rackscale_memhash_benchmark(transport: RackscaleTransport) {
     test_run.file_name = file_name.clone();
     test_run.num_clients = max_numa_nodes - 1; // Reserve node for controller
     test_run.cores_per_client = max_cores / max_numa_nodes; // May actually be max_cores / num_hwthread_per_cpu
-    test_run.client_timeout = 120_000;
-    test_run.controller_timeout = 120_000;
+    test_run.client_timeout = 240_000;
+    test_run.controller_timeout = 240_000;
+    test_run.shmem_size *= 4;
     test_run.run_rackscale();
 }

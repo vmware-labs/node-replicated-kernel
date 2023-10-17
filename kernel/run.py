@@ -749,20 +749,26 @@ def configure_network(args):
         sudo[ip[['link', 'set', '{}'.format(tap), 'down']]](retcode=(0, 1))
         sudo[ip[['link', 'del', '{}'.format(tap)]]](retcode=(0, 1))
 
-    # Need to find out how to set default=True in case workers are >0 in `args`
-    if (not 'workers' in args) or ('workers' in args and args.workers <= 1):
-        sudo[tunctl[['-t', args.tap, '-u', user, '-g', group]]]()
-        sudo[ifconfig[args.tap, NETWORK_INFRA_IP]]()
-        sudo[ip[['link', 'set', args.tap, 'up']]](retcode=(0, 1))
-    else:
-        assert args.workers <= MAX_WORKERS, "Too many workers, can't configure network"
-        sudo[ip[['link', 'add', 'br0', 'type', 'bridge']]]()
-        sudo[ip[['addr', 'add', NETWORK_INFRA_IP, 'brd', '+', 'dev', 'br0']]]()
-        for _, ncfg in zip(range(0, args.workers), NETWORK_CONFIG):
-            sudo[tunctl[['-t', ncfg, '-u', user, '-g', group]]]()
-            sudo[ip[['link', 'set', ncfg, 'up']]](retcode=(0, 1))
-            sudo[brctl[['addif', 'br0', ncfg]]]()
-        sudo[ip[['link', 'set', 'br0', 'up']]](retcode=(0, 1))
+
+    # figure out how many workers we have
+    workers = 1
+    if 'workers' in args:
+        workers = args.workers
+
+    # create the bridge
+    sudo[ip[['link', 'add', 'br0', 'type', 'bridge']]]()
+    sudo[ip[['addr', 'add', NETWORK_INFRA_IP, 'brd', '+', 'dev', 'br0']]]()
+
+    # add a network interface for every worker there is
+    for _, ncfg in zip(range(0, workers), NETWORK_CONFIG):
+        sudo[tunctl[['-t', ncfg, '-u', user, '-g', group]]]()
+        sudo[ip[['link', 'set', ncfg, 'up']]](retcode=(0, 1))
+        sudo[brctl[['addif', 'br0', ncfg]]]()
+
+    # set the link up
+    sudo[ip[['link', 'set', 'br0', 'up']]](retcode=(0, 1))
+
+    sudo[brctl[['setageing', 'br0', 600]]]()
 
 
 def configure_dcm_scheduler(args):

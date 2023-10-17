@@ -238,6 +238,21 @@ pub extern "C" fn main() {
         ta_root_mode: u32, // mode_t		ta_root_mode;
     }
 
+    #[repr(C)]
+    struct sockaddr_in {
+        sin_len: u8,
+        sin_family: u8, //typedef __uint8_t       __sa_family_t;
+        sin_port: u16,  // typedef __uint16_t      __in_port_t;    /* "Internet" port number */
+        sin_addr: u32,  // typedef __uint32_t      __in_addr_t;    /* IP(v4) address */
+        zero: [u8; 8],
+    }
+
+    #[repr(C)]
+    struct timespec_t {
+        tv_sec: i64,  // time_t
+        tv_nsec: u64, // long
+    }
+
     extern "C" {
         static __init_array_start: extern "C" fn();
         static __init_array_end: extern "C" fn();
@@ -248,6 +263,18 @@ pub extern "C" fn main() {
         fn rump_pub_netconfig_dhcp_ipv4_oneshot(iface: *const i8) -> i64;
         fn _libc_init();
         fn mount(typ: *const i8, path: *const i8, n: u64, args: *const tmpfs_args, argsize: usize);
+
+        fn socket(domain: i64, typ: i64, protocol: i64) -> i64;
+        fn sendto(
+            fd: i64,
+            buf: *const i8,
+            len: usize,
+            flags: i64,
+            addr: *const sockaddr_in,
+            len: usize,
+        ) -> i64;
+        fn close(sock: i64) -> i64;
+        fn nanosleep(rqtp: *const timespec_t, rmtp: *mut timespec_t) -> i64;
     }
 
     unsafe {
@@ -371,6 +398,58 @@ pub extern "C" fn main() {
                     "rump_pub_netconfig_dhcp_ipv4_oneshot done in {:?}",
                     start.elapsed()
                 );
+
+                // HACK: send a message so things get initialized, otherwise we don't have
+                // connectivity.
+
+                const AF_INET: i64 = 2;
+                const SOCK_DGRAM: i64 = 2;
+                const IPPROTO_UDP: i64 = 17;
+                const MSG_DONTWAIT: i64 = 0x0080;
+                let sockfd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+                assert!(sockfd > 0);
+                info!("socket done in {:?}", start.elapsed());
+
+                for i in 0..10 {
+                    info!("sending packet {} of 10 ({:?})", i, start.elapsed());
+                    let addr = sockaddr_in {
+                        sin_len: core::mem::size_of::<sockaddr_in>() as u8,
+                        sin_family: AF_INET as u8,
+                        sin_port: (8889 as u16).to_be(),
+                        sin_addr: (2887712788 as u32).to_be(), // 172.31.0.20
+                        zero: [0; 8],
+                    };
+
+                    // not sure what this one does here
+                    let _r = lineup::tls2::Environment::thread().relinquish();
+
+                    use alloc::string::String;
+                    let buf = String::from("package content\n\0");
+                    let cstr = CStr::from_bytes_with_nul(buf.as_str().as_bytes()).unwrap();
+
+                    let r = sendto(
+                        sockfd,
+                        cstr.as_ptr() as *const i8,
+                        buf.len(),
+                        MSG_DONTWAIT,
+                        &addr as *const sockaddr_in,
+                        core::mem::size_of::<sockaddr_in>(),
+                    );
+                    assert_eq!(r, buf.len() as i64);
+                    core::mem::forget(cstr);
+
+                    // Add some sleep time here, as otherwise
+                    // we send the packet too fast and nothing appears on the other side
+                    // it seems after 6s (pkt 6) things start working.
+                    // I suspect it's due to some ARP resolution issue, but unclear.
+                    let sleep_dur = timespec_t {
+                        tv_sec: 1,
+                        tv_nsec: 0,
+                    };
+                    nanosleep(&sleep_dur as *const timespec_t, ptr::null_mut());
+                }
+                // keep the socket open here...
+                // close(sockfd);
             }
 
             // Set up a garbage environment

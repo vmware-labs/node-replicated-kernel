@@ -483,6 +483,7 @@ impl<T: Clone + Send + 'static> RackscaleRun<T> {
                             .memory(state.memory)
                             .nobuild() // Use single build for all for consistency
                             .cmd(&client_cmd)
+                            .machine_id(0) // always hardcoded to 0 for the sharded case
                             .nodes(1)
                             .node_offset(client_placement_cores[i + 1].0)
                             .setaffinity(client_placement_cores[i + 1].1.clone());

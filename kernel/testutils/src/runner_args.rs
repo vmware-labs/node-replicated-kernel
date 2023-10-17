@@ -59,6 +59,8 @@ pub struct RunnerArgs<'a> {
     nobuild: bool,
     /// Parameters to add to the QEMU command line
     qemu_args: Vec<&'a str>,
+    /// the machine id to set
+    machine_id: Option<usize>,
     /// Timeout in ms
     pub timeout: Option<u64>,
     /// Default network interface for QEMU
@@ -119,6 +121,7 @@ impl<'a> RunnerArgs<'a> {
             no_network_setup: false,
             mode: None,
             transport: None,
+            machine_id: None,
         };
 
         if cfg!(feature = "prealloc") {
@@ -156,6 +159,7 @@ impl<'a> RunnerArgs<'a> {
             no_network_setup: false,
             mode: None,
             transport: None,
+            machine_id: None,
         };
 
         if cfg!(feature = "prealloc") {
@@ -280,6 +284,11 @@ impl<'a> RunnerArgs<'a> {
 
     pub fn kgdb(mut self) -> RunnerArgs<'a> {
         self.kgdb = true;
+        self
+    }
+
+    pub fn machine_id(mut self, id: usize) -> RunnerArgs<'a> {
+        self.machine_id = Some(id);
         self
     }
 
@@ -454,6 +463,10 @@ impl<'a> RunnerArgs<'a> {
 
         if self.kgdb {
             cmd.push(String::from("--kgdb"));
+        }
+
+        if let Some(mid) = self.machine_id {
+            cmd.push(format!("--mid={mid}"));
         }
 
         // Don't run qemu, just build?

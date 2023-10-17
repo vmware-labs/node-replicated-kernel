@@ -876,6 +876,8 @@ fn s10_leveldb_benchmark() {
 fn s10_memcached_benchmark_internal() {
     setup_network(1);
 
+    let is_smoke = cfg!(feature = "smoke");
+
     let machine = Machine::determine();
     let build = BuildArgs::default()
         .module("rkapps")
@@ -889,7 +891,7 @@ fn s10_memcached_benchmark_internal() {
         // Throw out everything above 28 since we have some non-deterministic
         // bug on larger machines that leads to threads calling sched_yield and
         // no readrandom is performed...
-        .filter(|&t| t <= 28)
+        .filter(|&t| if is_smoke { t <= 10 } else { t <= 128 })
         .collect();
 
     // memcached arguments // currently not there.
@@ -914,7 +916,7 @@ fn s10_memcached_benchmark_internal() {
     println!();
 
     for thread in threads.iter() {
-        println!("Running memcached internal benchmark with {thread} threads, {queries} GETs and {memsize}MB memory. ");
+        println!("\n\nRunning memcached internal benchmark with {thread} threads, {queries} GETs and {memsize}MB memory. ");
 
         let kernel_cmdline = format!(
             r#"init=memcachedbench.bin initargs={} appcmd='--x-benchmark-mem={} --x-benchmark-queries={}'"#,

@@ -107,6 +107,8 @@ parser_tasks_mut.add_argument("-b", "--nobuild", action="store_true", default=Fa
 # DCM Scheduler arguments
 parser.add_argument("--dcm-path",
                     help='Path of DCM jar to use (defaults to latest release)', required=False, default=None)
+parser.add_argument("--mid",
+                    help="Machine id to set for this instance", required=False, default=None)
 
 # QEMU related arguments
 parser.add_argument("--qemu-nodes", type=int,
@@ -332,7 +334,10 @@ def deploy(args):
     # Append globally unique machine id to cmd (for rackscale)
     # as well as a number of workers (clients)
     if args.cmd and NETWORK_CONFIG[args.tap]['mid'] != None:
-        args.cmd += " mid={}".format(NETWORK_CONFIG[args.tap]['mid'])
+        if args.mid is None :
+            args.cmd += " mid={}".format(NETWORK_CONFIG[args.tap]['mid'])
+        else :
+            args.cmd += f" mid={args.mid}"
         if is_controller or is_client:
             args.cmd += " workers={}".format(args.workers)
     # Write kernel cmd-line file in ESP dir

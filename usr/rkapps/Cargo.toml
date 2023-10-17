@@ -20,4 +20,5 @@ nginx = []
 leveldb-bench = []
 memcached-bench = []
 monetdb = []
+virtio = ["vibrio/virtio"]
 

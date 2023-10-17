@@ -56,7 +56,7 @@ fn s10_redis_benchmark_virtio() {
         output += dhcp_server.exp_string(DHCP_ACK_MATCH)?.as_str();
         output += p.exp_string(REDIS_START_MATCH)?.as_str();
 
-        std::thread::sleep(std::time::Duration::from_secs(9));
+        std::thread::sleep(std::time::Duration::from_secs(20));
 
         let mut redis_client = redis_benchmark("virtio", 2_000_000)?;
 
@@ -96,7 +96,7 @@ fn s10_redis_benchmark_e1000() {
         output += p.exp_string(REDIS_START_MATCH)?.as_str();
 
         use std::{thread, time};
-        thread::sleep(time::Duration::from_secs(9));
+        thread::sleep(time::Duration::from_secs(20));
 
         let mut redis_client = redis_benchmark("e1000", 2_000_000)?;
 
@@ -671,8 +671,7 @@ fn memcached_benchmark(
 #[cfg(not(feature = "baremetal"))]
 #[test]
 fn s10_memcached_benchmark() {
-    let _r =
-        which::which(MEMASLAP_BINARY).expect("memaslap not installed on host, test will fail!");
+    let _r = which::which(MEMASLAP_BINARY).expect("memslap not installed on host, test will fail!");
 
     let max_cores = 4;
     let threads = if cfg!(feature = "smoke") {
@@ -693,6 +692,8 @@ fn s10_memcached_benchmark() {
 
     for nic in &["virtio", "e1000"] {
         for thread in threads.iter() {
+            println!("\n# Memcached with {} threads over {}", thread, nic);
+
             let kernel_cmdline = format!("init=memcached.bin initargs={}", *thread);
             let cmdline = RunnerArgs::new_with_build("userspace-smp", &build)
                 .memory(8192)
@@ -716,12 +717,50 @@ fn s10_memcached_benchmark() {
 
                 dhcp_server.exp_regex(DHCP_ACK_MATCH)?;
 
-                std::thread::sleep(std::time::Duration::from_secs(6));
-                let mut memaslap = memcached_benchmark(nic, *thread, 10)?;
+                use std::{thread, time};
+                let timeout = 15;
+                print!("waiting {timeout} seconds to give the server time to start up. ");
+                for _ in 0..timeout {
+                    let _ = std::io::stdout().flush();
+                    thread::sleep(time::Duration::from_secs(1));
+                    print!(". ")
+                }
+                println!("\nstarting benchmark");
 
+                match memcached_benchmark(nic, *thread, 10) {
+                    Ok(mut s) => {
+                        let _ = s.process.kill(SIGTERM)?;
+                        println!("benchmark done.");
+                    }
+                    Err(e) => {
+                        println!("benchmark failed.");
+                        print!("\nnrk: ");
+                        while let Some(c) = p.try_read() {
+                            if c == '\n' {
+                                print!("\nnrk: ");
+                            } else {
+                                print!("{}", c);
+                            }
+                        }
+                        println!();
+                        match e.kind() {
+                            ErrorKind::EOF(_r, s, _) => {
+                                for l in s.lines() {
+                                    println!("memslap: {}", l);
+                                }
+                            }
+                            ErrorKind::Timeout(_r, s, _) => {
+                                for l in s.lines() {
+                                    println!("memslap: {}", l);
+                                }
+                            }
+                            e => {
+                                println!("Error: {:?}", e);
+                            }
+                        }
+                    }
+                }
                 dhcp_server.send_control('c')?;
-                memaslap.process.kill(SIGTERM)?;
-
                 p.process.kill(SIGTERM)
             };
 
@@ -858,9 +897,9 @@ fn s10_memcached_benchmark_internal() {
         (16 * 1024 /* MB */, 16 /* MB */, 2000000, 300_000)
     } else {
         (
-            128 * 1024, /* MB */
-            32 * 1024,  /* MB */
-            50000000,
+            256 * 1024, /* MB */
+            16,         // 64 * 1024, /* MB */
+            100_000_000,
             600_000,
         )
     };

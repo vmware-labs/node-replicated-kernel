@@ -49,6 +49,7 @@ def get_network_config(workers):
         config['tap{}'.format(2*i)] = {
             'mid': i,
             'mac': '56:b4:44:e9:62:d{:x}'.format(i),
+            'ip' : f"172.31.0.1{i}"
         }
     return config
 
@@ -215,8 +216,10 @@ def build_kernel(args):
             build_args = ['build', '--target', KERNEL_TARGET]
             if args.no_kfeatures:
                 build_args += ["--no-default-features"]
+                log(" - enable feature --no-default-features")
             for feature in args.kfeatures:
                 build_args += ['--features', feature]
+                log(" - enable feature {}".format(feature))
             build_args += CARGO_DEFAULT_ARGS
             build_args += CARGO_NOSTD_BUILD_ARGS
             if args.verbose:
@@ -233,6 +236,16 @@ def build_user_libraries(args):
     build_args += ["--features", "rumprt"]
     if args.nic == "virtio-net-pci":
         build_args += ["--features", "virtio"]
+        log(" - enable feature virtio")
+
+    for featurelist in args.ufeatures:
+        for feature in featurelist.split(',') :
+            if ':' in feature:
+                mod_part, feature_part = feature.split(':')
+                if "libvibrio" == mod_part:
+                    log(" - enable feature {}".format(feature_part))
+                    build_args += ['--features', feature_part]
+
     # else: use e1000 / wm0
     build_args += CARGO_DEFAULT_ARGS
     build_args += CARGO_NOSTD_BUILD_ARGS
@@ -259,18 +272,21 @@ def build_userspace(args):
         if not (USR_PATH / module).exists():
             log("User module {} not found, skipping.".format(module))
             continue
+        log("build user-space module {}".format(module))
         with local.cwd(USR_PATH / module):
             with local.env(RUSTFLAGS=USER_RUSTFLAGS):
                 with local.env(RUST_TARGET_PATH=USR_PATH.absolute()):
                     build_args = build_args_default.copy()
-                    for feature in args.ufeatures:
-                        if ':' in feature:
-                            mod_part, feature_part = feature.split(':')
-                            if module == mod_part:
-                                build_args += ['--features', feature_part]
-                        else:
-                            build_args += ['--features', feature]
-                    log("Build user-module {}".format(module))
+                    for featurelist in args.ufeatures:
+                        for feature in featurelist.split(',') :
+                            if ':' in feature:
+                                mod_part, feature_part = feature.split(':')
+                                if module == mod_part:
+                                    log(" - enable feature {}".format(feature_part))
+                                    build_args += ['--features', feature_part]
+                            else:
+                                log(" - enable feature {}".format(feature))
+                                build_args += ['--features', feature]
                     if args.verbose:
                         print("cd {}".format(USR_PATH / module))
                         print("RUSTFLAGS={} RUST_TARGET_PATH={} cargo ".format(

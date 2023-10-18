@@ -13,6 +13,9 @@ use crate::arch::{MAX_CORES, MAX_MACHINES, MAX_NUMA_NODES};
 pub(crate) static CORE_ID: Lazy<usize> =
     Lazy::new(|| new_gtid(atopology::MACHINE_TOPOLOGY.current_thread().id, *MACHINE_ID));
 
+#[thread_local]
+pub(crate) static MT_ID: Lazy<usize> = Lazy::new(|| kpi::system::mtid_from_gtid(*crate::environment::CORE_ID));
+
 /// The NUMA node id of the current core (hardware thread).
 #[thread_local]
 pub(crate) static NODE_ID: Lazy<usize> = Lazy::new(|| {

@@ -23,6 +23,7 @@ use log::{debug, info, trace, warn};
 use crate::arch::kcb;
 use core::num::NonZeroUsize;
 use nr2::nr::{NodeReplicated, AffinityChange};
+use nr2::nr::rwlock::RwLock;
 use x86::bits64::paging::*;
 use x86::bits64::rflags;
 use x86::{controlregs, Ring};
@@ -72,7 +73,7 @@ pub(crate) fn current_pid() -> KResult<Pid> {
 
 #[cfg(feature = "rackscale")]
 lazy_static! {
-    pub(crate) static ref PROCESS_TABLE: ArrayVec<Arc<NodeReplicated<NrProcess<Ring3Process>>>, MAX_PROCESSES> = {
+    pub(crate) static ref PROCESS_TABLE: ArrayVec<Arc<RwLock<NodeReplicated<NrProcess<Ring3Process>>>>, MAX_PROCESSES> = {
         use crate::memory::shmem_affinity::mid_to_shmem_affinity;
         use crate::arch::kcb::per_core_mem;
 
@@ -91,7 +92,7 @@ lazy_static! {
                 let nrproc_ptr = paddr_to_kernel_vaddr(PAddr::from(nr_ptrs[i]));
                 let nr_process = unsafe {
                     Arc::from_raw(nrproc_ptr.as_u64()
-                        as *const NodeReplicated<NrProcess<Ring3Process>>)
+                        as *const RwLock<NodeReplicated<NrProcess<Ring3Process>>>)
                 };
                 processes.push(nr_process);
             }
@@ -115,8 +116,8 @@ lazy_static! {
                 "Expect initialization to happen on node 0."
             );
 
-            let process: Arc<NodeReplicated<NrProcess<Ring3Process>>> = Arc::try_new(
-                NodeReplicated::new(num_replicas, |afc: AffinityChange| {
+            let process: Arc<RwLock<NodeReplicated<NrProcess<Ring3Process>>>> = Arc::try_new(
+                RwLock::new(NodeReplicated::new(num_replicas, |afc: AffinityChange| {
                     let pcm = kcb::per_core_mem();
                     match afc {
                         AffinityChange::Replica(r) => {
@@ -129,7 +130,7 @@ lazy_static! {
                     return 0; // TODO(dynrep): Return error code
                 })
                 .expect("Not enough memory to initialize system"),
-            )
+            ))
             .expect("Not enough memory to initialize system");
 
             processes.push(process)
@@ -181,12 +182,12 @@ lazy_static! {
 
 #[cfg(not(feature = "rackscale"))]
 lazy_static! {
-    pub(crate) static ref PROCESS_TABLE: ArrayVec<Arc<NodeReplicated<NrProcess<Ring3Process>>>, MAX_PROCESSES> =
+    pub(crate) static ref PROCESS_TABLE: ArrayVec<Arc<RwLock<NodeReplicated<NrProcess<Ring3Process>>>>, MAX_PROCESSES> =
         create_process_table();
 }
 
 #[cfg(not(feature = "rackscale"))]
-fn create_process_table() -> ArrayVec<Arc<NodeReplicated<NrProcess<Ring3Process>>>, MAX_PROCESSES> {
+fn create_process_table() -> ArrayVec<Arc<RwLock<NodeReplicated<NrProcess<Ring3Process>>>>, MAX_PROCESSES> {
     // Want at least one replica...
     let num_replicas =
         NonZeroUsize::new(core::cmp::max(1, atopology::MACHINE_TOPOLOGY.num_nodes())).unwrap();
@@ -199,7 +200,7 @@ fn create_process_table() -> ArrayVec<Arc<NodeReplicated<NrProcess<Ring3Process>
             "Expect initialization to happen on node 0."
         );
 
-        let process: Arc<NodeReplicated<NrProcess<Ring3Process>>> = Arc::try_new(
+        let process: Arc<RwLock<NodeReplicated<NrProcess<Ring3Process>>>> = Arc::try_new(RwLock::new(
             NodeReplicated::new(num_replicas, |afc: AffinityChange| {
                 let pcm = kcb::per_core_mem();
                 match afc {
@@ -212,7 +213,7 @@ fn create_process_table() -> ArrayVec<Arc<NodeReplicated<NrProcess<Ring3Process>
                 }
                 return 0; // TODO(dynrep): Return error code
             })
-            .expect("Not enough memory to initialize system"),
+            .expect("Not enough memory to initialize system")),
         )
         .expect("Not enough memory to initialize system");
 
@@ -293,14 +294,16 @@ fn create_process_table(
     numa_cache
 }
  */
-pub(crate) struct ArchProcessManagement;
+
+ pub(crate) struct ArchProcessManagement;
+
 
 impl crate::nrproc::ProcessManager for ArchProcessManagement {
     type Process = Ring3Process;
 
     fn process_table(
         &self,
-    ) -> &'static ArrayVec<Arc<NodeReplicated<NrProcess<Self::Process>>>, MAX_PROCESSES> {
+    ) -> &'static ArrayVec<Arc<RwLock<NodeReplicated<NrProcess<Self::Process>>>>, MAX_PROCESSES> {
         &*super::process::PROCESS_TABLE
     }
 }

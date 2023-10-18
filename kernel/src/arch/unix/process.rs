@@ -6,6 +6,7 @@ use alloc::boxed::Box;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use bootloader_shared::Module;
+use nr2::nr::rwlock::RwLock;
 use core::alloc::Allocator;
 use core::cell::RefCell;
 use core::num::NonZeroUsize;
@@ -66,7 +67,7 @@ pub(crate) fn swap_current_executor(_current_executor: Box<UnixThread>) -> Optio
 }
 
 lazy_static! {
-    pub(crate) static ref PROCESS_TABLE: ArrayVec<Arc<NodeReplicated<NrProcess<UnixProcess>>>, MAX_PROCESSES> = {
+    pub(crate) static ref PROCESS_TABLE: ArrayVec<Arc<RwLock<NodeReplicated<NrProcess<UnixProcess>>>>, MAX_PROCESSES> = {
         debug_assert_eq!(*crate::environment::NODE_ID, 0, "Expect initialization to happen on node 0.");
         // Want at least one replica...
         let num_replicas = NonZeroUsize::new(core::cmp::max(1, atopology::MACHINE_TOPOLOGY.num_nodes())).expect("At least one numa node");
@@ -74,9 +75,9 @@ lazy_static! {
         let mut processes = ArrayVec::new();
         for pid in 0..MAX_PROCESSES {
             processes.push(
-                Arc::try_new(NodeReplicated::<NrProcess<UnixProcess>>::new(num_replicas, |afc: AffinityChange| {
+                Arc::try_new(RwLock::new(NodeReplicated::<NrProcess<UnixProcess>>::new(num_replicas, |afc: AffinityChange| {
                     return 0; // TODO(dynrep): Return error code
-                }).expect("Not enough memory to initialize system")).expect("Not enough memory to initialize system"));
+                }).expect("Not enough memory to initialize system"))).expect("Not enough memory to initialize system"));
         }
         processes
     };
@@ -89,7 +90,7 @@ impl crate::nrproc::ProcessManager for ArchProcessManagement {
 
     fn process_table(
         &self,
-    ) -> &'static ArrayVec<Arc<NodeReplicated<NrProcess<UnixProcess>>>, MAX_PROCESSES> {
+    ) -> &'static ArrayVec<Arc<RwLock<NodeReplicated<NrProcess<UnixProcess>>>>, MAX_PROCESSES> {
         &super::process::PROCESS_TABLE
     }
 }

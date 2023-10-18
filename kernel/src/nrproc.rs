@@ -11,7 +11,7 @@ use arrayvec::ArrayVec;
 use fallible_collections::vec::FallibleVec;
 use kpi::process::{FrameId, ProcessInfo};
 use kpi::MemType;
-use nr2::nr::{Dispatch, NodeReplicated, ThreadToken};
+use nr2::nr::{Dispatch, NodeReplicated, ThreadToken, rwlock::RwLock};
 use spin::Once;
 
 use crate::arch::process::PROCESS_TABLE;
@@ -40,7 +40,7 @@ pub(crate) fn register_thread_with_process_replicas() {
         for pid in 0..MAX_PROCESSES {
             debug_assert!(PROCESS_TABLE.len() > pid, "Invalid PID");
 
-            let token = PROCESS_TABLE[pid].register(node);
+            let token = PROCESS_TABLE[pid].write(*crate::environment::MT_ID).register(node);
             tokens.push(token.expect("Need to be able to register"));
         }
 
@@ -119,7 +119,7 @@ pub(crate) trait ProcessManager {
     #[allow(clippy::type_complexity)] // fix this once `associated_type_defaults` works
     fn process_table(
         &self,
-    ) -> &'static ArrayVec<Arc<NodeReplicated<NrProcess<Self::Process>>>, MAX_PROCESSES>;
+    ) -> &ArrayVec<Arc<RwLock<NodeReplicated<NrProcess<Self::Process>>>>, MAX_PROCESSES>;
 }
 
 /// A node-replicated process.
@@ -146,7 +146,7 @@ impl<P: Process> NrProcess<P> {
         let max_nodes = *crate::environment::NUM_MACHINES;
         debug_assert!(rid < max_nodes, "Invalid Node ID");
         log::info!("add_replica {pid} {rid}");
-        PROCESS_TABLE[pid].add_replica(rid).expect("add_replica failed");
+        PROCESS_TABLE[pid].write(*crate::environment::MT_ID).add_replica(rid).expect("add_replica failed");
         Ok(())
     }
 
@@ -155,7 +155,7 @@ impl<P: Process> NrProcess<P> {
         let max_nodes = *crate::environment::NUM_MACHINES;
         debug_assert!(rid < max_nodes, "Invalid Node ID");
         log::info!("remove_replica {pid} {rid}");
-        PROCESS_TABLE[pid].remove_replica(rid).expect("remove_replica failed");
+        PROCESS_TABLE[pid].write(*crate::environment::MT_ID).remove_replica(rid).expect("remove_replica failed");
         Ok(())    
     }
 
@@ -165,7 +165,7 @@ impl<P: Process> NrProcess<P> {
         writeable_sections: Vec<Frame>,
     ) -> Result<(), KError> {
         debug_assert!(pid < MAX_PROCESSES, "Invalid PID");
-        let response = PROCESS_TABLE[pid].execute_mut(
+        let response = PROCESS_TABLE[pid].read(*crate::environment::MT_ID).execute_mut(
             ProcessOpMut::Load(pid, module_name, writeable_sections),
             PROCESS_TOKEN.get().unwrap()[pid],
         );
@@ -179,7 +179,7 @@ impl<P: Process> NrProcess<P> {
     pub(crate) fn resolve(pid: Pid, base: VAddr) -> Result<(u64, u64), KError> {
         debug_assert!(pid < MAX_PROCESSES, "Invalid PID");
         debug_assert!(base.as_u64() < kpi::KERNEL_BASE, "Invalid base");
-        let response = PROCESS_TABLE[pid].execute(
+        let response = PROCESS_TABLE[pid].read(*crate::environment::MT_ID).execute(
             ProcessOp::MemResolve(base),
             PROCESS_TOKEN.get().unwrap()[pid],
         );
@@ -192,7 +192,7 @@ impl<P: Process> NrProcess<P> {
 
     pub(crate) fn synchronize(pid: Pid) {
         debug_assert!(pid < MAX_PROCESSES, "Invalid PID");
-        PROCESS_TABLE[pid].sync(PROCESS_TOKEN.get().unwrap()[pid]);
+        PROCESS_TABLE[pid].read(*crate::environment::MT_ID).sync(PROCESS_TOKEN.get().unwrap()[pid]);
     }
 
     pub(crate) fn map_device_frame(
@@ -201,7 +201,7 @@ impl<P: Process> NrProcess<P> {
         action: MapAction,
     ) -> Result<(u64, u64), KError> {
         debug_assert!(pid < MAX_PROCESSES, "Invalid PID");
-        let response = PROCESS_TABLE[pid].execute_mut(
+        let response = PROCESS_TABLE[pid].read(*crate::environment::MT_ID).execute_mut(
             ProcessOpMut::MemMapDevice(frame, action),
             PROCESS_TOKEN.get().unwrap()[pid],
         );
@@ -214,7 +214,7 @@ impl<P: Process> NrProcess<P> {
 
     pub(crate) fn unmap(pid: Pid, base: VAddr) -> Result<Vec<TlbFlushHandle>, KError> {
         debug_assert!(pid < MAX_PROCESSES, "Invalid PID");
-        let response = PROCESS_TABLE[pid].execute_mut(
+        let response = PROCESS_TABLE[pid].read(*crate::environment::MT_ID).execute_mut(
             ProcessOpMut::MemUnmap(base),
             PROCESS_TOKEN.get().unwrap()[pid],
         );
@@ -233,7 +233,7 @@ impl<P: Process> NrProcess<P> {
     ) -> Result<(PAddr, usize), KError> {
         debug_assert!(pid < MAX_PROCESSES, "Invalid PID");
         //action.multiple_mappings(true);
-        let response = PROCESS_TABLE[pid].execute_mut(
+        let response = PROCESS_TABLE[pid].read(*crate::environment::MT_ID).execute_mut(
             ProcessOpMut::MemMapFrameId(base, frame_id, action),
             PROCESS_TOKEN.get().unwrap()[pid],
         );
@@ -253,7 +253,7 @@ impl<P: Process> NrProcess<P> {
         debug_assert!(pid < MAX_PROCESSES, "Invalid PID");
         let mut virtual_offset = 0;
         for frame in frames {
-            let response = PROCESS_TABLE[pid].execute_mut(
+            let response = PROCESS_TABLE[pid].read(*crate::environment::MT_ID).execute_mut(
                 ProcessOpMut::MemMapFrame(base + virtual_offset, frame, action),
                 PROCESS_TOKEN.get().unwrap()[pid],
             );
@@ -277,7 +277,7 @@ impl<P: Process> NrProcess<P> {
     pub(crate) fn pinfo(pid: Pid) -> Result<ProcessInfo, KError> {
         debug_assert!(pid < MAX_PROCESSES, "Invalid PID");
         let response =
-            PROCESS_TABLE[pid].execute(ProcessOp::ProcessInfo, PROCESS_TOKEN.get().unwrap()[pid]);
+            PROCESS_TABLE[pid].read(*crate::environment::MT_ID).execute(ProcessOp::ProcessInfo, PROCESS_TOKEN.get().unwrap()[pid]);
         match response {
             Ok(ProcessResult::ProcessInfo(pinfo)) => Ok(pinfo),
             Err(e) => Err(e),
@@ -293,7 +293,7 @@ impl<P: Process> NrProcess<P> {
         let gtid = *crate::environment::CORE_ID;
         let node = *crate::environment::NODE_ID;
 
-        let response = pm.process_table()[pid].execute_mut(
+        let response = pm.process_table()[pid].read(*crate::environment::MT_ID).execute_mut(
             ProcessOpMut::AssignExecutor(gtid, node),
             PROCESS_TOKEN.get().unwrap()[pid],
         );
@@ -324,7 +324,7 @@ impl<P: Process> NrProcess<P> {
 
     pub(crate) fn allocate_frame_to_process(pid: Pid, frame: Frame) -> Result<FrameId, KError> {
         debug_assert!(pid < MAX_PROCESSES, "Invalid PID");
-        let response = PROCESS_TABLE[pid].execute_mut(
+        let response = PROCESS_TABLE[pid].read(*crate::environment::MT_ID).execute_mut(
             ProcessOpMut::AllocateFrameToProcess(frame),
             PROCESS_TOKEN.get().unwrap()[pid],
         );
@@ -338,7 +338,7 @@ impl<P: Process> NrProcess<P> {
     pub(crate) fn release_frame_from_process(pid: Pid, fid: FrameId) -> Result<Frame, KError> {
         debug_assert!(pid < MAX_PROCESSES, "Invalid PID");
         debug_assert!(fid < MAX_FRAMES_PER_PROCESS, "Invalid FID");
-        let response = PROCESS_TABLE[pid].execute_mut(
+        let response = PROCESS_TABLE[pid].read(*crate::environment::MT_ID).execute_mut(
             ProcessOpMut::ReleaseFrameFromProcess(fid),
             PROCESS_TOKEN.get().unwrap()[pid],
         );
@@ -354,7 +354,7 @@ impl<P: Process> NrProcess<P> {
         #[cfg(feature = "rackscale")]
         let mid = *crate::environment::MACHINE_ID;
 
-        let response = PROCESS_TABLE[pid].execute_mut(
+        let response = PROCESS_TABLE[pid].read(*crate::environment::MT_ID).execute_mut(
             #[cfg(not(feature = "rackscale"))]
             ProcessOpMut::DispatcherAllocation(frame),
             #[cfg(feature = "rackscale")]
@@ -370,7 +370,7 @@ impl<P: Process> NrProcess<P> {
     }
 
     pub(crate) fn userslice_to_arc_slice(from: UserSlice) -> Result<Arc<[u8]>, KError> {
-        let response = PROCESS_TABLE[from.pid].execute(
+        let response = PROCESS_TABLE[from.pid].read(*crate::environment::MT_ID).execute(
             ProcessOp::ReadSlice(from),
             PROCESS_TOKEN.get().unwrap()[from.pid],
         );
@@ -382,7 +382,7 @@ impl<P: Process> NrProcess<P> {
     }
 
     pub(crate) fn read_string_from_userspace(from: UserSlice) -> Result<String, KError> {
-        let response = PROCESS_TABLE[from.pid].execute(
+        let response = PROCESS_TABLE[from.pid].read(*crate::environment::MT_ID).execute(
             ProcessOp::ReadString(from),
             PROCESS_TOKEN.get().unwrap()[from.pid],
         );
@@ -396,7 +396,7 @@ impl<P: Process> NrProcess<P> {
     pub(crate) fn write_to_userspace(to: &mut UserSlice, kbuf: &[u8]) -> Result<(), KError> {
         let pid = to.pid;
 
-        let response = PROCESS_TABLE[pid].execute(
+        let response = PROCESS_TABLE[pid].read(*crate::environment::MT_ID).execute(
             ProcessOp::WriteSlice(to, kbuf),
             PROCESS_TOKEN.get().unwrap()[pid],
         );
@@ -412,7 +412,7 @@ impl<P: Process> NrProcess<P> {
         on: UserSlice,
         f: Box<dyn Fn(&mut [u8]) -> KResult<(u64, u64)>>,
     ) -> Result<(u64, u64), KError> {
-        let response = PROCESS_TABLE[on.pid].execute(
+        let response = PROCESS_TABLE[on.pid].read(*crate::environment::MT_ID).execute(
             ProcessOp::ExecSliceMut(on, f),
             PROCESS_TOKEN.get().unwrap()[on.pid],
         );
@@ -427,7 +427,7 @@ impl<P: Process> NrProcess<P> {
         on: &'a UserSlice,
         f: Box<dyn Fn(&'a [u8]) -> KResult<()>>,
     ) -> Result<(), KError> {
-        let response = PROCESS_TABLE[on.pid].execute(
+        let response = PROCESS_TABLE[on.pid].read(*crate::environment::MT_ID).execute(
             ProcessOp::ExecSlice(on, f),
             PROCESS_TOKEN.get().unwrap()[on.pid],
         );

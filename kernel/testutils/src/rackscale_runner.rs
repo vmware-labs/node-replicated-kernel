@@ -512,8 +512,8 @@ impl<T: Clone + Send + 'static> RackscaleBench<T> {
 
         // Find max cores, max numa, and max cores per node
         let machine = Machine::determine();
-        let max_cores = if is_smoke { 2 } else { machine.max_cores() };
-        let max_numa = machine.max_numa_nodes();
+        let max_cores = if is_smoke { 8 } else { machine.max_cores() };
+        let max_numa =  if is_smoke { 4 } else { machine.max_numa_nodes() };
         let total_cores_per_node = core::cmp::max(1, max_cores / max_numa);
 
         // Do initial network configuration
@@ -524,7 +524,7 @@ impl<T: Clone + Send + 'static> RackscaleBench<T> {
             setup_network(num_clients + 1);
         }
 
-        let mut total_cores = 1;
+        let mut total_cores = 4;
         while total_cores < max_cores {
             // Round up to get the number of clients
             let new_num_clients = (total_cores + (total_cores_per_node - 1)) / total_cores_per_node;

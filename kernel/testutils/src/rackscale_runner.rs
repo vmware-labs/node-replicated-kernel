@@ -786,7 +786,7 @@ pub struct RackscaleBench<T: Clone + Send + 'static> {
     // Function to calculate the timeout. Takes as argument number of application cores
     pub baseline_timeout_fn: fn(usize) -> u64,
     // Function to calculate memory (excpeting controller memory). Takes as argument number of application cores and is_smoke
-    pub mem_fn: fn(usize, bool) -> usize,
+    pub mem_fn: fn(usize, usize, bool) -> usize,
 }
 
 impl<T: Clone + Send + 'static> RackscaleBench<T> {

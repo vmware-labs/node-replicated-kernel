@@ -872,6 +872,9 @@ fn s10_leveldb_benchmark() {
     }
 }
 
+use testutils::configs::MEMCACHED_MEM_SIZE_MB;
+use testutils::configs::MEMCACHED_NUM_QUERIES;
+
 #[test]
 fn s10_memcached_benchmark_internal() {
     setup_network(1);
@@ -899,9 +902,10 @@ fn s10_memcached_benchmark_internal() {
         (16 * 1024 /* MB */, 16 /* MB */, 2000000, 300_000)
     } else {
         (
-            256 * 1024, /* MB */
-            16,         // 64 * 1024, /* MB */
-            100_000_000,
+            // keep in sync with the s11_ra
+            32 * 1024, /* MB */
+            MEMCACHED_MEM_SIZE_MB,
+            MEMCACHED_NUM_QUERIES,
             600_000,
         )
     };

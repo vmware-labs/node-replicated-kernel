@@ -25,6 +25,9 @@ use testutils::helpers::{DCMConfig, DCMSolver};
 use testutils::rackscale_runner::{RackscaleBench, RackscaleRun};
 use testutils::runner_args::RackscaleTransport;
 
+use testutils::configs::MEMCACHED_MEM_SIZE_MB;
+use testutils::configs::MEMCACHED_NUM_QUERIES;
+
 #[test]
 #[cfg(not(feature = "baremetal"))]
 fn s11_rackscale_shmem_fxmark_benchmark() {
@@ -139,7 +142,7 @@ fn rackscale_fxmark_benchmark(transport: RackscaleTransport) {
     fn timeout_fn(num_cores: usize) -> u64 {
         180_000 + 5_000 * num_cores as u64
     }
-    fn mem_fn(num_cores: usize, is_smoke: bool) -> usize {
+    fn mem_fn(num_cores: usize, _num_clients: usize, is_smoke: bool) -> usize {
         if is_smoke {
             8192
         } else {
@@ -303,7 +306,7 @@ fn rackscale_vmops_benchmark(transport: RackscaleTransport, benchtype: VMOpsBenc
     fn rackscale_timeout_fn(num_cores: usize) -> u64 {
         240_000 + 1_000 * num_cores as u64
     }
-    fn mem_fn(num_cores: usize, is_smoke: bool) -> usize {
+    fn mem_fn(num_cores: usize, _num_clients: usize, is_smoke: bool) -> usize {
         if is_smoke {
             8192
         } else {
@@ -441,7 +444,7 @@ fn s11_rackscale_shmem_leveldb_benchmark() {
         240_000 + 500 * num_cores as u64
     }
 
-    fn mem_fn(num_cores: usize, is_smoke: bool) -> usize {
+    fn mem_fn(num_cores: usize, _num_clients: usize, is_smoke: bool) -> usize {
         if is_smoke {
             8192
         } else {
@@ -463,9 +466,6 @@ fn s11_rackscale_shmem_leveldb_benchmark() {
     }
     bench.run_bench(false, is_smoke);
 }
-
-const MEMCACHED_MEM_SIZE_MB: usize = 16;
-const MEMCACHED_NUM_QUERIES: usize = 1000_000;
 
 #[derive(Clone)]
 struct MemcachedInternalConfig {
@@ -628,8 +628,8 @@ fn rackscale_memcached_benchmark(transport: RackscaleTransport) {
 
     if !is_smoke {
         test.shmem_size = std::cmp::max(
-            MEMCACHED_MEM_SIZE_MB * 8,
-            testutils::helpers::SHMEM_SIZE * 4,
+            MEMCACHED_MEM_SIZE_MB * 2,
+            testutils::helpers::SHMEM_SIZE * 2,
         );
     }
 
@@ -653,18 +653,20 @@ fn rackscale_memcached_benchmark(transport: RackscaleTransport) {
         }
     }
 
-    fn mem_fn(num_cores: usize, is_smoke: bool) -> usize {
+    fn mem_fn(num_cores: usize, num_clients: usize, is_smoke: bool) -> usize {
+        let base_memory = if num_cores > 64 { 8192 } else { 4096 };
+
         if is_smoke {
-            8192
+            base_memory
         } else {
             // Memory must also be divisible by number of nodes, which could be 1, 2, 3, or 4
             // memory = result of this function / num_clients  - shmem_size
-            (8192
+            (base_memory
                 + std::cmp::max(
-                    MEMCACHED_MEM_SIZE_MB * 8,
-                    testutils::helpers::SHMEM_SIZE * 4,
+                    MEMCACHED_MEM_SIZE_MB * 2,
+                    testutils::helpers::SHMEM_SIZE * 2,
                 ))
-                * (((((num_cores + 1) / 2) + 3 - 1) / 3) * 3)
+                * num_clients
         }
     }
 
@@ -1084,7 +1086,7 @@ fn s11_rackscale_memcached_benchmark_sharded_linux() {
             mem_size: 16,
             protocol: "tcp",
             is_local_host: true,
-            num_threads: 4,
+            num_threads: 8,
             path: out_dir_path,
         }
     } else {
@@ -1095,7 +1097,7 @@ fn s11_rackscale_memcached_benchmark_sharded_linux() {
             mem_size: MEMCACHED_MEM_SIZE_MB,
             protocol: "tcp",
             is_local_host: true,
-            num_threads: 4,
+            num_threads: 8,
             path: out_dir_path,
         }
     };
@@ -1216,7 +1218,7 @@ fn s11_rackscale_memcached_benchmark_sharded_linux() {
         config.num_servers = num_nodes;
 
         for num_threads in 1..=max_threads_per_node {
-            if (num_threads != 1 || num_threads != max_threads_per_node) && (num_threads % 4 != 0) {
+            if (num_threads != 1 || num_threads != max_threads_per_node) && (num_threads % 8 != 0) {
                 continue;
             }
 
@@ -1567,7 +1569,7 @@ fn s11_rackscale_memcached_benchmark_sharded_nros() {
         600_000 + 60_000 * num_cores as u64
     }
 
-    fn mem_fn(num_cores: usize, is_smoke: bool) -> usize {
+    fn mem_fn(num_cores: usize, _num_clients: usize, is_smoke: bool) -> usize {
         if is_smoke {
             8192
         } else {
@@ -1655,7 +1657,7 @@ fn rackscale_monetdb_benchmark(transport: RackscaleTransport) {
         180_000 + 500 * num_cores as u64
     }
 
-    fn mem_fn(num_cores: usize, is_smoke: bool) -> usize {
+    fn mem_fn(num_cores: usize, _num_clients: usize, is_smoke: bool) -> usize {
         if is_smoke {
             8192
         } else {

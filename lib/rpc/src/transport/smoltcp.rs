@@ -16,8 +16,8 @@ use vmxnet3::smoltcp::DevQueuePhy;
 use crate::rpc::*;
 use crate::transport::Transport;
 
-const RX_BUF_LEN: usize = 8192;
-const TX_BUF_LEN: usize = 8192;
+const RX_BUF_LEN: usize = 65536;
+const TX_BUF_LEN: usize = 65536;
 
 pub struct TCPTransport<'a> {
     iface: Arc<Mutex<Interface<'a, DevQueuePhy>>>,

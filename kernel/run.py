@@ -745,7 +745,9 @@ def configure_network(args):
         for _, ncfg in zip(range(0, args.workers), NETWORK_CONFIG):
             sudo[tunctl[['-t', ncfg, '-u', user, '-g', group]]]()
             sudo[ip[['link', 'set', ncfg, 'up']]](retcode=(0, 1))
+            sudo[ip[['link', 'set', ncfg, 'txqueuelen', 65536]]]()
             sudo[brctl[['addif', 'br0', ncfg]]]()
+        sudo[ip[['link', 'set', 'br0', 'txqueuelen', 65536]]]()
         sudo[ip[['link', 'set', 'br0', 'up']]](retcode=(0, 1))
 
 

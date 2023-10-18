@@ -27,7 +27,6 @@ fn s11_rackscale_shmem_fxmark_benchmark() {
 }
 
 #[test]
-#[ignore]
 #[cfg(not(feature = "baremetal"))]
 fn s11_rackscale_ethernet_fxmark_benchmark() {
     rackscale_fxmark_benchmark(RackscaleTransport::Ethernet);
@@ -134,14 +133,16 @@ fn rackscale_fxmark_benchmark(transport: RackscaleTransport) {
     fn timeout_fn(num_cores: usize) -> u64 {
         180_000 + 5_000 * num_cores as u64
     }
+
     fn mem_fn(num_cores: usize, is_smoke: bool) -> usize {
         if is_smoke {
             8192
         } else {
             // Memory must also be divisible by number of nodes, which could be 1, 2, 3, or 4
-            2048 * (((num_cores + 3 - 1) / 3) * 3)
+            4096 * (((((num_cores + 1) / 2) + 3 - 1) / 3) * 3)
         }
     }
+
     let bench = RackscaleBench {
         test,
         cmd_fn,
@@ -722,7 +723,7 @@ fn rackscale_memcached_dcm(transport: RackscaleTransport, dcm_config: Option<DCM
 
     let _ignore = std::fs::remove_file(file_name.clone());
 
-    let iterations = if dcm_config.is_some() { 2 } else { 1 };
+    let iterations = if dcm_config.is_some() { 10 } else { 1 };
 
     for _ in 0..iterations {
         let built = BuildArgs::default()

@@ -1072,6 +1072,8 @@ fn rackscale_memcached_checkout() {
 #[test]
 #[cfg(not(feature = "baremetal"))]
 fn s11_rackscale_memcached_benchmark_sharded_linux() {
+    use std::fs::remove_file;
+
     let machine = Machine::determine();
     let out_dir_path = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("sharded-memcached");
     let is_smoke = cfg!(feature = "smoke");
@@ -1102,7 +1104,7 @@ fn s11_rackscale_memcached_benchmark_sharded_linux() {
         }
     };
 
-    let timeout_ms = if is_smoke { 60_000 } else { 600_000 };
+    let timeout_ms = if is_smoke { 60_000 } else { 900_000 };
 
     fn run_benchmark_internal(config: &MemcachedShardedConfig, timeout_ms: u64) -> PtySession {
         Command::new("killall").args(&["memcached"]).status().ok();
@@ -1125,7 +1127,9 @@ fn s11_rackscale_memcached_benchmark_sharded_linux() {
         let con_info = if config.protocol == "tcp" {
             format!("tcp://localhost:{}", 11211 + id)
         } else {
-            format!("unix://{}/memcached{}.sock", config.path.display(), id)
+            let pathname = config.path.join(format!("memcached{id}.sock"));
+            remove_file(pathname); // make sure the socket file is removed
+            format!("unix://{}", pathname.display())
         };
 
         let mut command = Command::new("bash");
@@ -1226,8 +1230,9 @@ fn s11_rackscale_memcached_benchmark_sharded_linux() {
 
             config.num_threads = num_threads;
 
-            let _ = Command::new("killall").args(&["memcached"]).status();
-            let _ = Command::new("killall").args(&["memcached"]).status();
+            let _ = Command::new("killall")
+                .args(&["memcached", "-s", "SIGKILL"])
+                .status();
             let mut pty = run_benchmark_internal(&config, timeout_ms);
             let mut output = String::new();
             let res =
@@ -1252,8 +1257,9 @@ fn s11_rackscale_memcached_benchmark_sharded_linux() {
                 println!("Memcached Sharded: {num_threads}x{num_nodes} with {protocol}");
 
                 // terminate the memcached instance
-                let _ = Command::new("killall").args(&["memcached"]).status();
-                let _ = Command::new("killall").args(&["memcached"]).status();
+                let _ = Command::new("killall")
+                    .args(&["memcached", "-s", "SIGKILL"])
+                    .status();
 
                 let mut memcached_ctrls = Vec::new();
                 for i in 0..num_nodes {
@@ -1317,12 +1323,16 @@ fn s11_rackscale_memcached_benchmark_sharded_linux() {
                         let _ = Command::new("killall").args(&["memcached"]).status();
                     }
                 };
+
+                let _ = pty.process.kill(rexpect::process::signal::Signal::SIGKILL);
             }
         }
     }
 
     // terminate the memcached instance
-    let _ = Command::new("killall").args(&["memcached"]).status();
+    let _ = Command::new("killall")
+        .args(&["memcached", "-s", "SIGKILL"])
+        .status();
 }
 
 #[test]

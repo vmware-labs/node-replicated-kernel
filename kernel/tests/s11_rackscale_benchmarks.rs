@@ -1074,6 +1074,8 @@ fn rackscale_memcached_checkout() {
 fn s11_rackscale_memcached_benchmark_sharded_linux() {
     use std::fs::remove_file;
 
+    use rexpect::process::signal::Signal::SIGKILL;
+
     let machine = Machine::determine();
     let out_dir_path = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("sharded-memcached");
     let is_smoke = cfg!(feature = "smoke");
@@ -1125,7 +1127,7 @@ fn s11_rackscale_memcached_benchmark_sharded_linux() {
         timeout_ms: u64,
     ) -> Result<PtySession> {
         let con_info = if config.protocol == "tcp" {
-            format!("tcp://localhost:{}", 11211 + id)
+            format!("tcp://localhost:{}", 11212 + id)
         } else {
             let pathname = config.path.join(format!("memcached{id}.sock"));
             remove_file(pathname.clone()); // make sure the socket file is removed
@@ -1173,7 +1175,7 @@ fn s11_rackscale_memcached_benchmark_sharded_linux() {
             }
             if config.protocol == "tcp" {
                 if config.is_local_host {
-                    servers.push_str(format!("tcp://localhost:{}", 11211 + i).as_str());
+                    servers.push_str(format!("tcp://localhost:{}", 11212 + i).as_str());
                 } else {
                     // +1 because tap0 is reserved for the controller.
                     let ip = 10 + i + 1;
@@ -1246,6 +1248,9 @@ fn s11_rackscale_memcached_benchmark_sharded_linux() {
             let r = csv_file.write(out.as_bytes());
             assert!(r.is_ok());
 
+            let r = pty.process.kill(SIGKILL);
+
+
             println!("{:?}", res);
 
             // single node
@@ -1260,6 +1265,9 @@ fn s11_rackscale_memcached_benchmark_sharded_linux() {
                 let _ = Command::new("killall")
                     .args(&["memcached", "-s", "SIGKILL"])
                     .status();
+
+                // give some time so memcached can be cleaned up
+                std::thread::sleep(Duration::from_secs(5));
 
                 let mut memcached_ctrls = Vec::new();
                 for i in 0..num_nodes {
@@ -1576,7 +1584,7 @@ fn s11_rackscale_memcached_benchmark_sharded_nros() {
     }
 
     fn rackscale_timeout_fn(num_cores: usize) -> u64 {
-        600_000 + 60_000 * num_cores as u64
+        1200_000 + 60_000 * num_cores as u64
     }
 
     fn mem_fn(num_cores: usize, _num_clients: usize, is_smoke: bool) -> usize {

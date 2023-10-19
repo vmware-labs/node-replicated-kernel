@@ -307,13 +307,20 @@ const SHMEM_QUEUE_SIZE: usize = 32;
 
 // The total size of two queues(sender and reciever) should be less than the transport size.
 #[cfg(feature = "rpc")]
-const_assert!(2 * SHMEM_QUEUE_SIZE * QUEUE_ENTRY_SIZE <= SHMEM_TRANSPORT_SIZE as usize);
+const_assert!(2 * SHMEM_QUEUE_SIZE * QUEUE_ENTRY_SIZE <= SINGLE_SHMEM_TRANSPORT_SIZE as usize);
 
 #[cfg(feature = "rpc")]
-pub(crate) const SHMEM_TRANSPORT_SIZE: u64 = 2 * 1024 * 1024;
+pub(crate) const SINGLE_SHMEM_TRANSPORT_SIZE: u64 = 2 * 1024 * 1024;
+
+// TODO(rackscale, hack): max cores at 24 for now
+#[cfg(feature = "rpc")]
+pub(crate) const NUM_SHMEM_TRANSPORTS: u64 = 24;
 
 #[cfg(feature = "rpc")]
-pub(crate) fn create_shmem_transport(mid: MachineId) -> KResult<ShmemTransport<'static>> {
+pub(crate) const SHMEM_TRANSPORT_SIZE: u64 = SINGLE_SHMEM_TRANSPORT_SIZE * NUM_SHMEM_TRANSPORTS;
+
+#[cfg(feature = "rpc")]
+pub(crate) fn create_shmem_transport(mid: MachineId) -> KResult<Vec<ShmemTransport<'static>>> {
     use rpc::transport::shmem::allocator::ShmemAllocator;
     use rpc::transport::shmem::Queue;
     use rpc::transport::shmem::{Receiver, Sender};
@@ -326,57 +333,77 @@ pub(crate) fn create_shmem_transport(mid: MachineId) -> KResult<ShmemTransport<'
     };
     assert!(region_size as u64 >= SHMEM_TRANSPORT_SIZE);
 
-    let allocator = ShmemAllocator::new(base_addr.as_u64(), SHMEM_TRANSPORT_SIZE);
-    match crate::CMDLINE.get().map_or(Mode::Native, |c| c.mode) {
-        Mode::Controller => {
-            let server_to_client_queue =
-                Arc::new(Queue::with_capacity_in(true, SHMEM_QUEUE_SIZE, &allocator).unwrap());
-            let client_to_server_queue =
-                Arc::new(Queue::with_capacity_in(true, SHMEM_QUEUE_SIZE, &allocator).unwrap());
-            let server_sender = Sender::with_shared_queue(server_to_client_queue.clone());
-            let server_receiver = Receiver::with_shared_queue(client_to_server_queue.clone());
-            log::info!(
-                "Controller: Created shared-memory transport for machine {}! size={:?}, base={:?}",
+    let mut transports = Vec::try_with_capacity(NUM_SHMEM_TRANSPORTS as usize)?;
+
+    for transport_offset in 0..NUM_SHMEM_TRANSPORTS {
+        let allocator = ShmemAllocator::new(
+            base_addr.as_u64() + transport_offset * SINGLE_SHMEM_TRANSPORT_SIZE,
+            SINGLE_SHMEM_TRANSPORT_SIZE,
+        );
+        match crate::CMDLINE.get().map_or(Mode::Native, |c| c.mode) {
+            Mode::Controller => {
+                let server_to_client_queue =
+                    Arc::new(Queue::with_capacity_in(true, SHMEM_QUEUE_SIZE, &allocator).unwrap());
+                let client_to_server_queue =
+                    Arc::new(Queue::with_capacity_in(true, SHMEM_QUEUE_SIZE, &allocator).unwrap());
+                let server_sender = Sender::with_shared_queue(server_to_client_queue.clone());
+                let server_receiver = Receiver::with_shared_queue(client_to_server_queue.clone());
+                log::info!(
+                "Controller: Created shared-memory transport for machine {}! size={:?}, base={:x}",
                 mid,
-                SHMEM_TRANSPORT_SIZE,
-                base_addr
+                SINGLE_SHMEM_TRANSPORT_SIZE,
+                base_addr.as_u64() + transport_offset * SINGLE_SHMEM_TRANSPORT_SIZE
             );
-            Ok(ShmemTransport::new(server_receiver, server_sender))
-        }
-        Mode::Client => {
-            let server_to_client_queue =
-                Arc::new(Queue::with_capacity_in(false, SHMEM_QUEUE_SIZE, &allocator).unwrap());
-            let client_to_server_queue =
-                Arc::new(Queue::with_capacity_in(false, SHMEM_QUEUE_SIZE, &allocator).unwrap());
-            let client_receiver = Receiver::with_shared_queue(server_to_client_queue.clone());
-            let client_sender = Sender::with_shared_queue(client_to_server_queue.clone());
-            log::info!(
-                "Client: Created shared-memory transport! size={:?}, base={:?}",
-                SHMEM_TRANSPORT_SIZE,
-                base_addr
-            );
-            Ok(ShmemTransport::new(client_receiver, client_sender))
-        }
-        Mode::Native => {
-            log::error!("Native mode not supported for shmem");
-            Err(KError::InvalidNativeMode)
+                transports.push(ShmemTransport::new(server_receiver, server_sender));
+            }
+            Mode::Client => {
+                let server_to_client_queue =
+                    Arc::new(Queue::with_capacity_in(false, SHMEM_QUEUE_SIZE, &allocator).unwrap());
+                let client_to_server_queue =
+                    Arc::new(Queue::with_capacity_in(false, SHMEM_QUEUE_SIZE, &allocator).unwrap());
+                let client_receiver = Receiver::with_shared_queue(server_to_client_queue.clone());
+                let client_sender = Sender::with_shared_queue(client_to_server_queue.clone());
+                log::info!(
+                    "Client: Created shared-memory transport! size={:?}, base={:x}",
+                    SINGLE_SHMEM_TRANSPORT_SIZE,
+                    base_addr.as_u64() + transport_offset * SINGLE_SHMEM_TRANSPORT_SIZE
+                );
+                transports.push(ShmemTransport::new(client_receiver, client_sender));
+            }
+            Mode::Native => {
+                log::error!("Native mode not supported for shmem");
+                return Err(KError::InvalidNativeMode);
+            }
         }
     }
+    Ok(transports)
 }
 
 #[cfg(feature = "rpc")]
 pub(crate) fn init_shmem_rpc(
     send_client_data: bool, // This field is used to indicate if init_client() should send ClientRegistrationRequest
-) -> KResult<rpc::client::Client> {
+) -> KResult<Vec<rpc::client::Client>> {
     use crate::arch::rackscale::registration::initialize_client;
     use rpc::client::Client;
 
     // Set up the transport
-    let transport = Box::try_new(create_shmem_transport(*crate::environment::MACHINE_ID)?)?;
+    let transports = create_shmem_transport(*crate::environment::MACHINE_ID)?;
+    let mut clients = Vec::try_with_capacity(transports.len())?;
+    let mut first = true;
+    for transport in transports.into_iter() {
+        let client = Client::new(Box::new(transport));
 
+        let client = if first {
+            first = false;
+            initialize_client(client, send_client_data).expect("Failed to initialize client")
+        } else {
+            //initialize_client(client, false).expect("Failed to initialize client")
+            client
+        };
+        clients.push(client);
+    }
     // Create the client
-    let client = Client::new(transport);
-    initialize_client(client, send_client_data)
+    Ok(clients)
 }
 
 #[cfg(feature = "rackscale")]

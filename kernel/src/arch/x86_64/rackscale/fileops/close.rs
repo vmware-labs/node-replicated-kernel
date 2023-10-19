@@ -34,11 +34,13 @@ pub(crate) fn rpc_close(pid: usize, fd: FileDescriptor) -> KResult<(u64, u64)> {
     let mut res_data = [0u8; core::mem::size_of::<KResult<(u64, u64)>>()];
 
     // Call Close() RPC
-    CLIENT_STATE.rpc_client.lock().call(
-        KernelRpc::Close as RPCType,
-        &[&req_data],
-        &mut [&mut res_data],
-    )?;
+    CLIENT_STATE.rpc_clients[kpi::system::mtid_from_gtid(*crate::environment::CORE_ID)]
+        .lock()
+        .call(
+            KernelRpc::Close as RPCType,
+            &[&req_data],
+            &mut [&mut res_data],
+        )?;
 
     // Decode and return result
     if let Some((res, remaining)) = unsafe { decode::<KResult<(u64, u64)>>(&mut res_data) } {

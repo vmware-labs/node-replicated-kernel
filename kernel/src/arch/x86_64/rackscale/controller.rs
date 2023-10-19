@@ -18,7 +18,7 @@ use crate::arch::rackscale::dcm::{
 use crate::arch::MAX_MACHINES;
 use crate::cmdline::Transport;
 use crate::transport::ethernet::ETHERNET_IFACE;
-use crate::transport::shmem::create_shmem_transport;
+use crate::transport::shmem::{create_shmem_transport, NUM_SHMEM_TRANSPORTS};
 
 use super::*;
 
@@ -32,6 +32,8 @@ pub(crate) fn run() {
     let mid = *crate::environment::CORE_ID;
 
     // Initialize one server per controller thread
+    // TODO(rackscale, hack): only support shmem for now
+    /*
     let mut server = if crate::CMDLINE
         .get()
         .map_or(false, |c| c.transport == Transport::Ethernet)
@@ -51,26 +53,34 @@ pub(crate) fn run() {
         .get()
         .map_or(false, |c| c.transport == Transport::Shmem)
     {
-        let transport = Box::new(
-            create_shmem_transport(mid.try_into().unwrap())
-                .expect("Failed to create shmem transport"),
-        );
+        */
+    let transports =
+        create_shmem_transport(mid.try_into().unwrap()).expect("Failed to create shmem transport");
 
-        let mut server = Server::new(transport);
+    let mut servers: ArrayVec<Server<'_>, { NUM_SHMEM_TRANSPORTS as usize }> = ArrayVec::new();
+    for transport in transports.into_iter() {
+        let mut server = Server::new(Box::new(transport));
         register_rpcs(&mut server);
-        server
+        servers.push(server);
+    }
+
+    /*
     } else {
         unreachable!("No supported transport layer specified in kernel argument");
     };
+    */
 
     ClientReadyCount.fetch_add(1, Ordering::SeqCst);
 
     // Wait for all clients to connect before fulfilling any RPCs.
     while !DCMServerReady.load(Ordering::SeqCst) {}
 
-    server
+    // TODO(rackscale, hack): only register core 0
+    //for s_index in 0..servers.len() {
+    servers[0]
         .add_client(&CLIENT_REGISTRAR)
         .expect("Failed to accept client");
+    //}
 
     ClientReadyCount.fetch_add(1, Ordering::SeqCst);
 
@@ -114,9 +124,11 @@ pub(crate) fn run() {
     // Start running the RPC server
     log::info!("Starting RPC server for client {:?}!", mid);
     loop {
-        let _handled = server
-            .try_handle()
-            .expect("Controller failed to handle RPC");
+        for s_index in 0..servers.len() {
+            let _handled = servers[s_index]
+                .try_handle()
+                .expect("Controller failed to handle RPC");
+        }
     }
 }
 

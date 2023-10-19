@@ -40,7 +40,11 @@ unsafe_abomonate!(ShmemRegion: base, affinity);
 // This isn't truly a syscall
 pub(crate) fn rpc_get_shmem_frames(pid: Option<Pid>, num_frames: usize) -> KResult<Vec<Frame>> {
     assert!(num_frames > 0);
-    log::debug!("GetShmemFrames({:?})", num_frames);
+    log::debug!(
+        "GetShmemFrames({:?}) core={:?}",
+        num_frames,
+        kpi::system::mtid_from_gtid(*crate::environment::CORE_ID)
+    );
 
     let mid = if pid.is_none() {
         Some(*crate::environment::MACHINE_ID)
@@ -66,8 +70,7 @@ pub(crate) fn rpc_get_shmem_frames(pid: Option<Pid>, num_frames: usize) -> KResu
     for i in 0..max_res_size {
         res_data.push(0u8);
     }
-    CLIENT_STATE
-        .rpc_client
+    CLIENT_STATE.rpc_clients[kpi::system::mtid_from_gtid(*crate::environment::CORE_ID)]
         .lock()
         .call(
             KernelRpc::GetShmemFrames as RPCType,

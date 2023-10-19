@@ -25,11 +25,12 @@ use crate::error::{KError, KResult};
 use crate::memory::backends::MemManager;
 use crate::memory::shmem_affinity::{local_shmem_affinity, mid_to_shmem_affinity};
 use crate::process::MAX_PROCESSES;
+use crate::transport::shmem::NUM_SHMEM_TRANSPORTS;
 
 /// This is the state the client records about itself
 pub(crate) struct ClientState {
     /// The RPC client used to communicate with the controller
-    pub(crate) rpc_client: Arc<Mutex<Client>>,
+    pub(crate) rpc_clients: Arc<ArrayVec<Mutex<Client>, { NUM_SHMEM_TRANSPORTS as usize }>>,
 
     /// Used to store shmem affinity base pages
     pub(crate) affinity_base_pages: Arc<ArrayVec<Mutex<Box<dyn MemManager + Send>>, MAX_MACHINES>>,
@@ -41,7 +42,9 @@ pub(crate) struct ClientState {
 impl ClientState {
     pub(crate) fn new() -> ClientState {
         // Create network stack and instantiate RPC Client
-        let rpc_client = if crate::CMDLINE
+        // TODO(rackscale, hack): only allow shmem for now
+        /*
+        let rpc_clients = if crate::CMDLINE
             .get()
             .map_or(false, |c| c.transport == Transport::Ethernet)
         {
@@ -60,6 +63,13 @@ impl ClientState {
                     .expect("Failed to initialize shmem RPC"),
             ))
         };
+        */
+        let clients =
+            crate::transport::shmem::init_shmem_rpc(true).expect("Failed to initialize shmem RPC");
+        let mut rpc_clients = ArrayVec::new();
+        for client in clients.into_iter() {
+            rpc_clients.push(Mutex::new(client));
+        }
 
         let mut per_process_base_pages = ArrayVec::new();
         for _i in 0..MAX_PROCESSES {
@@ -76,7 +86,7 @@ impl ClientState {
 
         log::debug!("Finished initializing client state");
         ClientState {
-            rpc_client,
+            rpc_clients: Arc::new(rpc_clients),
             affinity_base_pages: Arc::new(affinity_base_pages),
             per_process_base_pages: Arc::new(per_process_base_pages),
         }

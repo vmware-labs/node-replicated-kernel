@@ -26,6 +26,7 @@ fn s11_rackscale_shmem_fxmark_benchmark() {
     rackscale_fxmark_benchmark(RackscaleTransport::Shmem);
 }
 
+#[ignore]
 #[test]
 #[cfg(not(feature = "baremetal"))]
 fn s11_rackscale_ethernet_fxmark_benchmark() {

@@ -69,8 +69,7 @@ pub(crate) fn rpc_writeat(
     } else {
         KernelRpc::WriteAt as RPCType
     };
-    CLIENT_STATE
-        .rpc_client
+    CLIENT_STATE.rpc_clients[kpi::system::mtid_from_gtid(*crate::environment::CORE_ID)]
         .lock()
         .call(rpc_type, &[&req_data, &data], &mut [&mut res_data])?;
 
@@ -129,11 +128,13 @@ pub(crate) fn rpc_readat(
         KernelRpc::ReadAt as RPCType
     };
 
-    CLIENT_STATE.rpc_client.lock().call(
-        KernelRpc::ReadAt as RPCType,
-        &[&req_data],
-        &mut [&mut res_data],
-    )?;
+    CLIENT_STATE.rpc_clients[kpi::system::mtid_from_gtid(*crate::environment::CORE_ID)]
+        .lock()
+        .call(
+            KernelRpc::ReadAt as RPCType,
+            &[&req_data],
+            &mut [&mut res_data],
+        )?;
 
     // Decode result, if successful, return result
     if let Some((res, remaining)) = unsafe { decode::<KResult<(u64, u64)>>(&mut res_data) } {

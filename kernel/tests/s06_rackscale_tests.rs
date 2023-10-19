@@ -22,6 +22,7 @@ fn s06_rackscale_shmem_userspace_smoke_test() {
     rackscale_userspace_smoke_test(RackscaleTransport::Shmem);
 }
 
+#[ignore]
 #[cfg(not(feature = "baremetal"))]
 #[test]
 fn s06_rackscale_ethernet_userspace_smoke_test() {
@@ -132,6 +133,7 @@ fn s06_rackscale_shmem_fs_test() {
     rackscale_fs_test(RackscaleTransport::Shmem);
 }
 
+#[ignore]
 #[cfg(not(feature = "baremetal"))]
 #[test]
 fn s06_rackscale_ethernet_fs_test() {
@@ -237,6 +239,7 @@ fn s06_rackscale_shmem_userspace_multicore_test() {
     rackscale_userspace_multicore_test(RackscaleTransport::Shmem);
 }
 
+#[ignore]
 #[cfg(not(feature = "baremetal"))]
 #[test]
 fn s06_rackscale_ethernet_userspace_multicore_test() {
@@ -278,6 +281,7 @@ fn rackscale_userspace_multicore_test(transport: RackscaleTransport) {
     test_run.run_rackscale();
 }
 
+#[ignore]
 #[cfg(not(feature = "baremetal"))]
 #[test]
 fn s06_rackscale_ethernet_userspace_multicore_multiclient() {

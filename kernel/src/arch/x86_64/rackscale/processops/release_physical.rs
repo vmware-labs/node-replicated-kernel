@@ -54,11 +54,13 @@ pub(crate) fn rpc_release_physical(pid: Pid, frame_id: u64) -> KResult<(u64, u64
 
     // Create result buffer
     let mut res_data = [0u8; core::mem::size_of::<KResult<(u64, u64)>>()];
-    CLIENT_STATE.rpc_client.lock().call(
-        KernelRpc::ReleasePhysical as RPCType,
-        &[&req_data],
-        &mut [&mut res_data],
-    )?;
+    CLIENT_STATE.rpc_clients[kpi::system::mtid_from_gtid(*crate::environment::CORE_ID)]
+        .lock()
+        .call(
+            KernelRpc::ReleasePhysical as RPCType,
+            &[&req_data],
+            &mut [&mut res_data],
+        )?;
 
     // Decode result, return result if decoded successfully
     if let Some((res, remaining)) = unsafe { decode::<KResult<(u64, u64)>>(&mut res_data) } {

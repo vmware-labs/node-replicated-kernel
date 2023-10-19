@@ -42,11 +42,13 @@ pub(crate) fn rpc_mkdir<P: AsRef<[u8]> + Debug>(
     let mut res_data = [0u8; core::mem::size_of::<KResult<(u64, u64)>>()];
 
     // Call RPC
-    CLIENT_STATE.rpc_client.lock().call(
-        KernelRpc::MkDir as RPCType,
-        &[&req_data, pathname.as_ref()],
-        &mut [&mut res_data],
-    )?;
+    CLIENT_STATE.rpc_clients[kpi::system::mtid_from_gtid(*crate::environment::CORE_ID)]
+        .lock()
+        .call(
+            KernelRpc::MkDir as RPCType,
+            &[&req_data, pathname.as_ref()],
+            &mut [&mut res_data],
+        )?;
 
     // Parse and return result
     if let Some((res, remaining)) = unsafe { decode::<KResult<(u64, u64)>>(&mut res_data) } {

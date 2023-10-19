@@ -63,8 +63,7 @@ pub(crate) fn rpc_get_shmem_structure(
 
     // Make buffer max size of MAX_PROCESS (for NrProcLogs), 1 (for NrLog)
     let mut res_data = [0u8; core::mem::size_of::<[u64; MAX_PROCESSES]>()];
-    CLIENT_STATE
-        .rpc_client
+    CLIENT_STATE.rpc_clients[kpi::system::mtid_from_gtid(*crate::environment::CORE_ID)]
         .lock()
         .call(
             KernelRpc::GetShmemStructure as RPCType,

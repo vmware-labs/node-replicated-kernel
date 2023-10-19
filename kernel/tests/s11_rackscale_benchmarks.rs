@@ -1104,7 +1104,7 @@ fn s11_rackscale_memcached_benchmark_sharded_linux() {
         }
     };
 
-    let timeout_ms = if is_smoke { 60_000 } else { 900_000 };
+    let timeout_ms = if is_smoke { 60_000 } else { 1200_000 };
 
     fn run_benchmark_internal(config: &MemcachedShardedConfig, timeout_ms: u64) -> PtySession {
         Command::new("killall").args(&["memcached"]).status().ok();
@@ -1128,7 +1128,7 @@ fn s11_rackscale_memcached_benchmark_sharded_linux() {
             format!("tcp://localhost:{}", 11211 + id)
         } else {
             let pathname = config.path.join(format!("memcached{id}.sock"));
-            remove_file(pathname); // make sure the socket file is removed
+            remove_file(pathname.clone()); // make sure the socket file is removed
             format!("unix://{}", pathname.display())
         };
 

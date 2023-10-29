@@ -20,7 +20,7 @@ jobs:
           ssh-key: ${{ secrets.WEBSITE_DEPLOY_SSH_KEY }}
       - run: |
           source ~/.cargo/env
-          cargo install mdbook --no-default-features --features search
+          cargo install mdbook --locked --no-default-features --features search
           cd doc
           mdbook build -d ../book
           cd ..

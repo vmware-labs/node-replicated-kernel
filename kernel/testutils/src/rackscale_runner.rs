@@ -1,6 +1,7 @@
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{Receiver, Sender, TryRecvError};
 use std::sync::{mpsc::channel, Arc, Mutex};
-use std::thread;
+use std::thread::{self, sleep};
 use std::time::Duration;
 
 use rexpect::errors::*;
@@ -47,8 +48,12 @@ type RackscaleMatchFn<T> = fn(
     arg: Option<T>,
 ) -> Result<()>;
 
-type ControllerRunFn<T> =
-    fn(config: Option<&T>, num_clients: usize, timeout_ms: u64) -> Result<PtySession>;
+type ControllerRunFn<T> = fn(
+    config: Option<&T>,
+    num_clients: usize,
+    num_threas: usize,
+    timeout_ms: u64,
+) -> Result<PtySession>;
 
 #[derive(Clone)]
 pub struct RackscaleRun<T>
@@ -457,6 +462,8 @@ impl<T: Clone + Send + 'static> RackscaleRun<T> {
         let (tx_build_timer, _rx_build_timer) = channel();
         let tx_build_timer_mut = Arc::new(Mutex::new(tx_build_timer));
 
+        let boot_counter = Arc::new(AtomicUsize::new(0));
+
         // Run client in separate thead. Wait a bit to make sure controller started
         let mut client_procs = Vec::new();
         for i in 0..self.num_clients {
@@ -467,6 +474,7 @@ impl<T: Clone + Send + 'static> RackscaleRun<T> {
             let client_file_name = self.file_name.clone();
             let client_cmd = self.cmd.clone();
             let client_placement_cores = placement_cores.clone();
+            let client_boot_counter = boot_counter.clone();
             let state = self.clone();
             let client_tx_build_timer = tx_build_timer_mut.clone();
             let use_large_pages = self.use_qemu_huge_pages;
@@ -495,14 +503,8 @@ impl<T: Clone + Send + 'static> RackscaleRun<T> {
                     let mut output = String::new();
                     let qemu_run = || -> Result<WaitStatus> {
                         let mut p = spawn_nrk(&cmdline_client)?;
-
-                        // output += p.exp_string("CLIENT READY")?.as_str();
-                        // {
-                        //     let tx = client_tx_build_timer
-                        //         .lock()
-                        //         .expect("Failed to get build timer lock");
-                        //     send_signal(&tx);
-                        // }
+                        output += p.exp_string("NRK booting on")?.as_str();
+                        client_boot_counter.fetch_add(1, Ordering::SeqCst);
 
                         // User-supplied function to check output
                         (state.client_match_fn)(
@@ -552,6 +554,11 @@ impl<T: Clone + Send + 'static> RackscaleRun<T> {
                     );
                 })
                 .expect("Client thread failed to spawn");
+
+            while i == boot_counter.load(Ordering::Relaxed) {
+                thread::sleep(Duration::from_millis(500));
+            }
+
             client_procs.push(client);
         }
 
@@ -576,6 +583,7 @@ impl<T: Clone + Send + 'static> RackscaleRun<T> {
                         let mut p = run_fn(
                             controller_arg.as_ref(),
                             state.num_clients,
+                            state.cores_per_client,
                             state.controller_timeout,
                         )?;
 
@@ -779,8 +787,8 @@ impl<T: Clone + Send + 'static> RackscaleRun<T> {
 pub struct RackscaleBench<T: Clone + Send + 'static> {
     // Test to run
     pub test: RackscaleRun<T>,
-    // Function to calculate the command. Takes as argument number of application cores
-    pub cmd_fn: fn(usize, Option<T>) -> String,
+    // Function to calculate the command. Takes as argument number of application cores and the number of clients
+    pub cmd_fn: fn(usize, usize, Option<T>) -> String,
     // Function to calculate the timeout. Takes as argument number of application cores
     pub rackscale_timeout_fn: fn(usize) -> u64,
     // Function to calculate the timeout. Takes as argument number of application cores
@@ -868,7 +876,7 @@ impl<T: Clone + Send + 'static> RackscaleBench<T> {
             test_run.controller_timeout = test_run.client_timeout;
 
             // Calculate command based on the number of cores
-            test_run.cmd = (self.cmd_fn)(total_cores, test_run.arg.clone());
+            test_run.cmd = (self.cmd_fn)(total_cores, num_clients, test_run.arg.clone());
 
             // Caclulate memory and timeouts, and then run test
             if is_baseline {

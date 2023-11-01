@@ -130,7 +130,7 @@ fn rackscale_fxmark_benchmark(transport: RackscaleTransport) {
     test.file_name = file_name.clone();
     test.arg = Some(config);
 
-    fn cmd_fn(num_cores: usize, arg: Option<FxmarkConfig>) -> String {
+    fn cmd_fn(num_cores: usize, _num_clients: usize, arg: Option<FxmarkConfig>) -> String {
         // TODO: add in arg with formatting.
         //1XmixX0 is - mix benchmark for 0% writes with 1 open file
         let config = arg.expect("Missing fxmark config");
@@ -297,7 +297,7 @@ fn rackscale_vmops_benchmark(transport: RackscaleTransport, benchtype: VMOpsBenc
     test.file_name = file_name.clone();
     test.arg = Some(benchtype);
 
-    fn cmd_fn(num_cores: usize, _arg: Option<VMOpsBench>) -> String {
+    fn cmd_fn(num_cores: usize, _num_clients: usize, _arg: Option<VMOpsBench>) -> String {
         format!("initargs={}", num_cores)
     }
     fn baseline_timeout_fn(num_cores: usize) -> u64 {
@@ -428,7 +428,7 @@ fn s11_rackscale_shmem_leveldb_benchmark() {
     test.arg = Some(config);
     test.run_dhcpd_for_baseline = true;
 
-    fn cmd_fn(num_cores: usize, arg: Option<LevelDBConfig>) -> String {
+    fn cmd_fn(num_cores: usize, _num_clients: usize, arg: Option<LevelDBConfig>) -> String {
         let config = arg.expect("missing leveldb config");
         format!(
             r#"init=dbbench.bin initargs={} appcmd='--threads={} --benchmarks=fillseq,readrandom --reads={} --num={} --value_size={}'"#,
@@ -633,7 +633,11 @@ fn rackscale_memcached_benchmark(transport: RackscaleTransport) {
         );
     }
 
-    fn cmd_fn(num_cores: usize, arg: Option<MemcachedInternalConfig>) -> String {
+    fn cmd_fn(
+        num_cores: usize,
+        _num_clients: usize,
+        arg: Option<MemcachedInternalConfig>,
+    ) -> String {
         let config = arg.expect("missing leveldb config");
         format!(
             r#"init=memcachedbench.bin initargs={} appcmd='--x-benchmark-mem={} --x-benchmark-queries={}'"#,
@@ -1167,7 +1171,7 @@ fn s11_rackscale_memcached_benchmark_sharded_linux() {
         command.args(&["--binary"]);
         command.arg(format!("--num-queries={}", config.num_queries).as_str());
         command.arg(format!("--num-threads={}", config.num_threads).as_str());
-        command.arg(format!("--max-memory={}", config.mem_size).as_str());
+        command.arg(format!("--max-memory={}", config.mem_size / 8).as_str());
         let mut servers = String::from("--servers=");
         for i in 0..config.num_servers {
             if i > 0 {
@@ -1249,9 +1253,6 @@ fn s11_rackscale_memcached_benchmark_sharded_linux() {
             assert!(r.is_ok());
 
             let r = pty.process.kill(SIGKILL);
-
-
-            println!("{:?}", res);
 
             // single node
             for protocol in &["tcp", "unix"] {
@@ -1346,6 +1347,8 @@ fn s11_rackscale_memcached_benchmark_sharded_linux() {
 #[test]
 #[cfg(not(feature = "baremetal"))]
 fn s11_rackscale_memcached_benchmark_sharded_nros() {
+    use rexpect::process::signal::Signal::SIGKILL;
+
     let out_dir_path = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("sharded-memcached");
     let is_smoke = cfg!(feature = "smoke");
 
@@ -1438,14 +1441,16 @@ fn s11_rackscale_memcached_benchmark_sharded_nros() {
     fn controller_run_fun(
         config: Option<&MemcachedShardedConfig>,
         num_servers: usize,
+        num_threads: usize,
         timeout_ms: u64,
     ) -> Result<PtySession> {
         // here we should wait
-        std::thread::sleep(Duration::from_secs(15));
+        std::thread::sleep(Duration::from_secs(15 + 2 * num_servers as u64));
 
         let mut config = config.unwrap().clone();
 
         config.num_servers = num_servers;
+        config.num_threads = num_servers * num_threads;
         spawn_loadbalancer(&config, timeout_ms)
     }
 
@@ -1477,7 +1482,7 @@ fn s11_rackscale_memcached_benchmark_sharded_nros() {
                 return Err(Error(Timeout(expected, got, timeout), st));
             }
             Err(err) => {
-                println!("Failed: {:?}", err);
+                // println!("Failed: {:?}", err);
                 return Err(err);
             }
         };
@@ -1491,7 +1496,6 @@ fn s11_rackscale_memcached_benchmark_sharded_nros() {
         let r = csv_file.write(out.as_bytes());
         assert!(r.is_ok());
 
-        println!("{:?}", res);
         Ok(())
     }
 
@@ -1504,22 +1508,6 @@ fn s11_rackscale_memcached_benchmark_sharded_nros() {
         _is_baseline: bool,
         _arg: Option<MemcachedShardedConfig>,
     ) -> Result<()> {
-        match proc.exp_regex(r#"\[ INFO\]: bootloader/src/kernel.rs"#) {
-            Ok(_) => (),
-            Err(rexpect::errors::Error(
-                rexpect::errors::ErrorKind::EOF(_expected, _s, _),
-                _state,
-            )) => {
-                // for l in s.lines() {
-                //     println!("MEMCACHED-OUTPUT: {}", l);
-                // }
-            }
-            Err(e) => {
-                println!("{e:?}");
-                panic!("error")
-            }
-        }
-
         match proc.exp_regex(r#"dhcp: vioif0: adding IP address (\d+).(\d+).(\d+).(\d+)/(\d+)"#) {
             Ok((_prev, matched)) => {
                 println!(" > Networking setup succeeded. {matched}");
@@ -1543,7 +1531,7 @@ fn s11_rackscale_memcached_benchmark_sharded_nros() {
         }
 
         let (prev, matched) = proc.exp_regex(r#"x_benchmark_mem = (\d+) MB"#).unwrap();
-        println!("C> {}", matched);
+        println!("> {}", matched);
         // let b_mem = matched.replace("x_benchmark_mem = ", "").replace(" MB", "");
 
         *output += prev.as_str();
@@ -1566,16 +1554,21 @@ fn s11_rackscale_memcached_benchmark_sharded_nros() {
 
     if !is_smoke {
         test.shmem_size = std::cmp::max(
-            MEMCACHED_MEM_SIZE_MB * 8,
-            testutils::helpers::SHMEM_SIZE * 4,
+            MEMCACHED_MEM_SIZE_MB * 2,
+            testutils::helpers::SHMEM_SIZE * 2,
         );
     }
 
-    fn cmd_fn(num_cores: usize, arg: Option<MemcachedShardedConfig>) -> String {
+    fn cmd_fn(num_cores: usize, num_clients: usize, arg: Option<MemcachedShardedConfig>) -> String {
         let config = arg.expect("missing configuration");
+        let num_threads = num_cores / num_clients;
+
         format!(
             r#"init=memcachedbench.bin initargs={} appcmd='--x-benchmark-no-run --disable-evictions --conn-limit=1024 --threads={} --x-benchmark-mem={} --memory-limit={}'"#,
-            num_cores, num_cores, config.mem_size, config.mem_size
+            num_threads,
+            num_threads,
+            config.mem_size,
+            config.mem_size * 2
         )
     }
 
@@ -1587,21 +1580,33 @@ fn s11_rackscale_memcached_benchmark_sharded_nros() {
         1200_000 + 60_000 * num_cores as u64
     }
 
-    fn mem_fn(num_cores: usize, _num_clients: usize, is_smoke: bool) -> usize {
+    fn mem_fn(_num_cores: usize, num_clients: usize, is_smoke: bool) -> usize {
         if is_smoke {
             8192
         } else {
             // Memory must also be divisible by number of nodes, which could be 1, 2, 3, or 4
-            (8192
-                + std::cmp::max(
-                    MEMCACHED_MEM_SIZE_MB * 8,
-                    testutils::helpers::SHMEM_SIZE * 4,
+            // mem = result of this function / num_clients - shmem_size
+            (8092
+                + 2 * std::cmp::max(
+                    MEMCACHED_MEM_SIZE_MB * 2,
+                    testutils::helpers::SHMEM_SIZE * 2,
                 ))
-                * (((((num_cores + 1) / 2) + 3 - 1) / 3) * 3)
+                * num_clients
         }
     }
 
     println!("----------------------------------------------------------");
+
+    let machine = Machine::determine();
+
+    let mut pings = Vec::new();
+    for i in 0..machine.max_numa_nodes() {
+        let mut command = Command::new("ping");
+        command.arg(&format!("172.31.0.{}", 10 + i + 1));
+
+        let proc = spawn_command(command, None).unwrap();
+        pings.push(proc);
+    }
 
     // construct bench and run it!
     let bench = RackscaleBench {
@@ -1612,6 +1617,9 @@ fn s11_rackscale_memcached_benchmark_sharded_nros() {
         mem_fn,
     };
     bench.run_bench(false, is_smoke);
+    for mut ping in pings.into_iter() {
+        ping.process.kill(SIGKILL);
+    }
 }
 
 #[test]
@@ -1660,7 +1668,7 @@ fn rackscale_monetdb_benchmark(transport: RackscaleTransport) {
     test.arg = None;
     test.run_dhcpd_for_baseline = true;
 
-    fn cmd_fn(num_cores: usize, _arg: Option<()>) -> String {
+    fn cmd_fn(num_cores: usize, _num_clients: usize, _arg: Option<()>) -> String {
         format!(
             r#"init=monetdbd.bin initargs={} appcmd='create dbfarm'"#,
             num_cores

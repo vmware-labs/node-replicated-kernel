@@ -109,11 +109,6 @@ struct MutexInner {
 impl MutexInner {
     fn try_enter(&self) -> bool {
         let tid = Environment::tid();
-        assert!(
-            self.owner.get() != Some(tid),
-            "Locking mutex against itself."
-        );
-
         let counter = self.counter.load(Ordering::Relaxed);
         loop {
             if counter != 0 {

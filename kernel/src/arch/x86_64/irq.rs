@@ -34,6 +34,7 @@
 #![allow(warnings)] // TODO(fix) the unaligned accesses...
 
 use alloc::boxed::Box;
+use core::borrow::BorrowMut;
 use core::cell::{Cell, RefCell};
 use core::fmt;
 
@@ -47,7 +48,9 @@ use x86::segmentation::{
     BuildDescriptor, DescriptorBuilder, GateDescriptorBuilder, SegmentSelector,
 };
 use x86::{dtables, Ring};
+use spin::Lazy;
 
+use crate::arch::process::CURRENT_EXECUTOR;
 use crate::memory::vspace::MapAction;
 use crate::memory::Frame;
 use crate::panic::{backtrace, backtrace_from};
@@ -503,6 +506,9 @@ unsafe fn bkp_handler(a: &ExceptionArguments) {
     }
 }
 
+#[thread_local]
+pub(crate) static REPLICA_STATE: Lazy<usize> = Lazy::new(|| 0);
+
 /// Handler for the timer exception.
 ///
 /// We currently use it to periodically make sure that a replica
@@ -518,10 +524,39 @@ unsafe fn timer_handler(_a: &ExceptionArguments) {
 
     // Periodically advance replica state, then resume immediately
     nr::KernelNode::synchronize().expect("Synchronized failed?");
-    let kcb = get_kcb();
     for pid in 0..crate::process::MAX_PROCESSES {
         nrproc::NrProcess::<Ring3Process>::synchronize(pid);
     }
+    
+    if *crate::environment::MT_ID == 0 {
+        use crate::arch::process::current_pid;
+        let pid = current_pid().expect("dont have a pid?");
+
+        if rawtime::BOOT_TIME_ANCHOR.elapsed() > rawtime::Duration::from_secs(10) && *REPLICA_STATE == 0 {
+            info!("got a timer after 10s, remove rid 1");
+            let handles = nrproc::NrProcess::<Ring3Process>::remove_replica(pid, 1).expect("removed");
+            #[cfg(not(feature = "rackscale"))]
+            super::tlb::shootdown(handles[0].clone());
+            unsafe { *REPLICA_STATE.as_mut_ptr() = 1 };
+        }
+        if rawtime::BOOT_TIME_ANCHOR.elapsed() > rawtime::Duration::from_secs(20) && *REPLICA_STATE == 1 {
+            info!("got a timer after 20s, add rid 1");
+            let handles = nrproc::NrProcess::<Ring3Process>::add_replica(pid, 1).expect("added");
+            #[cfg(not(feature = "rackscale"))]
+            super::tlb::shootdown(handles[0].clone());
+            unsafe { *REPLICA_STATE.as_mut_ptr() = 2 };
+        }
+        if rawtime::BOOT_TIME_ANCHOR.elapsed() > rawtime::Duration::from_secs(30) && *REPLICA_STATE == 2 {
+            info!("got a timer after 30s");
+            unsafe { *REPLICA_STATE.as_mut_ptr() = 3 };
+        }
+        if rawtime::BOOT_TIME_ANCHOR.elapsed() > rawtime::Duration::from_secs(40) && *REPLICA_STATE == 3 {
+            info!("got a timer after 40s");
+            unsafe { *REPLICA_STATE.as_mut_ptr() = 4 };
+        }
+
+    }
+    let kcb = get_kcb();
 
     if super::process::has_executor() {
         // TODO(process-mgmt): Ensures that we still periodically
@@ -738,13 +773,20 @@ pub extern "C" fn handle_generic_exception(a: ExceptionArguments) -> ! {
             gdb_serial_handler(&a);
         } else if a.vector == TLB_WORK_PENDING.into() {
             let kcb = get_kcb();
-            trace!("got an interrupt {:?}", core_id);
+            info!("got an interrupt {:?}", core_id);
             super::tlb::dequeue(core_id);
 
             if super::process::has_executor() {
                 // Return immediately
                 TLB_TIME.update(|t| t + x86::time::rdtsc() - start);
+
+                let mut pborrow = super::process::CURRENT_EXECUTOR.borrow_mut();
+                let p = pborrow.as_ref().unwrap();
+                p.maybe_switch_vspace();
+                drop(pborrow);
+
                 kcb_iret_handle(kcb).resume()
+
             } else {
                 // Go to scheduler instead
                 crate::scheduler::schedule()
@@ -755,6 +797,11 @@ pub extern "C" fn handle_generic_exception(a: ExceptionArguments) -> ! {
 
             let kcb = get_kcb();
             if super::process::has_executor() {
+                
+                //let mut pborrow = super::process::CURRENT_EXECUTOR.borrow_mut();
+                //let p = pborrow.as_ref().unwrap();
+                //p.maybe_switch_vspace();
+
                 kcb_iret_handle(kcb).resume()
             } else {
                 loop {

@@ -69,6 +69,10 @@ impl VSpace {
 }
 
 impl AddressSpace for VSpace {
+    fn root(&self) -> PAddr {
+        PAddr::zero()
+    }
+    
     fn map_frame(&mut self, base: VAddr, frame: Frame, action: MapAction) -> Result<(), KError> {
         let ma = MappingInfo::new(frame, action);
         self.mappings.insert(ma.vrange(base), ma);

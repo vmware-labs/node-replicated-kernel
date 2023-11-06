@@ -35,10 +35,100 @@ pub(crate) struct PageTable {
     pub pml4: Pin<Box<PML4>>,
 }
 
-impl Drop for PageTable {
-    fn drop(&mut self) {
-        use alloc::alloc::dealloc;
+impl Clone for PageTable {
+    fn clone(&self) -> Self {
+        fn alloc_frame() -> Frame {
+            let frame_ptr = unsafe {
+                let ptr = alloc::alloc::alloc_zeroed(PT_LAYOUT);
+                debug_assert!(!ptr.is_null());
+    
+                let nptr = NonNull::new_unchecked(ptr);
+                NonNull::slice_from_raw_parts(nptr, PT_LAYOUT.size())
+            };
+            let vaddr = VAddr::from(frame_ptr.as_ptr() as *const u8 as u64);
+            let paddr = crate::arch::memory::kernel_vaddr_to_paddr(vaddr);
+            let mut frame = Frame::new(paddr, PT_LAYOUT.size(), 0);
+            unsafe { frame.zero() };
+            frame
+        }
+    
+        fn new_pt() -> PDEntry {
+            let frame = alloc_frame();
+            return PDEntry::new(frame.base, PDFlags::P | PDFlags::RW | PDFlags::US);
+        }
+    
+        fn new_pd() -> PDPTEntry {
+            let frame = alloc_frame();
+            return PDPTEntry::new(frame.base, PDPTFlags::P | PDPTFlags::RW | PDPTFlags::US);
+        }
+    
+        fn new_pdpt() -> PML4Entry {
+            let frame = alloc_frame();
+            return PML4Entry::new(frame.base, PML4Flags::P | PML4Flags::RW | PML4Flags::US);
+        }
 
+        let mut cloned_pt = PageTable::new().expect("Can't clone PT");
+
+        // Do a DFS and find all mapped entries and replicate them in the new `pt`
+        for pml4_idx in 0..PAGE_SIZE_ENTRIES {
+            if pml4_idx < pml4_index(KERNEL_BASE.into()) && self.pml4[pml4_idx].is_present() {
+                cloned_pt.pml4[pml4_idx] = new_pdpt();
+
+                for pdpt_idx in 0..PAGE_SIZE_ENTRIES {
+                    let pdpt = self.get_pdpt(self.pml4[pml4_idx]);
+                    let cloned_pdpt = cloned_pt.get_pdpt_mut(cloned_pt.pml4[pml4_idx]);
+
+                    if pdpt[pdpt_idx].is_present() {
+                        if !pdpt[pdpt_idx].is_page() {
+                            cloned_pdpt[pdpt_idx] = new_pd();
+                            let cloned_pdpt_entry = cloned_pdpt[pdpt_idx];
+                            drop(cloned_pdpt);
+
+
+                            for pd_idx in 0..PAGE_SIZE_ENTRIES {
+                                let pd = self.get_pd(pdpt[pdpt_idx]);
+                                let cloned_pd = cloned_pt.get_pd_mut(cloned_pdpt_entry);
+
+                                if pd[pd_idx].is_present() {
+                                    if !pd[pd_idx].is_page() {
+                                        cloned_pd[pd_idx] = new_pt();
+                                        let cloned_pd_entry = cloned_pd[pd_idx];
+                                        drop(cloned_pd);
+
+                                        for pt_idx in 0..PAGE_SIZE_ENTRIES {
+                                            let pt = self.get_pt(pd[pd_idx]);
+                                            let cloned_pt = cloned_pt.get_pt_mut(cloned_pd_entry);
+
+                                            if pt[pt_idx].is_present() {
+                                                cloned_pt[pt_idx] = pt[pt_idx];
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    // Encountered a 2 MiB mapping
+                                    cloned_pd[pd_idx] = pd[pd_idx];
+
+                                }
+                            }
+                        } else {
+                            cloned_pdpt[pdpt_idx] = pdpt[pdpt_idx];
+                        }
+                    }
+                }
+            }
+        }
+
+        cloned_pt
+    }
+}
+
+impl Drop for PageTable {
+    #[allow(unreachable_code)]
+    fn drop(&mut self) {
+        log::info!("calling drop in PageTable, skipping for now");
+        return;
+
+        use alloc::alloc::dealloc;
         // Do a DFS and free all page-table memory allocated below kernel-base,
         // don't free the mapped frames -- we return them later through NR
         for pml4_idx in 0..PAGE_SIZE_ENTRIES {
@@ -85,6 +175,10 @@ impl Drop for PageTable {
 }
 
 impl AddressSpace for PageTable {
+    fn root(&self) -> PAddr {
+        PAddr::from(self.pml4.as_ptr() as u64)
+    }
+
     fn map_frame(&mut self, base: VAddr, frame: Frame, action: MapAction) -> Result<(), KError> {
         // These assertion are checked with error returns in `VSpace`
         debug_assert!(frame.size() > 0);
@@ -562,7 +656,7 @@ impl PageTable {
                     let cur_rights: MapAction = pt[pt_idx].flags().into();
                     if address != pbase + mapped || cur_rights != rights {
                         panic!(
-                            "Trying to map 4 KiB page but it conflicts with existing mapping {:x}",
+                            "Trying to map 4 KiB page at vbase={vbase:#x} pbase={pbase:#x} but it conflicts with existing mapping {:x}",
                             address
                         );
                     }
@@ -932,6 +1026,10 @@ impl<'a> ReadOnlyPageTable<'a> {
 }
 
 impl<'a> AddressSpace for ReadOnlyPageTable<'a> {
+    fn root(&self) -> PAddr {
+        PAddr::from(self.pml4.as_ptr() as u64)
+    }
+
     fn resolve(&self, addr: VAddr) -> Result<(PAddr, MapAction), KError> {
         let pml4_idx = pml4_index(addr);
         if self.pml4[pml4_idx].is_present() {

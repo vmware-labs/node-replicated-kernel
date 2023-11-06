@@ -14,7 +14,18 @@ pub(crate) static CORE_ID: Lazy<usize> =
     Lazy::new(|| new_gtid(atopology::MACHINE_TOPOLOGY.current_thread().id, *MACHINE_ID));
 
 #[thread_local]
-pub(crate) static MT_ID: Lazy<usize> = Lazy::new(|| kpi::system::mtid_from_gtid(*crate::environment::CORE_ID));
+pub(crate) static MT_ID: Lazy<usize> = Lazy::new(|| {
+    #[cfg(feature = "rackscale")]
+    return (*crate::environment::MACHINE_ID - 1) * (atopology::MACHINE_TOPOLOGY.num_threads()) + atopology::MACHINE_TOPOLOGY.current_thread().id;
+    #[cfg(not(feature = "rackscale"))]
+    *CORE_ID
+});
+
+/// Number of nodes in the current deployment.
+#[allow(unused)]
+pub(crate) static NUM_NODES: Lazy<usize> =
+    Lazy::new(|| atopology::MACHINE_TOPOLOGY.num_nodes());
+
 
 /// The NUMA node id of the current core (hardware thread).
 #[thread_local]

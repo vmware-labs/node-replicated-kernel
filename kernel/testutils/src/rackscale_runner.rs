@@ -413,9 +413,9 @@ impl<T: Clone + Send + 'static> RackscaleRun<T> {
         }
 
         for client_ret in client_rets {
-            client_ret.unwrap();
+            client_ret.expect("client_ret");
         }
-        controller_ret.unwrap();
+        controller_ret.expect("controller_ret");
     }
 
     pub fn run_baseline(&self) {

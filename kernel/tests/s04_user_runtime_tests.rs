@@ -19,6 +19,30 @@ use testutils::helpers::{
 };
 use testutils::runner_args::{check_for_successful_exit, wait_for_sigterm, RunnerArgs};
 
+/// Makes sure we can change the number of replicas for a process.
+#[cfg(not(feature = "baremetal"))]
+#[test]
+fn s04_dynamic_replication() {
+    let build = BuildArgs::default()
+        .user_feature("test-dynamic-replication")
+        .build();
+    let cmdline = RunnerArgs::new_with_build("userspace-smp", &build)
+        .nodes(4)
+        .cores(64)
+        .memory(4096)
+        .timeout(120_000);
+
+    let mut output = String::new();
+    let mut qemu_run = || -> Result<WaitStatus> {
+        let mut p = spawn_nrk(&cmdline)?;
+        output += p.exp_string("dynamic_replication OK")?.as_str();
+        output = p.exp_eof()?;
+        p.process.exit()
+    };
+
+    check_for_successful_exit(&cmdline, qemu_run(), output);
+}
+
 /// Tests the lineup scheduler multi-core ability.
 ///
 /// Makes sure we can request cores and spawn threads on said cores.

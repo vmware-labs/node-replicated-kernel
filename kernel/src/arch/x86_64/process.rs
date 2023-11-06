@@ -1015,10 +1015,11 @@ impl Executor for Ring3Executor {
     }
 
     fn maybe_switch_vspace(&self) {
+        let replica_pml4 = NrProcess::<Ring3Process>::ptroot(self.pid).expect("Can't read pml4");
         unsafe {
             let current_pml4 = PAddr::from(controlregs::cr3());
-            if current_pml4 != self.pml4 {
-                trace!("Switching to 0x{:x}", self.pml4);
+            if current_pml4 != replica_pml4 {
+                info!("Switching from 0x{:x} to 0x{:x}", current_pml4, replica_pml4);
                 controlregs::cr3_write(self.pml4.into());
             }
         }
@@ -1076,8 +1077,7 @@ impl Default for NrProcess<Ring3Process> {
 
 impl Clone for Ring3Process {
     fn clone(&self) -> Self {
-        unimplemented!("Clone not implemented for Ring3Process")
-        /*Ring3Process {
+        Ring3Process {
             pid: self.pid,
             current_eid: self.current_eid,
             vspace: self.vspace.clone(),
@@ -1090,7 +1090,7 @@ impl Clone for Ring3Process {
             pfm: self.pfm.clone(),
             writeable_sections: self.writeable_sections.clone(),
             read_only_offset: self.read_only_offset,
-        }*/
+        }
     }
 }
 
@@ -1188,7 +1188,8 @@ impl elfloader::ElfLoader for Ring3Process {
             };
 
             info!(
-                "ELF Allocate: {:#x} -- {:#x} align to {:#x} with flags {:?} ({:?})",
+                "{}: ELF Allocate: {:#x} -- {:#x} align to {:#x} with flags {:?} ({:?})",
+                *crate::environment::MT_ID,
                 page_base,
                 page_base + size_page,
                 align_to,
@@ -1498,57 +1499,25 @@ impl Process for Ring3Process {
     fn allocate_executors(
         &mut self,
         memory: Frame,
-
-        #[cfg(feature = "rackscale")] mid: kpi::system::MachineId,
     ) -> Result<usize, KError> {
         let executor_space_requirement = Ring3Executor::EXECUTOR_SPACE_REQUIREMENT;
         let executors_to_create = memory.size() / executor_space_requirement;
 
         // Only map to kernel space for local (valid) frames
-        #[cfg(feature = "rackscale")]
-        if mid == *crate::environment::MACHINE_ID {
-            KernelAllocator::try_refill_tcache(20, 0, MemType::Mem).expect("Refill didn't work");
-            self.vspace
-                .map_frame(
-                    self.executor_offset,
-                    memory,
-                    MapAction::user() | MapAction::write(),
-                )
-                .expect("Can't map user-space executor memory.");
-            log::debug!(
-                "executor space base expanded {:#x} size: {} end {:#x}",
+        KernelAllocator::try_refill_tcache(20, 0, MemType::Mem).expect("Refill didn't work");
+        self.vspace
+            .map_frame(
                 self.executor_offset,
-                memory.size(),
-                self.executor_offset + memory.size()
-            );
-        } else {
-            log::debug!(
-                "skipping executor space vspace mapping for mid={:?} on mid={:?} {:#x} size: {} end {:#x}",
-                mid,
-                *crate::environment::MACHINE_ID,
-                self.executor_offset,
-                memory.size(),
-                self.executor_offset + memory.size()
-            );
-        }
-
-        #[cfg(not(feature = "rackscale"))]
-        {
-            KernelAllocator::try_refill_tcache(20, 0, MemType::Mem).expect("Refill didn't work");
-            self.vspace
-                .map_frame(
-                    self.executor_offset,
-                    memory,
-                    MapAction::user() | MapAction::write(),
-                )
-                .expect("Can't map user-space executor memory.");
-            log::debug!(
-                "executor space base expanded {:#x} size: {} end {:#x}",
-                self.executor_offset,
-                memory.size(),
-                self.executor_offset + memory.size()
-            );
-        }
+                memory,
+                MapAction::user() | MapAction::write(),
+            )
+            .expect("Can't map user-space executor memory.");
+        log::debug!(
+            "executor space base expanded {:#x} size: {} end {:#x}",
+            self.executor_offset,
+            memory.size(),
+            self.executor_offset + memory.size()
+        );
 
         let executor_space = executor_space_requirement * executors_to_create;
         let prange = memory.base..memory.base + executor_space;
@@ -1581,11 +1550,11 @@ impl Process for Ring3Process {
                 memory.affinity,
             ))?;
 
-            #[cfg(not(feature = "rackscale"))]
             let index = memory.affinity as usize;
 
-            #[cfg(feature = "rackscale")]
-            let index = self.get_executor_index(memory.affinity, mid);
+            //TODO: xxx
+            //#[cfg(feature = "rackscale")]
+            //let index = self.get_executor_index(memory.affinity, mid);
 
             // TODO(error-handling): Needs to properly unwind on alloc errors
             // (e.g., have something that frees vcpu mem etc. on drop())

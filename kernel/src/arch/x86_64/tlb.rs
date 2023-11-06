@@ -159,6 +159,11 @@ impl Shootdown {
         // before this function completes:
         self.acknowledge();
 
+        if self.vregion.start == 0u64 && self.vregion.end == 0u64 {
+            log::info!("got special unmap for 0..0, skipping TLB flush");
+            return;
+        }
+
         let it = self.vregion.clone().step_by(BASE_PAGE_SIZE);
         if it.count() > 20 {
             trace!("flush the entire TLB");
@@ -396,6 +401,11 @@ pub(crate) fn shootdown(handle: TlbFlushHandle) {
     // Finally, we also need to shootdown our own TLB
     let shootdown = Shootdown::new(range);
     shootdown.process();
+
+    //use crate::process::Executor;
+    //let pborrow = super::process::CURRENT_EXECUTOR.borrow_mut();
+    //let p = pborrow.as_ref().unwrap();
+    //p.maybe_switch_vspace();
 
     // Wait synchronously on cores to complete
     while !shootdowns.is_empty() {

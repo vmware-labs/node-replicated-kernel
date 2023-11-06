@@ -27,7 +27,7 @@ use crate::arch::MAX_CORES;
 use crate::cmdline::CommandLineArguments;
 use crate::error::{KError, KResult};
 use crate::fs::fd::FileDescriptorEntry;
-use crate::memory::backends::PhysicalPageProvider;
+//use crate::memory::backends::PhysicalPageProvider;
 use crate::memory::vspace::AddressSpace;
 use crate::memory::{Frame, KernelAllocator, PAddr, VAddr, KERNEL_BASE};
 use crate::prelude::overlaps;
@@ -79,15 +79,7 @@ pub(crate) trait Process: FrameManagement + Clone {
         affinity: atopology::NodeId,
     ) -> Result<(), alloc::collections::TryReserveError>;
 
-    #[cfg(not(feature = "rackscale"))]
     fn allocate_executors(&mut self, frame: Frame) -> Result<usize, KError>;
-
-    #[cfg(feature = "rackscale")]
-    fn allocate_executors(
-        &mut self,
-        frame: Frame,
-        mid: kpi::system::MachineId,
-    ) -> Result<usize, KError>;
 
     fn vspace_mut(&mut self) -> &mut Self::A;
 
@@ -121,6 +113,7 @@ pub(crate) trait FrameManagement {
 }
 
 /// Implementation for managing a process' frames.
+#[derive(Clone)]
 pub(crate) struct ProcessFrames {
     /// Physical frame objects registered to the process.
     frames: ArrayVec<(Option<Frame>, usize), MAX_FRAMES_PER_PROCESS>,
@@ -589,9 +582,14 @@ pub(crate) fn allocate_dispatchers<P: Process>(pid: Pid, affinity: NodeId) -> Re
         KernelAllocator::try_refill_tcache(20, 1, MemType::Mem)?;
         let mut frame = {
             let pcm = crate::arch::kcb::per_core_mem();
-            pcm.gmanager.unwrap().node_caches[affinity]
-                .lock()
-                .allocate_large_page()?
+
+            #[cfg(feature = "rackscale")]
+            pcm.set_mem_affinity(affinity).expect("Can't change affinity");
+            let frame = pcm.mem_manager().allocate_large_page()?;
+            
+            #[cfg(feature = "rackscale")]
+            pcm.set_mem_affinity(crate::memory::shmem_affinity::local_shmem_affinity()).expect("Can't reset affinity");
+            frame
         };
 
         unsafe {

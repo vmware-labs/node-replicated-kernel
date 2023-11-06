@@ -850,7 +850,7 @@ fn s10_xmemcached_benchmark_internal() {
         // Throw out everything above 28 since we have some non-deterministic
         // bug on larger machines that leads to threads calling sched_yield and
         // no readrandom is performed...
-        .filter(|&t| t <= 28)
+        .filter(|&t| t <= 16)
         .collect();
 
     // memcached arguments // currently not there.

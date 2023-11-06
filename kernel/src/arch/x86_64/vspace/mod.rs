@@ -92,7 +92,7 @@ lazy_static! {
 /// - This clearly needs a better solution. See also the part where we patch
 ///   this into the process page-table.
 pub(crate) unsafe fn init_large_objects_pml4() {
-    log::info!("init_large_objects_pml4()");
+    //log::info!("init_large_objects_pml4()");
     let mut vspace = INITIAL_VSPACE.lock();
     let frame_ptr = alloc::alloc::alloc(PT_LAYOUT);
 
@@ -103,12 +103,17 @@ pub(crate) unsafe fn init_large_objects_pml4() {
     (*vspace.pml4)[132] = PML4Entry::new(frame.base, PML4Flags::P | PML4Flags::RW);
 }
 
+#[derive(Clone)]
 pub(crate) struct VSpace {
     pub mappings: BTreeMap<VAddr, MappingInfo>,
     pub page_table: PageTable,
 }
 
 impl AddressSpace for VSpace {
+    fn root(&self) -> PAddr {
+        self.pml4_address()
+    }
+    
     fn map_frame(&mut self, base: VAddr, frame: Frame, action: MapAction) -> Result<(), KError> {
         if frame.size() == 0 {
             return Err(KError::InvalidFrame);
@@ -148,6 +153,7 @@ impl AddressSpace for VSpace {
                 });
             }
         }
+        //log::info!("VSpace::map_frame base={:x} frame={:?} action={:?}", base.as_usize(), frame, action);
         //self.mappings
         //    .try_insert(base, MappingInfo::new(frame, action))?;
         let r = self.page_table.map_frame(base, frame, action);

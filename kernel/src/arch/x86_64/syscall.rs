@@ -294,12 +294,20 @@ impl<T: Arch86ProcessDispatch> ProcessDispatch<u64> for T {
 
     fn set_replicas(&self, add: u64, rid: u64) -> crate::error::KResult<(u64, u64)> {
         let pid = current_pid()?;
-        if add > 0 {
-            NrProcess::<Ring3Process>::add_replica(pid, rid as usize).expect("add_replica");
+        let handles = if add > 0 {
+            NrProcess::<Ring3Process>::add_replica(pid, rid as usize).expect("add_replica")
         }
         else {
-            NrProcess::<Ring3Process>::remove_replica(pid, rid as usize).expect("remove_replica");
-        }
+            NrProcess::<Ring3Process>::remove_replica(pid, rid as usize).expect("remove_replica")
+        };
+
+        #[cfg(feature = "rackscale")]
+        super::tlb::remote_shootdown(handles);
+
+        // There will only be one handle in non-rackscale build
+        #[cfg(not(feature = "rackscale"))]
+        super::tlb::shootdown(handles[0].clone());
+
 
         Ok((0,0))
     }

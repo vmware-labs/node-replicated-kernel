@@ -39,6 +39,7 @@ fn rackscale_userspace_smoke_test(transport: RackscaleTransport) {
             "test-upcall",
             "test-scheduler",
             "test-syscalls",
+            //"test-dynamic-replication"
         ])
         .set_rackscale(true)
         .release()
@@ -58,6 +59,7 @@ fn rackscale_userspace_smoke_test(transport: RackscaleTransport) {
         *output += proc.exp_string("map_test OK")?.as_str();
         *output += proc.exp_string("alloc_test OK")?.as_str();
         *output += proc.exp_string("scheduler_test OK")?.as_str();
+        //*output += proc.exp_string("dynamic_replication OK")?.as_str();
         Ok(())
     }
 
@@ -65,6 +67,7 @@ fn rackscale_userspace_smoke_test(transport: RackscaleTransport) {
     test_run.client_match_fn = client_match_fn;
     test_run.transport = transport;
     test_run.wait_for_client = true;
+    test_run.shmem_size *= 2;
     test_run.run_rackscale();
 }
 

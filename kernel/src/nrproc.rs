@@ -32,7 +32,11 @@ pub(crate) static PROCESS_TOKEN: Once<ArrayVec<ThreadToken, { MAX_PROCESSES }>> 
 ///
 /// Should be called on each core.
 pub(crate) fn register_thread_with_process_replicas() {
+    #[cfg(not(feature = "rackscale"))]
     let node = *crate::environment::NODE_ID;
+    #[cfg(feature = "rackscale")]
+    let node = 0; //*crate::environment::MACHINE_ID
+    
     debug_assert!(PROCESS_TABLE.len() > node, "Invalid Node ID");
 
     PROCESS_TOKEN.call_once(|| {
@@ -40,7 +44,8 @@ pub(crate) fn register_thread_with_process_replicas() {
         for pid in 0..MAX_PROCESSES {
             debug_assert!(PROCESS_TABLE.len() > pid, "Invalid PID");
 
-            let token = PROCESS_TABLE[pid].write(*crate::environment::MT_ID).register(node);
+            let token = PROCESS_TABLE[pid].read(*crate::environment::MT_ID).register(node);
+            log::debug!("MT_ID is {}: {node} registered {pid} {token:?}", *crate::environment::MT_ID);
             tokens.push(token.expect("Need to be able to register"));
         }
 
@@ -69,6 +74,7 @@ pub(crate) enum ProcessOp<'buf> {
     #[allow(unused)]
     ExecSliceMut(UserSlice, SliceExecMutFn<'buf>),
     ExecSlice(&'buf UserSlice, SliceExecFn<'buf>),
+    GetPtRoot,
 }
 
 /// Mutable operations on the NrProcess.
@@ -84,10 +90,6 @@ pub(crate) enum ProcessOpMut {
     /// Remove a physical frame previosuly allocated to the process (returns a Frame).
     ReleaseFrameFromProcess(FrameId),
 
-    #[cfg(feature = "rackscale")]
-    DispatcherAllocation(Frame, kpi::system::MachineId),
-
-    #[cfg(not(feature = "rackscale"))]
     DispatcherAllocation(Frame),
 
     MemMapFrame(VAddr, Frame, MapAction),
@@ -111,6 +113,7 @@ pub(crate) enum ProcessResult<E: Executor> {
     Frame(Frame),
     ReadSlice(Arc<[u8]>),
     ReadString(String),
+    PtRoot(PAddr),
 }
 
 pub(crate) trait ProcessManager {
@@ -141,22 +144,44 @@ impl<P: Process> NrProcess<P> {
 }
 
 impl<P: Process> NrProcess<P> {
-    pub(crate) fn add_replica(pid: Pid, rid: usize) -> Result<(), KError>{
+    pub(crate) fn add_replica(pid: Pid, rid: usize) -> Result<Vec<TlbFlushHandle>, KError> {
         debug_assert!(pid < MAX_PROCESSES, "Invalid PID");
+        #[cfg(feature = "rackscale")]
         let max_nodes = *crate::environment::NUM_MACHINES;
+        #[cfg(not(feature = "rackscale"))]
+        let max_nodes = *crate::environment::NUM_NODES;
+
         debug_assert!(rid < max_nodes, "Invalid Node ID");
         log::info!("add_replica {pid} {rid}");
+        // we use unmap of 0x0 to get a snapshot of where the core is running on
+        let handle = NrProcess::<P>::unmap(pid, VAddr::from(0x0));
+        if !handle.is_ok() {
+            panic!("couldn't get snapshot");
+        }
+
         PROCESS_TABLE[pid].write(*crate::environment::MT_ID).add_replica(rid).expect("add_replica failed");
-        Ok(())
+        log::info!("added_replica {pid} {rid}");
+
+        handle
     }
 
-    pub(crate) fn remove_replica(pid: Pid, rid: usize) -> Result<(), KError>{
+    pub(crate) fn remove_replica(pid: Pid, rid: usize) -> Result<Vec<TlbFlushHandle>, KError> {
         debug_assert!(pid < MAX_PROCESSES, "Invalid PID");
+        #[cfg(feature = "rackscale")]
         let max_nodes = *crate::environment::NUM_MACHINES;
-        debug_assert!(rid < max_nodes, "Invalid Node ID");
-        log::info!("remove_replica {pid} {rid}");
+        #[cfg(not(feature = "rackscale"))]
+        let max_nodes = *crate::environment::NUM_NODES;
+
+        debug_assert!(rid < max_nodes, "Invalid Node ID {rid} max_nodes {max_nodes}");
+
+        // we use unmap of 0x0 to get a snapshot of where the core is running on
+        let handle = NrProcess::<P>::unmap(pid, VAddr::from(0x0));
+        if !handle.is_ok() {
+            panic!("couldn't get snapshot");
+        }
         PROCESS_TABLE[pid].write(*crate::environment::MT_ID).remove_replica(rid).expect("remove_replica failed");
-        Ok(())    
+
+        handle
     }
 
     pub(crate) fn load(
@@ -274,6 +299,18 @@ impl<P: Process> NrProcess<P> {
         Ok((base.as_u64(), virtual_offset as u64))
     }
 
+
+    pub(crate) fn ptroot(pid: Pid) -> Result<PAddr, KError> {
+        debug_assert!(pid < MAX_PROCESSES, "Invalid PID");
+        let response =
+            PROCESS_TABLE[pid].read(*crate::environment::MT_ID).execute(ProcessOp::GetPtRoot, PROCESS_TOKEN.get().unwrap()[pid]);
+        match response {
+            Ok(ProcessResult::PtRoot(paddr)) => Ok(paddr),
+            Err(e) => Err(e),
+            _ => unreachable!("Got unexpected response"),
+        }
+    }
+
     pub(crate) fn pinfo(pid: Pid) -> Result<ProcessInfo, KError> {
         debug_assert!(pid < MAX_PROCESSES, "Invalid PID");
         let response =
@@ -351,14 +388,9 @@ impl<P: Process> NrProcess<P> {
 
     pub(crate) fn allocate_dispatchers(pid: Pid, frame: Frame) -> Result<usize, KError> {
         debug_assert!(pid < MAX_PROCESSES, "Invalid PID");
-        #[cfg(feature = "rackscale")]
-        let mid = *crate::environment::MACHINE_ID;
 
         let response = PROCESS_TABLE[pid].read(*crate::environment::MT_ID).execute_mut(
-            #[cfg(not(feature = "rackscale"))]
             ProcessOpMut::DispatcherAllocation(frame),
-            #[cfg(feature = "rackscale")]
-            ProcessOpMut::DispatcherAllocation(frame, mid),
             PROCESS_TOKEN.get().unwrap()[pid],
         );
 
@@ -450,6 +482,9 @@ where
 
     fn dispatch<'buf>(&self, op: Self::ReadOperation<'_>) -> Self::Response {
         match op {
+            ProcessOp::GetPtRoot => {
+                Ok(ProcessResult::PtRoot(self.process.vspace().root()))
+            }
             ProcessOp::ProcessInfo => Ok(ProcessResult::ProcessInfo(*self.process.pinfo())),
             ProcessOp::MemResolve(base) => {
                 let (paddr, rights) = self.process.vspace().resolve(base)?;
@@ -511,15 +546,8 @@ where
                 Ok(ProcessResult::Ok)
             }
 
-            #[cfg(not(feature = "rackscale"))]
             ProcessOpMut::DispatcherAllocation(frame) => {
                 let how_many = self.process.allocate_executors(frame)?;
-                Ok(ProcessResult::ExecutorsCreated(how_many))
-            }
-
-            #[cfg(feature = "rackscale")]
-            ProcessOpMut::DispatcherAllocation(frame, mid) => {
-                let how_many = self.process.allocate_executors(frame, mid)?;
                 Ok(ProcessResult::ExecutorsCreated(how_many))
             }
 
@@ -545,12 +573,18 @@ where
             }
 
             ProcessOpMut::MemUnmap(vaddr) => {
-                let shootdown_handle = self.process.vspace_mut().unmap(vaddr)?;
-                if shootdown_handle.flags.is_aliasable() {
-                    self.process
-                        .remove_frame_mapping(shootdown_handle.paddr, shootdown_handle.vaddr)
-                        .expect("is_aliasable implies this op can't fail");
+                let shootdown_handle = if vaddr.as_u64() != 0x0 {
+                    let shootdown_handle = self.process.vspace_mut().unmap(vaddr)?;
+                    if shootdown_handle.flags.is_aliasable() {
+                        self.process
+                            .remove_frame_mapping(shootdown_handle.paddr, shootdown_handle.vaddr)
+                            .expect("is_aliasable implies this op can't fail");
+                    }
+                    shootdown_handle
                 }
+                else {
+                    TlbFlushHandle::new(0x0.into(), 0x0.into(), 0x0, MapAction::none())
+                };
 
                 let num_machines = *crate::environment::NUM_MACHINES;
                 let mut shootdown_handles = Vec::try_with_capacity(num_machines)

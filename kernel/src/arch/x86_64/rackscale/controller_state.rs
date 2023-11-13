@@ -25,7 +25,7 @@ lazy_static! {
     pub(crate) static ref CONTROLLER_SHMEM_CACHES: Arc<ArrayVec<Mutex<Box<dyn MemManager + Send>>, MAX_MACHINES>> = {
         let mut shmem_caches = ArrayVec::new();
         // TODO(rackscale): think about how we should constrain the mcache?
-        shmem_caches.push(Mutex::new(Box::new(MCache::<2048, 2048>::new_with_frame::<2048, 2048>(
+        shmem_caches.push(Mutex::new(Box::new(MCache::<2048, 65536>::new_with_frame::<2048, 65536>(
             local_shmem_affinity(),
             get_affinity_shmem(),
         )) as Box<dyn MemManager + Send>));
@@ -40,11 +40,11 @@ lazy_static! {
 
 /// Caches of memslices allocated by the DCM scheduler
 lazy_static! {
-    pub(crate) static ref SHMEM_MEMSLICE_ALLOCATORS: Arc<ArrayVec<Mutex<MCache<0, 2048>>, MAX_MACHINES>> = {
+    pub(crate) static ref SHMEM_MEMSLICE_ALLOCATORS: Arc<ArrayVec<Mutex<MCache<0, 65536>>, MAX_MACHINES>> = {
         // TODO(rackscale): think about how we should constrain the mcache?
         let mut shmem_allocators = ArrayVec::new();
         for i in 1..(MAX_MACHINES + 1) {
-            shmem_allocators.push(Mutex::new(MCache::<0, 2048>::new(mid_to_shmem_affinity(i))));
+            shmem_allocators.push(Mutex::new(MCache::<0, 65536>::new(mid_to_shmem_affinity(i))));
         }
         Arc::new(shmem_allocators)
     };

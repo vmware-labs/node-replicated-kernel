@@ -46,22 +46,18 @@ pub fn setup_network(num_nodes: usize) {
 }
 
 pub fn get_shmem_names(id: Option<usize>, is_affinity: bool) -> (String, String) {
-    let shmem_path = if is_affinity {
-        SHMEM_AFFINITY_PATH
+    let shmem_id = if let Some(myid) = id {
+        myid.to_string()
     } else {
-        "."
+        "".to_string()
     };
-    if let Some(shmemid) = id {
-        (
-            format!("ivshmem-socket{}", shmemid),
-            format!("{}/ivshmem-file{}", shmem_path, shmemid),
-        )
+
+    let shmem_file = if is_affinity {
+        format!("{}/ivshmem-file{}", SHMEM_AFFINITY_PATH, shmem_id)
     } else {
-        (
-            format!("ivshmem-socket{}", ""),
-            format!("{}/ivshmem-file{}", shmem_path, ""),
-        )
-    }
+        format!("ivshmem-file{}", shmem_id)
+    };
+    (format!("ivshmem-socket{}", shmem_id), shmem_file)
 }
 
 /// Spawns a qemu shmem server.
@@ -79,16 +75,15 @@ pub fn spawn_shmem_server(
     let _ignore = remove_file(filename);
 
     let affinity_str = if let Some(node_affinity) = affinity {
-        format!("-a {}", node_affinity)
+        format!("-a {} -m {}", node_affinity, filename)
     } else {
-        "".to_string()
+        format!("-M {}", filename)
     };
 
     // Run the ivshmem server; not sure how long we'll need it for so we let it run forever.
     let cmd = format!(
-        "ivshmem-server -F -S {} -m {} -l {}M -n {} {}",
+        "ivshmem-server -F -S {} -l {}M -n {} {}",
         socketname,
-        filename,
         filelen,
         2, // number of vectors
         affinity_str,

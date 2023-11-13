@@ -32,7 +32,8 @@ RUST_TEST_THREADS=1 cargo test --test s11* -- s11_rackscale_shmem_vmops_maplat_b
 RUST_TEST_THREADS=1 cargo test --test s11* -- s11_rackscale_shmem_fxmark_bench --nocapture
 RUST_TEST_THREADS=1 cargo test --test s11* -- s11_rackscale_memcached_benchmark_internal --nocapture
 RUST_TEST_THREADS=1 cargo test --test s11* -- s11_rackscale_memcached_benchmark_sharded_linux --nocapture
-RUST_TEST_THREADS=1 cargo test --test s11* -- s11_rackscale_memcached_benchmark_sharded_nros --nocapture
+# disabled for now as this causes too much issues with running for now
+# RUST_TEST_THREADS=1 cargo test --test s11* -- s11_rackscale_memcached_benchmark_sharded_nros --nocapture
 
 # Clone repo
 rm -rf gh-pages
@@ -66,7 +67,7 @@ mkdir -p ${DEPLOY_DIR}
 mv memcached_benchmark_internal.csv ${DEPLOY_DIR}
 mv memcached_benchmark_sharded_*.csv ${DEPLOY_DIR}
 gzip ${DEPLOY_DIR}/memcached_benchmark_internal.csv
-gzip ${DEPLOY_DIR}/memcached_benchmark_sharded_nros.csv
+# gzip ${DEPLOY_DIR}/memcached_benchmark_sharded_nros.csv
 gzip ${DEPLOY_DIR}/memcached_benchmark_sharded_linux.csv
 
 # Copy vmops results

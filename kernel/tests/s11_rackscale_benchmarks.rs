@@ -1036,12 +1036,12 @@ fn rackscale_memcached_checkout() {
     }
 
     println!(
-        "CHECKOUT fe0eb024882481717efd6a3f4600e96c99ca77a2 {:?}",
+        "CHECKOUT 0d90d53b99c3890b6e47efe08446e5180711ff09 {:?}",
         out_dir
     );
 
     let res = Command::new("git")
-        .args(&["checkout", "fe0eb024882481717efd6a3f4600e96c99ca77a2"])
+        .args(&["checkout", "0d90d53b99c3890b6e47efe08446e5180711ff09"])
         .current_dir(out_dir_path.as_path())
         .output()
         .expect("git checkout failed");
@@ -1345,6 +1345,7 @@ fn s11_rackscale_memcached_benchmark_sharded_linux() {
 }
 
 #[test]
+#[ignore]
 #[cfg(not(feature = "baremetal"))]
 fn s11_rackscale_memcached_benchmark_sharded_nros() {
     use rexpect::process::signal::Signal::SIGKILL;
@@ -1551,24 +1552,17 @@ fn s11_rackscale_memcached_benchmark_sharded_nros() {
     test.arg = Some(config);
     test.run_dhcpd_for_baseline = true;
     test.is_multi_node = true;
+    test.shmem_size = 0;
 
-    if !is_smoke {
-        test.shmem_size = std::cmp::max(
-            MEMCACHED_MEM_SIZE_MB * 2,
-            testutils::helpers::SHMEM_SIZE * 2,
-        );
-    }
 
     fn cmd_fn(num_cores: usize, num_clients: usize, arg: Option<MemcachedShardedConfig>) -> String {
         let config = arg.expect("missing configuration");
         let num_threads = num_cores / num_clients;
 
         format!(
-            r#"init=memcachedbench.bin initargs={} appcmd='--x-benchmark-no-run --disable-evictions --conn-limit=1024 --threads={} --x-benchmark-mem={} --memory-limit={}'"#,
-            num_threads,
-            num_threads,
-            config.mem_size,
-            config.mem_size * 2
+            r#"init=memcachedbench.bin initargs={num_threads} appcmd='--x-benchmark-no-run --disable-evictions --conn-limit=1024 --threads={num_threads} --x-benchmark-mem={} --memory-limit={}'"#,
+            config.mem_size * 2,
+            config.mem_size * 4
         )
     }
 

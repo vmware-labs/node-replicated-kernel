@@ -9,6 +9,9 @@ use rexpect::process::wait::WaitStatus;
 use crate::builder::{BuildArgs, Built, Machine};
 use crate::ExitStatus;
 
+/// defines the threshold on when the output is truncated.
+const PRINT_NUM_LINES: usize = 100;
+
 /// Different build modes for rackscale
 #[derive(Eq, PartialEq, Debug, Clone)]
 pub enum RackscaleMode {
@@ -496,10 +499,26 @@ pub fn log_qemu_out(args: &RunnerArgs, output: String) {
     log_qemu_out_with_name(Some(args), String::from(""), output)
 }
 
+
+
 pub fn log_qemu_out_with_name(args: Option<&RunnerArgs>, name: String, output: String) {
     if !output.is_empty() {
         println!("\n===== QEMU LOG {}=====", name);
-        println!("{}", &output);
+        let num_lines = output.lines().count();
+
+        if num_lines > PRINT_NUM_LINES {
+            for l in output.lines().take(PRINT_NUM_LINES / 2) {
+                println!(" > {}", l);
+            }
+            println!(" > ... {} more lines\n", num_lines - PRINT_NUM_LINES);
+            for l in output.lines().skip(num_lines - PRINT_NUM_LINES / 2) {
+                println!(" > {}", l);
+            }
+        } else {
+            for l in output.lines() {
+                println!(" > {l}");
+            }
+        }
         println!("===== END QEMU LOG {}=====", name);
     }
     if let Some(nrk_args) = args {
@@ -620,7 +639,32 @@ pub fn wait_for_sigterm_or_successful_exit_no_log(
         }
         Err(e) => {
             log_qemu_args(args);
-            panic!("Qemu testing failed: {} {}", name, e);
+            println!("Qemu testing failed: {} ", name);
+            use rexpect::errors::Error;
+            use rexpect::errors::ErrorKind::Timeout;
+            match e {
+                Error(Timeout(expected, got, timeout), st) => {
+                    println!("Expected: `{expected}`\n");
+                    println!("Got:",);
+                    let count = got.lines().count();
+                    if count > PRINT_NUM_LINES {
+                        for l in got.lines().take(PRINT_NUM_LINES / 2) {
+                            println!(" > {l}");
+                        }
+                        println!(" > ... skipping {} more lines...", count - PRINT_NUM_LINES);
+                        for l in got.lines().skip(count - PRINT_NUM_LINES / 2) {
+                            println!(" > {l}");
+                        }
+                    } else {
+                        for l in got.lines() {
+                            println!(" > {l}");
+                        }
+                    }
+                }
+                _ => println!("{e}")
+            }
+
+            panic!("Qemu testing failed");
         }
         e => {
             log_qemu_args(args);

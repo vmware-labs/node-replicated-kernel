@@ -440,13 +440,12 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
                 );
                 lazy_static::initialize(&rackscale::client_state::CLIENT_STATE);
                 crate::arch::rackscale::client_state::create_client_rpc_shmem_buffers();
-                log::warn!("Finished inititializing client state & shmem buffer");
+                log::info!("Finished inititializing client state & shmem buffer");
             }
         }
         // Initialize the workqueues used for distributed TLB shootdowns
-        log::warn!("About to initialize rackscale client workqueues");
         lazy_static::initialize(&crate::arch::tlb::RACKSCALE_CLIENT_WORKQUEUES);
-        log::warn!("Finished inititializing client work queues");
+        log::info!("Finished inititializing client work queues");
     }
 
     unsafe { vspace::init_large_objects_pml4() };

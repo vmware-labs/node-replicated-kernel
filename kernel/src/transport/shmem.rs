@@ -176,6 +176,23 @@ impl ShmemDevice {
             )
             .expect("Failed to write potential shmem memory region addresses");
 
+        /*
+        // Note: leaving this code as a comment as a way to test if all shmem is writeable.
+        #[cfg(feature = "rackscale")]
+        match crate::CMDLINE.get().map_or(Mode::Native, |c| c.mode) {
+            Mode::Controller => {
+                let mymemslice = unsafe {
+                    core::slice::from_raw_parts_mut(
+                        (KERNEL_BASE + mem_region.address) as *mut u8,
+                        mem_region.size as usize,
+                    )
+                };
+                mymemslice.fill(0);
+            }
+            _ => {}
+        }
+        */
+
         // Map the MSI-X table into kernel space
         kvspace
             .map_identity_with_offset(

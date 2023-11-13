@@ -193,7 +193,7 @@ impl Process for UnixProcess {
     fn load(
         &mut self,
         _pid: Pid,
-        _module: &Module,
+        _module_name: String,
         _writable_sections: Vec<Frame>,
     ) -> Result<(), KError> {
         self.vspace.map_frame(

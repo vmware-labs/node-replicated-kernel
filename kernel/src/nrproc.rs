@@ -16,7 +16,7 @@ use node_replication::{Dispatch, Replica, ReplicaToken};
 use spin::Once;
 
 use crate::arch::process::PROCESS_TABLE;
-use crate::arch::{Module, MAX_NUMA_NODES};
+use crate::arch::MAX_NUMA_NODES;
 use crate::error::{KError, KResult};
 use crate::memory::vspace::{AddressSpace, MapAction, TlbFlushHandle};
 use crate::memory::{Frame, PAddr, VAddr};
@@ -74,7 +74,7 @@ pub(crate) enum ProcessOp<'buf> {
 /// Mutable operations on the NrProcess.
 #[derive(PartialEq, Clone, Debug)]
 pub(crate) enum ProcessOpMut {
-    Load(Pid, &'static Module, Vec<Frame>),
+    Load(Pid, String, Vec<Frame>),
 
     /// Assign a core to a process.
     AssignExecutor(atopology::NodeId, kpi::system::GlobalThreadId),
@@ -157,7 +157,7 @@ impl<P: Process> NrProcess<P> {
 impl<P: Process> NrProcess<P> {
     pub(crate) fn load(
         pid: Pid,
-        module: &'static Module,
+        module_name: String,
         writeable_sections: Vec<Frame>,
     ) -> Result<(), KError> {
         debug_assert!(pid < MAX_PROCESSES, "Invalid PID");
@@ -165,7 +165,7 @@ impl<P: Process> NrProcess<P> {
         let node = *crate::environment::NODE_ID;
 
         let response = PROCESS_TABLE[node][pid].execute_mut(
-            ProcessOpMut::Load(pid, module, writeable_sections),
+            ProcessOpMut::Load(pid, module_name, writeable_sections),
             PROCESS_TOKEN.get().unwrap()[pid],
         );
         match response {
@@ -545,8 +545,8 @@ where
 
     fn dispatch_mut(&mut self, op: Self::WriteOperation) -> Self::Response {
         match op {
-            ProcessOpMut::Load(pid, module, writeable_sections) => {
-                self.process.load(pid, module, writeable_sections)?;
+            ProcessOpMut::Load(pid, module_name, writeable_sections) => {
+                self.process.load(pid, module_name, writeable_sections)?;
                 Ok(ProcessResult::Ok)
             }
 

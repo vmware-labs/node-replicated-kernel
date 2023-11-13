@@ -81,7 +81,7 @@ pub fn upcall_while_enabled(control: &mut kpi::arch::VirtualCpu, cmd: u64, arg: 
         }
     }
 
-    if cmd == 0x2a || cmd == 0x24 {
+    if cmd == 0x2b || cmd == 0x24 {
         // TODO(correctness): this will use `gs` to access the SchedulerControlBlock
         // that assumes that we have already called scheduler.run() and we preserve
         // the SchedulerControlBlock register even if we return from run()

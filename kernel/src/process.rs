@@ -4,6 +4,7 @@
 //! Generic process traits
 use alloc::boxed::Box;
 use alloc::string::String;
+use alloc::string::ToString;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use atopology::NodeId;
@@ -22,7 +23,7 @@ use log::{debug, info, trace};
 use crate::arch::kcb::per_core_mem;
 use crate::arch::memory::{paddr_to_kernel_vaddr, BASE_PAGE_SIZE, LARGE_PAGE_SIZE};
 use crate::arch::process::{current_pid, with_user_space_access_enabled, ArchProcess};
-use crate::arch::{Module, MAX_CORES};
+use crate::arch::MAX_CORES;
 use crate::cmdline::CommandLineArguments;
 use crate::error::{KError, KResult};
 use crate::fs::fd::FileDescriptorEntry;
@@ -66,7 +67,7 @@ pub(crate) trait Process: FrameManagement {
     fn load(
         &mut self,
         pid: Pid,
-        module: &Module,
+        module_name: String,
         writable_sections: Vec<Frame>,
     ) -> Result<(), KError>
     where
@@ -548,7 +549,7 @@ pub(crate) fn make_process<P: Process>(binary: &'static str) -> Result<Pid, KErr
     #[cfg(not(feature = "rackscale"))]
     cnrfs::MlnrKernelNode::add_process(pid).expect("TODO(error-handling): revert state");
 
-    crate::nrproc::NrProcess::<P>::load(pid, mod_file, data_frames)
+    crate::nrproc::NrProcess::<P>::load(pid, mod_file.name().to_string(), data_frames)
         .expect("TODO(error-handling): revert state properly");
 
     #[cfg(feature = "rackscale")]

@@ -102,7 +102,10 @@ impl KernelAllocator {
                 {
                     let affinity = { pcm.physical_memory.borrow().affinity };
                     if is_shmem_affinity(affinity) {
-                        panic!("MapBig not yet supported for shmem allocation");
+                        panic!(
+                            "MapBig not yet supported for shmem allocation: {:?}",
+                            layout
+                        );
                     }
                 }
                 // Big objects are mapped into the kernel address space

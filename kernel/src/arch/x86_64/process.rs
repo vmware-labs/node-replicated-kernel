@@ -3,6 +3,7 @@
 
 use alloc::boxed::Box;
 use alloc::collections::TryReserveError;
+use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::alloc::Allocator;
@@ -38,7 +39,6 @@ use crate::round_up;
 
 use super::gdt::GdtTable;
 use super::vspace::*;
-use super::Module;
 use super::MAX_NUMA_NODES;
 
 const INVALID_EXECUTOR_START: VAddr = VAddr(0xdeadffff);
@@ -1336,7 +1336,7 @@ impl Process for Ring3Process {
     fn load(
         &mut self,
         pid: Pid,
-        module: &Module,
+        module_name: String,
         writeable_sections: Vec<Frame>,
     ) -> Result<(), KError> {
         self.pid = pid;
@@ -1345,6 +1345,20 @@ impl Process for Ring3Process {
         for sec in writeable_sections {
             self.writeable_sections.try_push(sec)?;
         }
+
+        // Get module from module name
+        let modules = crate::KERNEL_ARGS
+            .get()
+            .map(|args| &args.modules)
+            .expect("No modules found for process");
+        let mut module = None;
+        for m in modules {
+            if m.name() == module_name {
+                module = Some(m);
+                break;
+            }
+        }
+        let module = module.expect("Failed to find process module");
 
         // Load the Module into the process address-space
         // This needs mostly sanitation work on elfloader and

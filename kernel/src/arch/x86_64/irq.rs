@@ -380,7 +380,7 @@ unsafe fn pf_handler(a: &ExceptionArguments) {
     // Enable user-space access
     x86::current::rflags::stac();
 
-    for i in 0..32 {
+    for i in 0..12 {
         let ptr = (a.rsp as *const u64).offset(i);
         sprintln!("stack[{}] = {:#x}", i, *ptr);
     }

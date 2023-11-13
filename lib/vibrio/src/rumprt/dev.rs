@@ -134,7 +134,7 @@ pub unsafe extern "C" fn rumpcomp_pci_irq_map(
             Some(irq_handler),
             core::ptr::null_mut(),
             cur_thread.current_core,
-            vector as u64 + 31,
+            vector as u64 + 32,
         )
         .expect("Can't create IRQ thread?");
 
@@ -179,7 +179,7 @@ pub unsafe extern "C" fn rumpcomp_pci_irq_establish(
     trace!("rumpcomp_pci_irq_establish {:#x} {:p}", cookie, arg);
     IRQS[0].handler = handler;
     IRQS[0].arg = arg;
-    trace!("register for IRQ {}", IRQS[0].vector as usize + 31);
+    trace!("register for IRQ {}", IRQS[0].vector as usize + 32);
 
     &mut IRQS[0] as *mut _ as *mut c_void
 }

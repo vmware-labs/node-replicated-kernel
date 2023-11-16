@@ -345,6 +345,10 @@ impl KernelAllocator {
         use crate::arch::rackscale::get_shmem_frames::rpc_get_shmem_frames;
         use crate::arch::rackscale::CLIENT_STATE;
 
+        if needed_base_pages == 0 && needed_large_pages == 0 {
+            return Ok(());
+        }
+
         // We only request at large page granularity
         let mut total_needed_large_pages = needed_large_pages;
         let mut total_needed_base_pages = needed_base_pages;
@@ -418,6 +422,7 @@ impl KernelAllocator {
             }
             frames
         } else {
+            log::info!("try-refill-shmem needed_base_pages={needed_base_pages} needed_large_pages={needed_large_pages} total_needed_base_pages={total_needed_base_pages} total_needed_large_pages={total_needed_large_pages}");
             rpc_get_shmem_frames(None, total_needed_large_pages)?
         };
 

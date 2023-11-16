@@ -513,15 +513,6 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     // Intialize PCI
     crate::pci::init();
 
-    // Initialize processes
-    #[cfg(feature = "rackscale")]
-    if crate::CMDLINE
-        .get()
-        .map_or(false, |c| c.mode == crate::cmdline::Mode::Controller)
-    {
-        lazy_static::initialize(&process::PROCESS_TABLE);
-    }
-
     #[cfg(not(feature = "rackscale"))]
     {
         lazy_static::initialize(&process::PROCESS_TABLE);

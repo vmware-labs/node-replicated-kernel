@@ -79,7 +79,7 @@ pub(crate) trait Process: FrameManagement + Clone {
         affinity: atopology::NodeId,
     ) -> Result<(), alloc::collections::TryReserveError>;
 
-    fn allocate_executors(&mut self, frame: Frame) -> Result<usize, KError>;
+    fn allocate_executors(&mut self, frame: Frame, #[cfg(feature = "rackscale")] mid: kpi::system::MachineId) -> Result<usize, KError>;
 
     fn vspace_mut(&mut self) -> &mut Self::A;
 
@@ -288,6 +288,7 @@ impl elfloader::ElfLoader for DataSecAllocator {
                         }
                     };
 
+                    log::info!("DataSecAllocator::allocate");
                     let shmem_frames = rpc_get_shmem_frames(Some(self.pid), large_pages)
                         .expect("Failed to get shmem frames for elf loading");
 

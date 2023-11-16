@@ -76,6 +76,7 @@ lazy_static! {
     pub(crate) static ref PROCESS_TABLE: ArrayVec<Arc<RwLock<NodeReplicated<NrProcess<Ring3Process>>>>, MAX_PROCESSES> = {
         use crate::memory::shmem_affinity::mid_to_shmem_affinity;
         use crate::arch::kcb::per_core_mem;
+        use crate::environment::NUM_MACHINES;
 
         if !crate::CMDLINE
             .get()
@@ -106,7 +107,7 @@ lazy_static! {
         
         // Want at least one replica...
         let num_replicas =
-            NonZeroUsize::new(core::cmp::max(1, atopology::MACHINE_TOPOLOGY.num_nodes())).unwrap();
+            NonZeroUsize::new(core::cmp::max(1, atopology::MACHINE_TOPOLOGY.num_nodes() * (*NUM_MACHINES))).unwrap();
         let mut processes = ArrayVec::new();
 
         for _pid in 0..MAX_PROCESSES {
@@ -1499,6 +1500,7 @@ impl Process for Ring3Process {
     fn allocate_executors(
         &mut self,
         memory: Frame,
+        #[cfg(feature = "rackscale")] mid: kpi::system::MachineId,
     ) -> Result<usize, KError> {
         let executor_space_requirement = Ring3Executor::EXECUTOR_SPACE_REQUIREMENT;
         let executors_to_create = memory.size() / executor_space_requirement;
@@ -1550,11 +1552,11 @@ impl Process for Ring3Process {
                 memory.affinity,
             ))?;
 
+            #[cfg(not(feature = "rackscale"))]
             let index = memory.affinity as usize;
 
-            //TODO: xxx
-            //#[cfg(feature = "rackscale")]
-            //let index = self.get_executor_index(memory.affinity, mid);
+            #[cfg(feature = "rackscale")]
+            let index = self.get_executor_index(memory.affinity, mid);
 
             // TODO(error-handling): Needs to properly unwind on alloc errors
             // (e.g., have something that frees vcpu mem etc. on drop())

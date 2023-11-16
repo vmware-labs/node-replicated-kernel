@@ -81,6 +81,9 @@ pub(crate) fn run() {
 
     // TODO(dynrep): here is the point where we have all the memory regions and
     // could create NodeReplicated instances for each client.
+    // Initialize processes
+    use crate::arch::process::PROCESS_TABLE;
+    lazy_static::initialize(&PROCESS_TABLE);
 
     #[cfg(feature = "test-controller-shmem-alloc")]
     {

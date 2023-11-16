@@ -90,8 +90,12 @@ pub(crate) enum ProcessOpMut {
     /// Remove a physical frame previosuly allocated to the process (returns a Frame).
     ReleaseFrameFromProcess(FrameId),
 
+    #[cfg(feature = "rackscale")]
+    DispatcherAllocation(Frame, kpi::system::MachineId),
+    
+    #[cfg(not(feature = "rackscale"))]
     DispatcherAllocation(Frame),
-
+    
     MemMapFrame(VAddr, Frame, MapAction),
     MemMapDevice(Frame, MapAction),
     MemMapFrameId(VAddr, FrameId, MapAction),
@@ -389,11 +393,16 @@ impl<P: Process> NrProcess<P> {
     pub(crate) fn allocate_dispatchers(pid: Pid, frame: Frame) -> Result<usize, KError> {
         debug_assert!(pid < MAX_PROCESSES, "Invalid PID");
 
+        #[cfg(feature = "rackscale")]
+        let mid = *crate::environment::MACHINE_ID;
         let response = PROCESS_TABLE[pid].read(*crate::environment::MT_ID).execute_mut(
+        #[cfg(not(feature = "rackscale"))]
             ProcessOpMut::DispatcherAllocation(frame),
+        #[cfg(feature = "rackscale")]
+            ProcessOpMut::DispatcherAllocation(frame, mid),
             PROCESS_TOKEN.get().unwrap()[pid],
         );
-
+        
         match response {
             Ok(ProcessResult::ExecutorsCreated(how_many)) => Ok(how_many),
             Err(e) => Err(e),
@@ -546,8 +555,15 @@ where
                 Ok(ProcessResult::Ok)
             }
 
+            #[cfg(not(feature = "rackscale"))]
             ProcessOpMut::DispatcherAllocation(frame) => {
                 let how_many = self.process.allocate_executors(frame)?;
+                Ok(ProcessResult::ExecutorsCreated(how_many))
+            }
+
+            #[cfg(feature = "rackscale")]
+            ProcessOpMut::DispatcherAllocation(frame, mid) => {
+                let how_many = self.process.allocate_executors(frame, mid)?;
                 Ok(ProcessResult::ExecutorsCreated(how_many))
             }
 

@@ -882,6 +882,161 @@ fn rackscale_memcached_dcm(transport: RackscaleTransport, dcm_config: Option<DCM
 
 #[test]
 #[cfg(not(feature = "baremetal"))]
+fn s11_rackscale_memcached_dynrep_benchmark_internal() {
+    let transport = RackscaleTransport::Shmem;
+    let is_smoke = cfg!(feature = "smoke");
+
+    let file_name = format!(
+        "rackscale_{}_memcached_benchmark.csv",
+        transport.to_string(),
+    );
+    let _ignore = std::fs::remove_file(file_name.clone());
+
+    let built = BuildArgs::default()
+        .module("rkapps")
+        .user_feature("rkapps:memcached-bench")
+        .set_rackscale(true)
+        .kernel_feature("pages-4k")
+        .release()
+        .build();
+
+    fn controller_match_fn(
+        proc: &mut PtySession,
+        output: &mut String,
+        _cores_per_client: usize,
+        num_clients: usize,
+        file_name: &str,
+        is_baseline: bool,
+        arg: Option<MemcachedInternalConfig>,
+    ) -> Result<()> {
+        let _config = arg.expect("match function expects a memcached config");
+
+        // match the title
+        let (prev, matched) = proc.exp_regex(r#"INTERNAL BENCHMARK CONFIGURE"#)?;
+
+        *output += prev.as_str();
+        *output += matched.as_str();
+
+        // x_benchmark_mem = 10 MB
+        let (prev, matched) = proc.exp_regex(r#"x_benchmark_mem = (\d+) MB"#)?;
+        println!("> {}", matched);
+        let b_mem = matched.replace("x_benchmark_mem = ", "").replace(" MB", "");
+
+        *output += prev.as_str();
+        *output += matched.as_str();
+
+        // number of threads: 3
+        let (prev, matched) = proc.exp_regex(r#"number of threads: (\d+)"#)?;
+        println!("> {}", matched);
+        let b_threads = matched.replace("number of threads: ", "");
+
+        *output += prev.as_str();
+        *output += matched.as_str();
+
+        // number of keys: 131072
+        let (prev, matched) = proc.exp_regex(r#"number of keys: (\d+)"#)?;
+        println!("> {}", matched);
+
+        *output += prev.as_str();
+        *output += matched.as_str();
+
+        let (prev, matched) = proc.exp_regex(r#"Executing (\d+) queries with (\d+) threads"#)?;
+        println!("> {}", matched);
+
+        *output += prev.as_str();
+        *output += matched.as_str();
+
+        // benchmark took 129 seconds
+        let (prev, matched) = proc.exp_regex(r#"benchmark took (\d+) ms"#)?;
+        println!("> {}", matched);
+        let b_time = matched.replace("benchmark took ", "").replace(" ms", "");
+
+        *output += prev.as_str();
+        *output += matched.as_str();
+
+        // benchmark took 7937984 queries / second
+        let (prev, matched) = proc.exp_regex(r#"benchmark took (\d+) queries / second"#)?;
+        println!("> {}", matched);
+        let b_thpt = matched
+            .replace("benchmark took ", "")
+            .replace(" queries / second", "");
+
+        *output += prev.as_str();
+        *output += matched.as_str();
+
+        let (prev, matched) = proc.exp_regex(r#"benchmark executed (\d+)"#)?;
+        println!("> {}", matched);
+        let b_queries = matched
+            .replace("benchmark executed ", "")
+            .split(" ")
+            .next()
+            .unwrap()
+            .to_string();
+
+        *output += prev.as_str();
+        *output += matched.as_str();
+
+        // Append parsed results to a CSV file
+        let write_headers = !Path::new(file_name).exists();
+        let mut csv_file = OpenOptions::new()
+            .append(true)
+            .create(true)
+            .open(file_name)
+            .expect("Can't open file");
+        if write_headers {
+            let row = "git_rev,benchmark,nthreads,mem,queries,time,thpt,num_clients,num_replicas\n";
+            let r = csv_file.write(row.as_bytes());
+            assert!(r.is_ok());
+        }
+
+        let actual_num_clients = if is_baseline { 0 } else { num_clients };
+
+        let r = csv_file.write(format!("{},", env!("GIT_HASH")).as_bytes());
+        assert!(r.is_ok());
+        let out = format!(
+            "memcached,{},{},{},{},{},{},{}",
+            b_threads, b_mem, b_queries, b_time, b_thpt, actual_num_clients, num_clients
+        );
+        let r = csv_file.write(out.as_bytes());
+        assert!(r.is_ok());
+        let r = csv_file.write("\n".as_bytes());
+        assert!(r.is_ok());
+
+        Ok(())
+    }
+
+    let config = if is_smoke {
+        MemcachedInternalConfig {
+            num_queries: 100_000,
+            mem_size: 16,
+        }
+    } else {
+        MemcachedInternalConfig {
+            num_queries: 1_000_000, // TODO(rackscale): should be 100_000_000,
+            mem_size: 16,           // TODO(rackscale): should be 32_000,
+        }
+    };
+
+    let mut test = RackscaleRun::new("userspace-smp".to_string(), built);
+    test.controller_match_fn = controller_match_fn;
+    test.transport = transport;
+    test.shmem_size *= 2;
+    test.use_affinity_shmem = cfg!(feature = "affinity-shmem");
+    test.use_qemu_huge_pages = cfg!(feature = "affinity-shmem");
+    test.file_name = file_name.to_string();
+    test.run_dhcpd_for_baseline = true;
+    test.num_clients = 2;
+    test.cores_per_client = 4;
+    test.cmd = format!(
+        r#"init=memcachedbench.bin initargs={} appcmd='--x-benchmark-mem={} --x-benchmark-queries={}'"#,
+        2*4, config.mem_size, config.num_queries
+    );
+    test.arg = Some(config);
+    test.run_rackscale();
+}
+
+#[test]
+#[cfg(not(feature = "baremetal"))]
 fn s11_rackscale_monetdb_benchmark() {
     rackscale_monetdb_benchmark(RackscaleTransport::Shmem);
 }

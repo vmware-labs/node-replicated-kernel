@@ -18,7 +18,6 @@ use fallible_collections::FallibleVecGlobal;
 use fallible_collections::TryClone;
 use log::debug;
 use log::trace;
-use nr2::nr::NodeReplicated;
 use x86::apic::ApicId;
 use x86::current::paging::PAddr;
 
@@ -29,7 +28,6 @@ use crate::memory::backends::PhysicalPageProvider;
 use crate::memory::global::GlobalMemory;
 use crate::memory::vspace::MapAction;
 use crate::memory::Frame;
-use crate::nr::KernelNode;
 use crate::round_up;
 use crate::stack::OwnedStack;
 use crate::stack::Stack;
@@ -57,7 +55,6 @@ pub(crate) struct AppCoreArgs {
     pub(super) global_pmem: &'static GlobalMemory,
     pub(super) thread: atopology::ThreadId,
     pub(super) node: atopology::NodeId,
-    pub(super) replica: Arc<NodeReplicated<KernelNode>>,
     pub(super) fs_replica: Option<Arc<MlnrReplica<'static, MlnrKernelNode>>>,
 }
 
@@ -332,7 +329,6 @@ pub(crate) unsafe fn initialize<A>(
 ///  - Initialized topology
 ///  - Local APIC driver
 pub(super) fn boot_app_cores(
-    kernel_node: Arc<NodeReplicated<KernelNode>>,
     fs_logs: Vec<Arc<MlnrLog<'static, Modify>>>,
     fs_replica: Option<Arc<MlnrReplica<'static, MlnrKernelNode>>>,
 ) {
@@ -427,9 +423,6 @@ pub(super) fn boot_app_cores(
             global_memory,
             global_pmem,
             thread: thread.id,
-            replica: kernel_node
-                .try_clone()
-                .expect("Not enough memory to initialize system"),
             fs_replica: thread_fs_replica,
         })
         .expect("Not enough memory to initialize system");

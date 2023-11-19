@@ -84,6 +84,7 @@ pub(crate) fn run() {
     // Initialize processes
     use crate::arch::process::PROCESS_TABLE;
     lazy_static::initialize(&PROCESS_TABLE);
+    lazy_static::initialize(&crate::nr::KERNEL_NODE_INSTANCE);
 
     #[cfg(feature = "test-controller-shmem-alloc")]
     {

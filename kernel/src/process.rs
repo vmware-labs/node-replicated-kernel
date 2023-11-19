@@ -462,17 +462,14 @@ impl elfloader::ElfLoader for DataSecAllocator {
 /// Create an initial VSpace
 pub(crate) fn make_process<P: Process>(binary: &'static str) -> Result<Pid, KError> {
     // Allocate a new process
-    let pid =
-        crate::nr::NR_REPLICA
-            .get()
-            .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
-                let response = replica.execute_mut(crate::nr::Op::AllocatePid, *token)?;
-                if let crate::nr::NodeResult::PidAllocated(pid) = response {
-                    Ok(pid)
-                } else {
-                    Err(KError::ProcessLoadingFailed)
-                }
-            })?;
+    let pid = {
+        let response = crate::nr::KERNEL_NODE_INSTANCE.execute_mut(crate::nr::Op::AllocatePid, *crate::nr::NR_REPLICA_REGISTRATION.get().unwrap())?;
+        if let crate::nr::NodeResult::PidAllocated(pid) = response {
+            Ok(pid)
+        } else {
+            Err(KError::ProcessLoadingFailed)
+        }
+    }?;
 
     #[cfg(feature = "rackscale")]
     let affinity = if crate::CMDLINE

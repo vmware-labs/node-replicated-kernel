@@ -120,15 +120,18 @@ lazy_static! {
             let process: Arc<RwLock<NodeReplicated<NrProcess<Ring3Process>>>> = Arc::try_new(
                 RwLock::new(NodeReplicated::new(num_replicas, |afc: AffinityChange| {
                     let pcm = kcb::per_core_mem();
+                    //log::info!("Got AffinityChange: {:?}", afc);
                     match afc {
                         AffinityChange::Replica(r) => {
-                            pcm.set_mem_affinity(mid_to_shmem_affinity(r)).expect("Can't change affinity");
+                            let affinity = { pcm.physical_memory.borrow().affinity };
+                            pcm.set_mem_affinity(mid_to_shmem_affinity(r)).expect("Can't set affinity");
+                            return affinity;
                         }
-                        AffinityChange::Revert(_orig) => {
-                            pcm.set_mem_affinity(local_shmem_affinity()).expect("Can't set affinity")
+                        AffinityChange::Revert(orig) => {
+                            pcm.set_mem_affinity(orig).expect("Can't set affinity");
+                            return 0;
                         }
                     }
-                    return 0; // TODO(dynrep): Return error code
                 })
                 .expect("Not enough memory to initialize system"),
             ))
@@ -204,15 +207,18 @@ fn create_process_table() -> ArrayVec<Arc<RwLock<NodeReplicated<NrProcess<Ring3P
         let process: Arc<RwLock<NodeReplicated<NrProcess<Ring3Process>>>> = Arc::try_new(RwLock::new(
             NodeReplicated::new(num_replicas, |afc: AffinityChange| {
                 let pcm = kcb::per_core_mem();
+                //log::info!("Got AffinityChange: {:?}", afc);
                 match afc {
                     AffinityChange::Replica(r) => {
-                        pcm.set_mem_affinity(r).expect("Can't set affinity")
+                        let affinity = { pcm.physical_memory.borrow().affinity };
+                        pcm.set_mem_affinity(crate::memory::shmem_affinity::mid_to_shmem_affinity(r)).expect("Can't set affinity");
+                        return affinity;
                     }
                     AffinityChange::Revert(orig) => {
-                        pcm.set_mem_affinity(orig).expect("Can't set affinity")
+                        pcm.set_mem_affinity(orig).expect("Can't set affinity");
+                        return 0;
                     }
                 }
-                return 0; // TODO(dynrep): Return error code
             })
             .expect("Not enough memory to initialize system")),
         )

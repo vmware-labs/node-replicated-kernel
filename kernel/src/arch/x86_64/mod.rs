@@ -188,20 +188,23 @@ pub(crate) fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
     serial::init();
 
     {
-        let local_ridx = args.replica.register(args.node).unwrap();
-        crate::nr::NR_REPLICA.call_once(|| (args.replica.clone(), local_ridx));
-
         #[cfg(feature = "rackscale")]
         if crate::CMDLINE
             .get()
             .map_or(false, |c| c.mode == crate::cmdline::Mode::Client)
         {
+            let local_ridx = crate::nr::KERNEL_NODE_INSTANCE.register(args.node).unwrap();
+            crate::nr::NR_REPLICA_REGISTRATION.call_once(|| local_ridx);
             crate::nrproc::register_thread_with_process_replicas();
             crate::arch::rackscale::client_state::create_client_rpc_shmem_buffers();
         }
 
         #[cfg(not(feature = "rackscale"))]
-        crate::nrproc::register_thread_with_process_replicas();
+        {
+            let local_ridx = crate::nr::KERNEL_NODE_INSTANCE.register(args.node).unwrap();
+            crate::nr::NR_REPLICA_REGISTRATION.call_once(|| local_ridx);
+            crate::nrproc::register_thread_with_process_replicas();
+        }
 
         // For rackscale, only the controller needs cnrfs
         if let Some(core_fs_replica) = &args.fs_replica {
@@ -210,9 +213,8 @@ pub(crate) fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
 
         // Don't modify this line without adjusting `coreboot` integration test:
         info!(
-            "Core #{} initialized (replica idx {:?}) in {:?}.",
+            "Core #{} initialized in {:?}.",
             args.thread,
-            local_ridx,
             start.elapsed()
         );
     }
@@ -445,38 +447,11 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     irq::ioapic_initialize();
 
     #[cfg(not(feature = "rackscale"))]
-    let kernel_node = {
-        use core::num::NonZeroUsize;
-        use crate::nr::KernelNode;
-        use nr2::nr::{AffinityChange, NodeReplicated};
-
-        // Let's go with one replica per NUMA node for now:
-        let numa_nodes = core::cmp::max(1, atopology::MACHINE_TOPOLOGY.num_nodes());
-        let numa_nodes = NonZeroUsize::new(numa_nodes).expect("At least one NUMA node");
-
-        // Create the global operation log and first replica and store it (needs
-        // TLS)
-        let kernel_node: Arc<NodeReplicated<KernelNode>> = Arc::try_new(
-            NodeReplicated::new(numa_nodes, |afc: AffinityChange| {
-                let pcm = kcb::per_core_mem();
-                match afc {
-                    AffinityChange::Replica(r) => {
-                        pcm.set_mem_affinity(r).expect("Can't set affinity")
-                    }
-                    AffinityChange::Revert(orig) => {
-                        pcm.set_mem_affinity(orig).expect("Can't set affinity")
-                    }
-                }
-                return 0; // xxx
-            })
-            .expect("Not enough memory to initialize system"),
-        )
-        .expect("Not enough memory to initialize system");
-
-        let local_ridx = kernel_node.register(0).unwrap();
-        crate::nr::NR_REPLICA.call_once(|| (kernel_node.clone(), local_ridx));
-        kernel_node
-    };
+    {
+        lazy_static::initialize(&crate::nr::KERNEL_NODE_INSTANCE);
+        let local_ridx = crate::nr::KERNEL_NODE_INSTANCE.register(0).unwrap();
+        crate::nr::NR_REPLICA_REGISTRATION.call_once(|| local_ridx);
+    }
 
     // Starting to initialize file-system
     #[cfg(not(feature = "rackscale"))]
@@ -520,22 +495,21 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     }
 
     #[cfg(feature = "rackscale")]
-    let kernel_node = {
+    {
         if crate::CMDLINE
             .get()
             .map_or(false, |c| c.mode == crate::cmdline::Mode::Client)
         {
             lazy_static::initialize(&process::PROCESS_TABLE);
             crate::nrproc::register_thread_with_process_replicas();
+
+            lazy_static::initialize(&crate::nr::KERNEL_NODE_INSTANCE);
+            let kernel_node = crate::nr::KERNEL_NODE_INSTANCE.clone();
+    
+            let local_ridx = kernel_node.register(0).unwrap();
+            log::info!("Kernel node replica idx is {:?}", local_ridx);
+            crate::nr::NR_REPLICA_REGISTRATION.call_once(|| local_ridx);
         }
-
-        lazy_static::initialize(&crate::nr::KERNEL_NODE_INSTANCE);
-        let kernel_node = crate::nr::KERNEL_NODE_INSTANCE.clone();
-
-        let local_ridx = kernel_node.register(0).unwrap();
-        log::info!("Kernel node replica idx is {:?}", local_ridx);
-        crate::nr::NR_REPLICA.call_once(|| (kernel_node.clone(), local_ridx));
-        kernel_node
     };
 
     #[cfg(feature = "gdb")]
@@ -548,7 +522,7 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     }
 
     // Bring up the rest of the system (needs topology, APIC, and global memory)
-    coreboot::boot_app_cores(kernel_node, fs_logs, fs_replica);
+    coreboot::boot_app_cores(fs_logs, fs_replica);
 
     // Done with initialization, now we go in
     // the arch-independent part:

@@ -9,8 +9,8 @@ use hashbrown::HashMap;
 use log::{error, trace};
 use nr2::nr::{Dispatch, NodeReplicated, ThreadToken};
 use spin::Once;
+use crate::arch::kcb;
 
-#[cfg(feature = "rackscale")]
 use lazy_static::lazy_static;
 
 use crate::error::KError;
@@ -19,7 +19,7 @@ use crate::process::{Pid, MAX_PROCESSES};
 
 /// Kernel scheduler / process mgmt. replica
 #[thread_local]
-pub(crate) static NR_REPLICA: Once<(Arc<NodeReplicated<KernelNode>>, ThreadToken)> = Once::new();
+pub(crate) static NR_REPLICA_REGISTRATION: Once<ThreadToken> = Once::new();
 
 // Base nr log. The rackscale controller needs to save a reference to this, so it can give
 // clones to client so they can create replicas of their own.
@@ -30,7 +30,6 @@ lazy_static! {
         use nr2::nr::AffinityChange;
         use crate::memory::shmem_affinity::mid_to_shmem_affinity;
         use crate::memory::shmem_affinity::local_shmem_affinity;
-        use crate::arch::kcb;
 
         if crate::CMDLINE
             .get()
@@ -50,16 +49,19 @@ lazy_static! {
 
             let nr  = Arc::try_new(
                 NodeReplicated::new(num_replicas, |afc: AffinityChange| {
-                    /*let pcm = kcb::per_core_mem();
+                    let pcm = kcb::per_core_mem();
+                    //log::info!("Got AffinityChange: {:?}", afc);
                     match afc {
                         AffinityChange::Replica(r) => {
-                            pcm.set_mem_affinity(mid_to_shmem_affinity(r)).expect("Can't change affinity");
+                            let affinity = { pcm.physical_memory.borrow().affinity };
+                            pcm.set_mem_affinity(mid_to_shmem_affinity(r)).expect("Can't set affinity");
+                            return affinity;
                         }
-                        AffinityChange::Revert(_orig) => {
-                            pcm.set_mem_affinity(local_shmem_affinity()).expect("Can't set affinity")
+                        AffinityChange::Revert(orig) => {
+                            pcm.set_mem_affinity(orig).expect("Can't set affinity");
+                            return 0;
                         }
-                    }*/
-                    return 0; // TODO(dynrep): Return error code
+                    }
                 })
                 .expect("Not enough memory to initialize system"),
             )
@@ -84,6 +86,41 @@ lazy_static! {
         }
     };
 }
+
+#[cfg(not(feature = "rackscale"))]
+lazy_static! {
+    pub(crate) static ref KERNEL_NODE_INSTANCE: Arc<NodeReplicated<KernelNode>> = {
+        use core::num::NonZeroUsize;
+        use crate::nr::KernelNode;
+        use nr2::nr::{AffinityChange, NodeReplicated};
+
+        // Let's go with one replica per NUMA node for now:
+        let numa_nodes = core::cmp::max(1, atopology::MACHINE_TOPOLOGY.num_nodes());
+        let numa_nodes = NonZeroUsize::new(numa_nodes).expect("At least one NUMA node");
+
+        // Create the global operation log and first replica and store it (needs
+        // TLS)
+        let kernel_node: Arc<NodeReplicated<KernelNode>> = Arc::try_new(
+            NodeReplicated::new(numa_nodes, |afc: AffinityChange| {
+                let pcm = kcb::per_core_mem();
+                match afc {
+                    AffinityChange::Replica(r) => {
+                        pcm.set_mem_affinity(r).expect("Can't set affinity")
+                    }
+                    AffinityChange::Revert(orig) => {
+                        pcm.set_mem_affinity(orig).expect("Can't set affinity")
+                    }
+                }
+                return 0; // xxx
+            })
+            .expect("Not enough memory to initialize system"),
+        )
+        .expect("Not enough memory to initialize system");
+
+        kernel_node
+    };
+}
+
 
 #[derive(PartialEq, Clone, Copy, Debug)]
 pub(crate) enum ReadOps {
@@ -140,12 +177,8 @@ impl Default for KernelNode {
 
 impl KernelNode {
     pub(crate) fn synchronize() -> Result<(), KError> {
-        NR_REPLICA
-            .get()
-            .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
-                replica.sync(*token);
-                Ok(())
-            })
+        KERNEL_NODE_INSTANCE.sync(*NR_REPLICA_REGISTRATION.get().unwrap());
+        Ok(())
     }
 
     pub(crate) fn allocate_core_to_process(
@@ -154,18 +187,17 @@ impl KernelNode {
         affinity: Option<atopology::NodeId>,
         gtid: Option<kpi::system::GlobalThreadId>,
     ) -> Result<kpi::system::GlobalThreadId, KError> {
-        NR_REPLICA
-            .get()
-            .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
-                let op = Op::SchedAllocateCore(pid, affinity, gtid, entry_point);
-                let response = replica.execute_mut(op, *token);
+        // todo node id
+        crate::nr::NR_REPLICA_REGISTRATION.call_once(|| crate::nr::KERNEL_NODE_INSTANCE.register(0).unwrap());
 
-                match response {
-                    Ok(NodeResult::CoreAllocated(rgtid)) => Ok(rgtid),
-                    Err(e) => Err(e),
-                    Ok(_) => unreachable!("Got unexpected response"),
-                }
-            })
+        let op = Op::SchedAllocateCore(pid, affinity, gtid, entry_point);
+        let response = KERNEL_NODE_INSTANCE.execute_mut(op, *NR_REPLICA_REGISTRATION.get().unwrap());
+
+        match response {
+            Ok(NodeResult::CoreAllocated(rgtid)) => Ok(rgtid),
+            Err(e) => Err(e),
+            Ok(_) => unreachable!("Got unexpected response"),
+        }
     }
 
     pub(crate) fn release_core_from_process(

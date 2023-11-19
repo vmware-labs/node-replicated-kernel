@@ -103,33 +103,14 @@ fn init_setup() {
     unsafe { kcb::PER_CORE_MEMORY.set_global_mem(global_memory_static) };
     debug!("Memory allocation should work at this point...");
 
-    let kernel_node = {
+    {
         // Create the global operation log and first replica and store it (needs
         // TLS)
-        let kernel_node: Arc<NodeReplicated<KernelNode>> = Arc::try_new(
-            NodeReplicated::new(NonZeroUsize::new(1).unwrap(), |afc: AffinityChange| {
-                return 0; // xxx
-            })
-            .expect("Not enough memory to initialize system"),
-        )
-        .expect("Not enough memory to initialize system");
-
-        let local_ridx = kernel_node.register(0).unwrap();
-        crate::nr::NR_REPLICA.call_once(|| (kernel_node.clone(), local_ridx));
-        kernel_node
+        lazy_static::initialize(&crate::nr::KERNEL_NODE_INSTANCE);
+        let local_ridx = crate::nr::KERNEL_NODE_INSTANCE.register(0).unwrap();
+        crate::nr::NR_REPLICA_REGISTRATION.call_once(|| local_ridx);
     };
 
-    /*
-
-       let log: Arc<Log<Op>> = Arc::try_new(Log::<Op>::new(LARGE_PAGE_SIZE))
-           .expect("Not enough memory to initialize system");
-       let bsp_replica = Replica::<KernelNode>::new(&log);
-       let local_ridx = bsp_replica
-           .register()
-           .expect("Failed to register with Replica.");
-       crate::nr::NR_REPLICA.call_once(|| (bsp_replica.clone(), local_ridx));
-
-    */
     // Starting to initialize file-system
     let fs_logs = crate::fs::cnrfs::allocate_logs();
     // Construct the first replica

@@ -45,7 +45,7 @@ pub(crate) fn register_thread_with_process_replicas() {
             debug_assert!(PROCESS_TABLE.len() > pid, "Invalid PID");
 
             let token = PROCESS_TABLE[pid].read(*crate::environment::MT_ID).register(node);
-            log::debug!("MT_ID is {}: {node} registered {pid} {token:?}", *crate::environment::MT_ID);
+            log::info!("MT_ID is {}: {node} registered {pid} {token:?}", *crate::environment::MT_ID);
             tokens.push(token.expect("Need to be able to register"));
         }
 

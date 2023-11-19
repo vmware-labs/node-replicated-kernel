@@ -760,7 +760,7 @@ unsafe impl GlobalAlloc for KernelAllocator {
                             } else if is_shmem_affinity(affinity) && !is_shmem_addr_with_affinity(ptr as u64, affinity, true) {
                                 // TODO(rackscale): should switch to non-shmem affinity for alloc below.
                                 // TODO(rackscale): check if shmem is a match for id?
-                                panic!("Trying to realloc shmem to wrong or non- shmem allocator");
+                                //panic!("Trying to realloc shmem to wrong or non- shmem allocator");
                             } else if !is_shmem_affinity(affinity) && is_shmem_addr(ptr as u64, false, true) {
                                 // TODO(rackscale): should switch to use shmem affinity for alloc below.
                                 // TODO(rackscale): check if shmem is a match for id?

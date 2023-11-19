@@ -1554,7 +1554,6 @@ fn s11_rackscale_memcached_benchmark_sharded_nros() {
     test.is_multi_node = true;
     test.shmem_size = 0;
 
-
     fn cmd_fn(num_cores: usize, num_clients: usize, arg: Option<MemcachedShardedConfig>) -> String {
         let config = arg.expect("missing configuration");
         let num_threads = num_cores / num_clients;

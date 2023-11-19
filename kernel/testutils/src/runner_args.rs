@@ -499,8 +499,6 @@ pub fn log_qemu_out(args: &RunnerArgs, output: String) {
     log_qemu_out_with_name(Some(args), String::from(""), output)
 }
 
-
-
 pub fn log_qemu_out_with_name(args: Option<&RunnerArgs>, name: String, output: String) {
     if !output.is_empty() {
         println!("\n===== QEMU LOG {}=====", name);
@@ -661,7 +659,7 @@ pub fn wait_for_sigterm_or_successful_exit_no_log(
                         }
                     }
                 }
-                _ => println!("{e}")
+                _ => println!("{e}"),
             }
 
             panic!("Qemu testing failed");

@@ -1,7 +1,7 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{Receiver, Sender, TryRecvError};
 use std::sync::{mpsc::channel, Arc, Mutex};
-use std::thread::{self, sleep};
+use std::thread;
 use std::time::Duration;
 
 use rexpect::errors::*;

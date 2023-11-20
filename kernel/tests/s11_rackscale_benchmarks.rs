@@ -990,13 +990,18 @@ fn parse_memcached_output(
     *output += prev.as_str();
     *output += matched.as_str();
 
-    Ok(MemcachedShardedResult {
-        b_threads,
-        b_mem,
-        b_queries,
-        b_time,
-        b_thpt,
-    })
+    if output.contains("MEMORY ALLOCATION FAILURE") {
+        println!("Detected memory allocation error in memcached output");
+        Err("Memory allocation failure".into())
+    } else {
+        Ok(MemcachedShardedResult {
+            b_threads,
+            b_mem,
+            b_queries,
+            b_time,
+            b_thpt,
+        })
+    }
 }
 
 #[cfg(not(feature = "baremetal"))]
@@ -1036,12 +1041,12 @@ fn rackscale_memcached_checkout() {
     }
 
     println!(
-        "CHECKOUT 0d90d53b99c3890b6e47efe08446e5180711ff09 {:?}",
+        "CHECKOUT e585c23e578d79b18d703b06f26b6e10a502d129 {:?}",
         out_dir
     );
 
     let res = Command::new("git")
-        .args(&["checkout", "0d90d53b99c3890b6e47efe08446e5180711ff09"])
+        .args(&["checkout", "e585c23e578d79b18d703b06f26b6e10a502d129"])
         .current_dir(out_dir_path.as_path())
         .output()
         .expect("git checkout failed");
@@ -1134,7 +1139,9 @@ fn s11_rackscale_memcached_benchmark_sharded_linux() {
             format!("tcp://localhost:{}", 11212 + id)
         } else {
             let pathname = config.path.join(format!("memcached{id}.sock"));
-            remove_file(pathname.clone()); // make sure the socket file is removed
+            if pathname.is_file() {
+                remove_file(pathname.clone()).expect("Failed to remove path"); // make sure the socket file is removed
+            }
             format!("unix://{}", pathname.display())
         };
 
@@ -1252,7 +1259,7 @@ fn s11_rackscale_memcached_benchmark_sharded_linux() {
             let r = csv_file.write(out.as_bytes());
             assert!(r.is_ok());
 
-            let r = pty.process.kill(SIGKILL);
+            let _r = pty.process.kill(SIGKILL);
 
             // single node
             for protocol in &["tcp", "unix"] {
@@ -1305,11 +1312,11 @@ fn s11_rackscale_memcached_benchmark_sharded_linux() {
                             println!("Timeout while waiting for {} ms\n", timeout.as_millis());
                             println!("Expected: `{expected}`\n");
                             println!("Got:",);
-                            for l in got.lines().take(5) {
+                            for l in got.lines().take(20) {
                                 println!(" > {l}");
                             }
                         } else {
-                            println!("error: {}", e);
+                            panic!("error: {}", e);
                         }
 
                         let r = csv_file.write(format!("{},", env!("GIT_HASH")).as_bytes());
@@ -1611,7 +1618,9 @@ fn s11_rackscale_memcached_benchmark_sharded_nros() {
     };
     bench.run_bench(false, is_smoke);
     for mut ping in pings.into_iter() {
-        ping.process.kill(SIGKILL);
+        if !ping.process.kill(SIGKILL).is_ok() {
+            println!("Failed to kill ping process");
+        }
     }
 }
 

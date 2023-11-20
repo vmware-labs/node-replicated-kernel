@@ -638,10 +638,9 @@ pub fn wait_for_sigterm_or_successful_exit_no_log(
         Err(e) => {
             log_qemu_args(args);
             println!("Qemu testing failed: {} ", name);
-            use rexpect::errors::Error;
             use rexpect::errors::ErrorKind::Timeout;
             match e {
-                Error(Timeout(expected, got, timeout), st) => {
+                Error(Timeout(expected, got, _timeout), _st) => {
                     println!("Expected: `{expected}`\n");
                     println!("Got:",);
                     let count = got.lines().count();

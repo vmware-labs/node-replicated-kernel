@@ -32,8 +32,6 @@ RUST_TEST_THREADS=1 cargo test --test s11* -- s11_rackscale_shmem_vmops_maplat_b
 RUST_TEST_THREADS=1 cargo test --test s11* -- s11_rackscale_shmem_fxmark_bench --nocapture
 RUST_TEST_THREADS=1 cargo test --test s11* -- s11_rackscale_shmem_memcached_internal_benchmark --nocapture
 RUST_TEST_THREADS=1 cargo test --test s11* -- s11_linux_memcached_sharded_benchmark --nocapture
-# disabled for now as this causes too much issues with running for now
-# RUST_TEST_THREADS=1 cargo test --test s11* -- s11_rackscale_memcached_benchmark_sharded_nros --nocapture
 
 # Clone repo
 rm -rf gh-pages
@@ -65,10 +63,9 @@ if [ -d "${DEPLOY_DIR}" ]; then
 fi
 mkdir -p ${DEPLOY_DIR}
 mv memcached_benchmark_internal.csv ${DEPLOY_DIR}
-mv memcached_benchmark_sharded_*.csv ${DEPLOY_DIR}
+mv linux_memcached_sharded_benchmark.csv ${DEPLOY_DIR}
 gzip ${DEPLOY_DIR}/memcached_benchmark_internal.csv
-# gzip ${DEPLOY_DIR}/memcached_benchmark_sharded_nros.csv
-gzip ${DEPLOY_DIR}/memcached_benchmark_sharded_linux.csv
+gzip ${DEPLOY_DIR}/linux_memcached_sharded_benchmark.csv
 
 # Copy vmops results
 DEPLOY_DIR="gh-pages/vmops/${CI_MACHINE_TYPE}/${GIT_REV_CURRENT}/"
@@ -139,8 +136,8 @@ if [ -d "${DEPLOY_DIR}" ]; then
     DEPLOY_DIR=${DEPLOY_DIR}${DATE_PREFIX}
 fi
 mkdir -p ${DEPLOY_DIR}
-mv rackscale_shmem_memcached_benchmark.csv ${DEPLOY_DIR}
-gzip ${DEPLOY_DIR}/rackscale_shmem_memcached_benchmark.csv
+mv rackscale_shmem_memcached_internal_benchmark.csv ${DEPLOY_DIR}
+gzip ${DEPLOY_DIR}/rackscale_shmem_memcached_internal_benchmark.csv
 
 # Update CI history plots
 python3 gh-pages/_scripts/ci_history.py --append --machine $CI_MACHINE_TYPE

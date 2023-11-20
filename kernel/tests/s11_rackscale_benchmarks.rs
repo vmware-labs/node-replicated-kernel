@@ -1041,12 +1041,12 @@ fn rackscale_memcached_checkout() {
     }
 
     println!(
-        "CHECKOUT e585c23e578d79b18d703b06f26b6e10a502d129 {:?}",
+        "CHECKOUT a703eedd8032ff1e083e8c5972eacc95738c797b {:?}",
         out_dir
     );
 
     let res = Command::new("git")
-        .args(&["checkout", "e585c23e578d79b18d703b06f26b6e10a502d129"])
+        .args(&["checkout", "a703eedd8032ff1e083e8c5972eacc95738c797b"])
         .current_dir(out_dir_path.as_path())
         .output()
         .expect("git checkout failed");
@@ -1151,7 +1151,7 @@ fn s11_rackscale_memcached_benchmark_sharded_linux() {
             "scripts/spawn-memcached-process.sh",
             id.to_string().as_str(),
             con_info.as_str(),
-            config.mem_size.to_string().as_str(),
+            (2 * config.mem_size).to_string().as_str(),
             config.num_threads.to_string().as_str(),
         ]);
         command.current_dir(config.path.as_path());

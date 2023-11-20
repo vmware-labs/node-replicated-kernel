@@ -16,8 +16,8 @@ rm -f leveldb_benchmark.csv
 rm -f rackscale_shmem_vmops_benchmark.csv
 rm -f rackscale_shmem_vmops_latency_benchmark.csv
 rm -f rackscale_shmem_fxmark_benchmark.csv
-rm -f rackscale_shmem_memcached_benchmark.csv
-rm -f rackscale_sharded_memcached_benchmark_*.csv
+rm -f rackscale_shmem_memcached_internal_benchmark.csv
+rm -f linux_memcached_sharded_benchmark.csv
 
 # For vmops: --features prealloc can improve performance further (at the expense of test duration)
 RUST_TEST_THREADS=1 cargo test --test s10* -- s10_vmops_benchmark --nocapture
@@ -30,8 +30,8 @@ RUST_TEST_THREADS=1 cargo test --test s10* -- s10_fxmark_bench --nocapture
 RUST_TEST_THREADS=1 cargo test --test s11* -- s11_rackscale_shmem_vmops_maptput_benchmark --nocapture
 RUST_TEST_THREADS=1 cargo test --test s11* -- s11_rackscale_shmem_vmops_maplat_benchmark --nocapture
 RUST_TEST_THREADS=1 cargo test --test s11* -- s11_rackscale_shmem_fxmark_bench --nocapture
-RUST_TEST_THREADS=1 cargo test --test s11* -- s11_rackscale_memcached_benchmark_internal --nocapture
-RUST_TEST_THREADS=1 cargo test --test s11* -- s11_rackscale_memcached_benchmark_sharded_linux --nocapture
+RUST_TEST_THREADS=1 cargo test --test s11* -- s11_rackscale_shmem_memcached_internal_benchmark --nocapture
+RUST_TEST_THREADS=1 cargo test --test s11* -- s11_linux_memcached_sharded_benchmark --nocapture
 # disabled for now as this causes too much issues with running for now
 # RUST_TEST_THREADS=1 cargo test --test s11* -- s11_rackscale_memcached_benchmark_sharded_nros --nocapture
 

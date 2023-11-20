@@ -2,15 +2,20 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
 use std::env;
+use std::fs::remove_file;
 use std::io::Write;
 use std::path::PathBuf;
 use std::process::Command;
+use std::time::Duration;
 
 use rexpect::errors::*;
-use rexpect::session::PtySession;
+use rexpect::session::{spawn_command, PtySession};
 
 pub const MEMCACHED_MEM_SIZE_MB: usize = 4 * 1024;
 pub const MEMCACHED_NUM_QUERIES: usize = 1_000_000;
+
+pub const RACKSCALE_MEMCACHED_CSV_COLUMNS: &str =
+    "git_rev,benchmark,os,protocol,npieces,nthreads,mem,queries,time,thpt\n";
 
 #[derive(Clone)]
 pub struct MemcachedShardedConfig {
@@ -172,4 +177,82 @@ pub fn rackscale_memcached_checkout(tmpdir: &str) {
         std::io::stderr().write_all(&status.stderr).unwrap();
         panic!("BUILD FAILED");
     }
+}
+
+pub fn linux_spawn_memcached(
+    id: usize,
+    config: &MemcachedShardedConfig,
+    timeout_ms: u64,
+) -> Result<PtySession> {
+    let con_info = if config.protocol == "tcp" {
+        format!("tcp://localhost:{}", 11212 + id)
+    } else {
+        let pathname = config.path.join(format!("memcached{id}.sock"));
+        if pathname.is_file() {
+            remove_file(pathname.clone()).expect("Failed to remove path"); // make sure the socket file is removed
+        }
+        format!("unix://{}", pathname.display())
+    };
+
+    let mut command = Command::new("bash");
+
+    command.args(&[
+        "scripts/spawn-memcached-process.sh",
+        id.to_string().as_str(),
+        con_info.as_str(),
+        (2 * config.mem_size).to_string().as_str(),
+        config.num_threads.to_string().as_str(),
+    ]);
+    command.current_dir(config.path.as_path());
+
+    println!("Spawning memcached:\n $ `{:?}`", command);
+
+    let mut res = spawn_command(command, Some(timeout_ms))?;
+    std::thread::sleep(Duration::from_secs(1));
+
+    match res.exp_regex(r#"INTERNAL BENCHMARK CONFIGURE"#) {
+        Ok((_prev, _matched)) => {
+            println!(" $ OK.");
+            Ok(res)
+        }
+        Err(e) => {
+            println!(" $ FAILED. {}", e);
+            Err(e)
+        }
+    }
+}
+
+pub fn spawn_loadbalancer(config: &MemcachedShardedConfig, timeout_ms: u64) -> Result<PtySession> {
+    let mut command = Command::new("./loadbalancer/loadbalancer");
+    command.args(&["--binary"]);
+    command.arg(format!("--num-queries={}", config.num_queries).as_str());
+    command.arg(format!("--num-threads={}", config.num_threads).as_str());
+    command.arg(format!("--max-memory={}", config.mem_size).as_str());
+    let mut servers = String::from("--servers=");
+    for i in 0..config.num_servers {
+        if i > 0 {
+            servers.push_str(",");
+        }
+        if config.protocol == "tcp" {
+            if config.is_local_host {
+                servers.push_str(format!("tcp://localhost:{}", 11212 + i).as_str());
+            } else {
+                // +1 because tap0 is reserved for the controller.
+                let ip = 10 + i + 1;
+                servers.push_str(format!("tcp://172.31.0.{}:{}", ip, 11211).as_str());
+            }
+        } else {
+            servers
+                .push_str(format!("unix://{}/memcached{}.sock", config.path.display(), i).as_str());
+        }
+    }
+    command.arg(servers.as_str());
+    command.current_dir(config.path.as_path());
+
+    // give the servers some time to be spawned
+    std::thread::sleep(Duration::from_secs(5));
+
+    println!("Spawning Loadbalancer: \n $ `{:?}`", command);
+
+    spawn_command(command, Some(timeout_ms))
 }

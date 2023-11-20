@@ -103,6 +103,8 @@ rackscale = ["rpc"]
 gdb = []
 # Use to enable 4kiB only in kernel - useful for memcached, similar benchmarks
 pages-4k = []
+# dynrep benchmarking
+dynrep = []
 
 #
 # The following features are used for testing *only* and should not be enabled

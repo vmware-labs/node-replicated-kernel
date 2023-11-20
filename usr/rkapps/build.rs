@@ -138,11 +138,11 @@ fn main() {
             .unwrap();
 
         println!(
-            "CHECKOUT be303d8bfc2c40d63704848bb3acd9e075dd61e4 {:?}",
+            "CHECKOUT 1f36e49a3c5fc529cd80278a1bd73b9941c813e6 {:?}",
             out_dir
         );
         Command::new("git")
-            .args(&["checkout", "be303d8bfc2c40d63704848bb3acd9e075dd61e4"])
+            .args(&["checkout", "1f36e49a3c5fc529cd80278a1bd73b9941c813e6"])
             .current_dir(&Path::new(&out_dir))
             .status()
             .unwrap();

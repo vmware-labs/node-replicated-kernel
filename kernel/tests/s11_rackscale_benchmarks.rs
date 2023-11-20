@@ -897,6 +897,7 @@ fn s11_rackscale_memcached_dynrep_benchmark_internal() {
         .user_feature("rkapps:memcached-bench")
         .set_rackscale(true)
         .kernel_feature("pages-4k")
+        .kernel_feature("dynrep")
         .release()
         .build();
 
@@ -1002,17 +1003,19 @@ fn s11_rackscale_memcached_dynrep_benchmark_internal() {
         let r = csv_file.write("\n".as_bytes());
         assert!(r.is_ok());
 
+        println!("> {}", output);
+
         Ok(())
     }
 
     let config = if is_smoke {
         MemcachedInternalConfig {
-            num_queries: 100_000,
+            num_queries: 100_000_000,
             mem_size: 16,
         }
     } else {
         MemcachedInternalConfig {
-            num_queries: 1_000_000, // TODO(rackscale): should be 100_000_000,
+            num_queries: 100_000_000, // TODO(rackscale): should be 100_000_000,
             mem_size: 16,           // TODO(rackscale): should be 32_000,
         }
     };

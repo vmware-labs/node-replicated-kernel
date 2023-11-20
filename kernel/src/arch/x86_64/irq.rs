@@ -528,7 +528,8 @@ unsafe fn timer_handler(_a: &ExceptionArguments) {
         nrproc::NrProcess::<Ring3Process>::synchronize(pid);
     }
     
-    if *crate::environment::MT_ID == 0 {
+    #[cfg(feature = "dynrep")]
+    if *crate::environment::MT_ID == 4 {
         use crate::arch::process::current_pid;
         let pid = current_pid().expect("dont have a pid?");
 

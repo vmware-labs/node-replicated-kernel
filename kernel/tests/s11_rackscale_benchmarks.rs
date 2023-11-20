@@ -25,8 +25,10 @@ use testutils::helpers::{DCMConfig, DCMSolver};
 use testutils::rackscale_runner::{RackscaleBench, RackscaleRun};
 use testutils::runner_args::RackscaleTransport;
 
-use testutils::configs::MEMCACHED_MEM_SIZE_MB;
-use testutils::configs::MEMCACHED_NUM_QUERIES;
+use testutils::memcached::{
+    parse_memcached_output, rackscale_memcached_checkout, MemcachedShardedConfig,
+    MEMCACHED_MEM_SIZE_MB, MEMCACHED_NUM_QUERIES,
+};
 
 #[test]
 #[cfg(not(feature = "baremetal"))]
@@ -513,64 +515,7 @@ fn rackscale_memcached_benchmark(transport: RackscaleTransport) {
         *output += prev.as_str();
         *output += matched.as_str();
 
-        // x_benchmark_mem = 10 MB
-        let (prev, matched) = proc.exp_regex(r#"x_benchmark_mem = (\d+) MB"#)?;
-        println!("> {}", matched);
-        let b_mem = matched.replace("x_benchmark_mem = ", "").replace(" MB", "");
-
-        *output += prev.as_str();
-        *output += matched.as_str();
-
-        // number of threads: 3
-        let (prev, matched) = proc.exp_regex(r#"number of threads: (\d+)"#)?;
-        println!("> {}", matched);
-        let b_threads = matched.replace("number of threads: ", "");
-
-        *output += prev.as_str();
-        *output += matched.as_str();
-
-        // number of keys: 131072
-        let (prev, matched) = proc.exp_regex(r#"number of keys: (\d+)"#)?;
-        println!("> {}", matched);
-
-        *output += prev.as_str();
-        *output += matched.as_str();
-
-        let (prev, matched) = proc.exp_regex(r#"Executing (\d+) queries with (\d+) threads"#)?;
-        println!("> {}", matched);
-
-        *output += prev.as_str();
-        *output += matched.as_str();
-
-        // benchmark took 129 seconds
-        let (prev, matched) = proc.exp_regex(r#"benchmark took (\d+) ms"#)?;
-        println!("> {}", matched);
-        let b_time = matched.replace("benchmark took ", "").replace(" ms", "");
-
-        *output += prev.as_str();
-        *output += matched.as_str();
-
-        // benchmark took 7937984 queries / second
-        let (prev, matched) = proc.exp_regex(r#"benchmark took (\d+) queries / second"#)?;
-        println!("> {}", matched);
-        let b_thpt = matched
-            .replace("benchmark took ", "")
-            .replace(" queries / second", "");
-
-        *output += prev.as_str();
-        *output += matched.as_str();
-
-        let (prev, matched) = proc.exp_regex(r#"benchmark executed (\d+)"#)?;
-        println!("> {}", matched);
-        let b_queries = matched
-            .replace("benchmark executed ", "")
-            .split(" ")
-            .next()
-            .unwrap()
-            .to_string();
-
-        *output += prev.as_str();
-        *output += matched.as_str();
+        let ret = parse_memcached_output(proc, output)?;
 
         // Append parsed results to a CSV file
         let write_headers = !Path::new(file_name).exists();
@@ -590,8 +535,14 @@ fn rackscale_memcached_benchmark(transport: RackscaleTransport) {
         let r = csv_file.write(format!("{},", env!("GIT_HASH")).as_bytes());
         assert!(r.is_ok());
         let out = format!(
-            "memcached,{},{},{},{},{},{},{}",
-            b_threads, b_mem, b_queries, b_time, b_thpt, actual_num_clients, num_clients
+            "memcached_internal,{},{},{},{},{},{},{}",
+            ret.b_threads,
+            ret.b_mem,
+            ret.b_queries,
+            ret.b_time,
+            ret.b_thpt,
+            actual_num_clients,
+            num_clients
         );
         let r = csv_file.write(out.as_bytes());
         assert!(r.is_ok());
@@ -913,171 +864,6 @@ fn rackscale_memcached_dcm(transport: RackscaleTransport, dcm_config: Option<DCM
     }
 }
 
-#[derive(Clone)]
-struct MemcachedShardedConfig {
-    pub num_servers: usize,
-    pub num_queries: usize,
-    pub is_local_host: bool,
-    pub mem_size: usize,
-    pub protocol: &'static str,
-    pub num_threads: usize,
-    pub path: PathBuf,
-}
-
-#[derive(Clone, Debug)]
-struct MemcachedShardedResult {
-    b_threads: String,
-    b_mem: String,
-    b_queries: String,
-    b_time: String,
-    b_thpt: String,
-}
-
-fn parse_memcached_output(
-    p: &mut PtySession,
-    output: &mut String,
-) -> Result<MemcachedShardedResult> {
-    // x_benchmark_mem = 10 MB
-    let (prev, matched) = p.exp_regex(r#"x_benchmark_mem = (\d+) MB"#)?;
-    // println!("> {}", matched);
-    let b_mem = matched.replace("x_benchmark_mem = ", "").replace(" MB", "");
-
-    *output += prev.as_str();
-    *output += matched.as_str();
-
-    // number of threads: 3
-    let (prev, matched) = p.exp_regex(r#"number of threads: (\d+)"#)?;
-    // println!("> {}", matched);
-    let b_threads = matched.replace("number of threads: ", "");
-
-    *output += prev.as_str();
-    *output += matched.as_str();
-
-    // number of keys: 131072
-    let (prev, matched) = p.exp_regex(r#"number of keys: (\d+)"#)?;
-    // println!("> {}", matched);
-
-    *output += prev.as_str();
-    *output += matched.as_str();
-
-    // benchmark took 129 seconds
-    let (prev, matched) = p.exp_regex(r#"benchmark took (\d+) ms"#)?;
-    // println!("> {}", matched);
-    let b_time = matched.replace("benchmark took ", "").replace(" ms", "");
-
-    *output += prev.as_str();
-    *output += matched.as_str();
-
-    // benchmark took 7937984 queries / second
-    let (prev, matched) = p.exp_regex(r#"benchmark took (\d+) queries / second"#)?;
-    println!("> {}", matched);
-    let b_thpt = matched
-        .replace("benchmark took ", "")
-        .replace(" queries / second", "");
-
-    *output += prev.as_str();
-    *output += matched.as_str();
-
-    let (prev, matched) = p.exp_regex(r#"benchmark executed (\d+)"#)?;
-    println!("> {}", matched);
-    let b_queries = matched
-        .replace("benchmark executed ", "")
-        .split(" ")
-        .next()
-        .unwrap()
-        .to_string();
-
-    *output += prev.as_str();
-    *output += matched.as_str();
-
-    if output.contains("MEMORY ALLOCATION FAILURE") {
-        println!("Detected memory allocation error in memcached output");
-        Err("Memory allocation failure".into())
-    } else {
-        Ok(MemcachedShardedResult {
-            b_threads,
-            b_mem,
-            b_queries,
-            b_time,
-            b_thpt,
-        })
-    }
-}
-
-#[cfg(not(feature = "baremetal"))]
-fn rackscale_memcached_checkout() {
-    let out_dir_path = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("sharded-memcached");
-
-    let out_dir = out_dir_path.display().to_string();
-
-    println!("CARGO_TARGET_TMPDIR {:?}", out_dir);
-
-    // clone abd build the benchmark
-    if !out_dir_path.is_dir() {
-        println!("RMDIR {:?}", out_dir_path);
-        Command::new(format!("rm",))
-            .args(&["-rf", out_dir.as_str()])
-            .status()
-            .unwrap();
-
-        println!("MKDIR {:?}", out_dir_path);
-        Command::new(format!("mkdir",))
-            .args(&["-p", out_dir.as_str()])
-            .status()
-            .unwrap();
-
-        println!("CLONE {:?}", out_dir_path);
-        let url = "https://github.com/achreto/memcached-bench.git";
-        Command::new("git")
-            .args(&["clone", "--depth=1", url, out_dir.as_str()])
-            .output()
-            .expect("failed to clone");
-    } else {
-        Command::new("git")
-            .args(&["pull"])
-            .current_dir(out_dir_path.as_path())
-            .output()
-            .expect("failed to pull");
-    }
-
-    println!(
-        "CHECKOUT a703eedd8032ff1e083e8c5972eacc95738c797b {:?}",
-        out_dir
-    );
-
-    let res = Command::new("git")
-        .args(&["checkout", "a703eedd8032ff1e083e8c5972eacc95738c797b"])
-        .current_dir(out_dir_path.as_path())
-        .output()
-        .expect("git checkout failed");
-    if !res.status.success() {
-        std::io::stdout().write_all(&res.stdout).unwrap();
-        std::io::stderr().write_all(&res.stderr).unwrap();
-        panic!("git checkout failed!");
-    }
-
-    println!("BUILD {:?}", out_dir_path);
-    for (key, value) in env::vars() {
-        println!("{}: {}", key, value);
-    }
-
-    let build_args = &["-j", "8"];
-
-    // now build the benchmark
-    let status = Command::new("make")
-        .args(build_args)
-        .current_dir(&out_dir_path)
-        .output()
-        .expect("Can't make app dir");
-
-    if !status.status.success() {
-        println!("BUILD FAILED");
-        std::io::stdout().write_all(&status.stdout).unwrap();
-        std::io::stderr().write_all(&status.stderr).unwrap();
-        panic!("BUILD FAILED");
-    }
-}
-
 #[test]
 #[cfg(not(feature = "baremetal"))]
 fn s11_rackscale_memcached_benchmark_sharded_linux() {
@@ -1089,7 +875,7 @@ fn s11_rackscale_memcached_benchmark_sharded_linux() {
     let out_dir_path = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("sharded-memcached");
     let is_smoke = cfg!(feature = "smoke");
 
-    rackscale_memcached_checkout();
+    rackscale_memcached_checkout(env!("CARGO_TARGET_TMPDIR"));
 
     // stuff has been built, now we can run the benchmark
     let mut config = if is_smoke {
@@ -1360,7 +1146,7 @@ fn s11_rackscale_memcached_benchmark_sharded_nros() {
     let out_dir_path = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("sharded-memcached");
     let is_smoke = cfg!(feature = "smoke");
 
-    rackscale_memcached_checkout();
+    rackscale_memcached_checkout(env!("CARGO_TARGET_TMPDIR"));
 
     // stuff has been built, now we can run the benchmark
     let mut config = if is_smoke {

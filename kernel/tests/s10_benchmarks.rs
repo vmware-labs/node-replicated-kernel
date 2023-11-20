@@ -22,6 +22,7 @@ use serde::Serialize;
 
 use testutils::builder::{BuildArgs, Machine};
 use testutils::helpers::{setup_network, spawn_dhcpd, spawn_nrk, DHCP_ACK_MATCH};
+use testutils::memcached::{MEMCACHED_MEM_SIZE_MB, MEMCACHED_NUM_QUERIES};
 use testutils::redis::{redis_benchmark, REDIS_BENCHMARK, REDIS_START_MATCH};
 use testutils::runner_args::{check_for_successful_exit, wait_for_sigterm, RunnerArgs};
 
@@ -871,9 +872,6 @@ fn s10_leveldb_benchmark() {
         check_for_successful_exit(&cmdline, qemu_run(), output);
     }
 }
-
-use testutils::configs::MEMCACHED_MEM_SIZE_MB;
-use testutils::configs::MEMCACHED_NUM_QUERIES;
 
 #[test]
 fn s10_memcached_benchmark_internal() {

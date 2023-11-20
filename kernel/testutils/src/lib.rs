@@ -9,8 +9,8 @@ extern crate rexpect;
 extern crate serde;
 
 pub mod builder;
-pub mod configs;
 pub mod helpers;
+pub mod memcached;
 pub mod rackscale_runner;
 pub mod redis;
 pub mod runner_args;

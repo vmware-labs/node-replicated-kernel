@@ -381,7 +381,7 @@ pub(crate) fn create_shmem_transport(mid: MachineId) -> KResult<Vec<ShmemTranspo
 
 #[cfg(feature = "rpc")]
 pub(crate) fn init_shmem_rpc(
-    send_client_data: bool, // This field is used to indicate if init_client() should send ClientRegistrationRequest
+    _send_client_data: bool, // This field is used to indicate if init_client() should send ClientRegistrationRequest
 ) -> KResult<Vec<rpc::client::Client>> {
     use crate::arch::rackscale::registration::initialize_client;
     use rpc::client::Client;
@@ -395,10 +395,9 @@ pub(crate) fn init_shmem_rpc(
 
         let client = if first {
             first = false;
-            initialize_client(client, send_client_data).expect("Failed to initialize client")
+            initialize_client(client, true, true).expect("Failed to initialize client")
         } else {
-            //initialize_client(client, false).expect("Failed to initialize client")
-            client
+            initialize_client(client, false, true).expect("Failed to initialize client")
         };
         clients.push(client);
     }

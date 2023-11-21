@@ -75,12 +75,11 @@ pub(crate) fn run() {
     // Wait for all clients to connect before fulfilling any RPCs.
     while !DCMServerReady.load(Ordering::SeqCst) {}
 
-    // TODO(rackscale, hack): only register core 0
-    //for s_index in 0..servers.len() {
-    servers[0]
-        .add_client(&CLIENT_REGISTRAR)
-        .expect("Failed to accept client");
-    //}
+    for s_index in 0..servers.len() {
+        servers[s_index]
+            .add_client(&CLIENT_REGISTRAR)
+            .expect("Failed to accept client");
+    }
 
     ClientReadyCount.fetch_add(1, Ordering::SeqCst);
 

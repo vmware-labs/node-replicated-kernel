@@ -108,5 +108,5 @@ pub(crate) fn init_ethernet_rpc(
             .map_err(|err| KError::RackscaleRPCError { err })?,
     );
     let mut client = Client::new(rpc_transport);
-    initialize_client(client, send_client_data)
+    initialize_client(client, send_client_data, false)
 }

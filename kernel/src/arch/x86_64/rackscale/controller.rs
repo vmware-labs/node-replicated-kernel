@@ -31,29 +31,6 @@ static DCMServerReady: AtomicBool = AtomicBool::new(false);
 pub(crate) fn run() {
     let mid = *crate::environment::CORE_ID;
 
-    // Initialize one server per controller thread
-    // TODO(rackscale, hack): only support shmem for now
-    /*
-    let mut server = if crate::CMDLINE
-        .get()
-        .map_or(false, |c| c.transport == Transport::Ethernet)
-    {
-        let transport = Box::new(
-            TCPTransport::new(
-                None,
-                CONTROLLER_PORT_BASE + mid as u16 - 1,
-                Arc::clone(&ETHERNET_IFACE),
-            )
-            .expect("Failed to create TCP transport"),
-        );
-        let mut server = Server::new(transport);
-        register_rpcs(&mut server);
-        server
-    } else if crate::CMDLINE
-        .get()
-        .map_or(false, |c| c.transport == Transport::Shmem)
-    {
-        */
     let transports =
         create_shmem_transport(mid.try_into().unwrap()).expect("Failed to create shmem transport");
 

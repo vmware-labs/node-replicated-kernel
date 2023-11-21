@@ -943,134 +943,154 @@ fn s11_linux_memcached_sharded_benchmark() {
     let r = csv_file.write(RACKSCALE_MEMCACHED_CSV_COLUMNS.as_bytes());
     assert!(r.is_ok());
 
-    let max_threads_per_node = if is_smoke {
-        1
-    } else {
-        machine.max_cores() / machine.max_numa_nodes()
-    };
-    println!(
-        "Nodes: {}, max_threads_per_node: {max_threads_per_node}",
-        machine.max_numa_nodes()
-    );
-    for num_nodes in 1..=machine.max_numa_nodes() {
-        config.num_servers = num_nodes;
+    let machine = Machine::determine();
+    let max_cores = if is_smoke { 2 } else { machine.max_cores() };
+    let max_numa = machine.max_numa_nodes();
+    let total_cores_per_node = core::cmp::max(1, max_cores / max_numa);
 
-        for num_threads in 1..=max_threads_per_node {
-            if (num_threads != 1 || num_threads != max_threads_per_node) && (num_threads % 8 != 0) {
-                continue;
-            }
+    // Do initial network configuration
+    let mut num_clients = 1; // num_clients == num_replicas, for baseline
+    let mut total_cores = 1;
+    while total_cores < max_cores {
+        // Round up to get the number of clients
+        let new_num_clients = (total_cores + (total_cores_per_node - 1)) / total_cores_per_node;
 
-            println!("");
+        // Do network setup if number of clients has changed.
+        if num_clients != new_num_clients {
+            num_clients = new_num_clients;
 
-            config.num_threads = num_threads;
+            // ensure total cores is divisible by num clients
+            total_cores = total_cores - (total_cores % num_clients);
+        }
+        let cores_per_client = total_cores / num_clients;
 
+        // Break if not enough total cores for the controller, or if we would have to split controller across nodes to make it fit
+        // We want controller to have it's own socket, so if it's not a 1 socket machine, break when there's equal number of clients
+        // to numa nodes.
+        if total_cores + num_clients + 1 > machine.max_cores()
+            || num_clients == machine.max_numa_nodes()
+                && cores_per_client + num_clients + 1 > total_cores_per_node
+            || num_clients == max_numa && max_numa > 1
+        {
+            break;
+        }
+
+        eprintln!(
+                "\n\nRunning Sharded Memcached test with {:?} total core(s), {:?} (client|replica)(s) (cores_per_(client|replica)={:?})",
+                total_cores, num_clients, cores_per_client
+            );
+
+        // terminate any previous memcached
+        let _ = Command::new("killall")
+            .args(&["memcached", "-s", "SIGKILL"])
+            .output();
+
+        // run the internal configuration
+        config.num_threads = total_cores;
+
+        println!("Memcached Internal: {total_cores} cores");
+
+        let mut pty = run_benchmark_internal(&config, timeout_ms);
+        let mut output = String::new();
+        let res = parse_memcached_output(&mut pty, &mut output).expect("could not parse output!");
+        let r = csv_file.write(format!("{},", env!("GIT_HASH")).as_bytes());
+        assert!(r.is_ok());
+        let out = format!(
+            "memcached_sharded,linux,{},{},{},{},{},{}\n",
+            res.b_threads, "internal", res.b_mem, res.b_queries, res.b_time, res.b_thpt,
+        );
+        let r = csv_file.write(out.as_bytes());
+        assert!(r.is_ok());
+
+        let r = pty
+            .process
+            .kill(SIGKILL)
+            .expect("unable to terminate memcached");
+
+        for protocol in &["tcp", "unix"] {
+            config.protocol = protocol;
+            config.num_servers = num_clients;
+            config.num_threads = cores_per_client;
+
+            println!("Memcached Sharded: {cores_per_client}x{num_clients} with {protocol}");
+
+            // terminate the memcached instance
             let _ = Command::new("killall")
                 .args(&["memcached", "-s", "SIGKILL"])
                 .status();
-            let mut pty = run_benchmark_internal(&config, timeout_ms);
-            let mut output = String::new();
-            let res =
-                parse_memcached_output(&mut pty, &mut output).expect("could not parse output!");
-            let r = csv_file.write(format!("{},", env!("GIT_HASH")).as_bytes());
-            assert!(r.is_ok());
 
-            //git_rev,benchmark,os,protocol,npieces,nthreads,mem,queries,time,thpt
-            let out = format!(
-                "memcached_sharded,linux,{},{},{},{},{},{},{}\n",
-                "internal", 1, res.b_threads, res.b_mem, res.b_queries, res.b_time, res.b_thpt,
-            );
-            let r = csv_file.write(out.as_bytes());
-            assert!(r.is_ok());
+            // give some time so memcached can be cleaned up
+            std::thread::sleep(Duration::from_secs(5));
 
-            let _r = pty.process.kill(SIGKILL);
-
-            // single node
-            for protocol in &["tcp", "unix"] {
-                config.protocol = protocol;
-
-                println!("");
-
-                println!("Memcached Sharded: {num_threads}x{num_nodes} with {protocol}");
-
-                // terminate the memcached instance
-                let _ = Command::new("killall")
-                    .args(&["memcached", "-s", "SIGKILL"])
-                    .status();
-
-                // give some time so memcached can be cleaned up
-                std::thread::sleep(Duration::from_secs(5));
-
-                let mut memcached_ctrls = Vec::new();
-                for i in 0..num_nodes {
-                    memcached_ctrls.push(
-                        linux_spawn_memcached(i, &config, timeout_ms)
-                            .expect("could not spawn memcached"),
-                    );
-                }
-
-                let mut pty = testutils::memcached::spawn_loadbalancer(&config, timeout_ms)
-                    .expect("failed to spawn load balancer");
-                let mut output = String::new();
-                use rexpect::errors::ErrorKind::Timeout;
-                match parse_memcached_output(&mut pty, &mut output) {
-                    Ok(res) => {
-                        let r = csv_file.write(format!("{},", env!("GIT_HASH")).as_bytes());
-                        assert!(r.is_ok());
-                        let out = format!(
-                            "memcached_sharded,linux,{},{},{},{},{},{},{}\n",
-                            protocol,
-                            config.num_servers,
-                            res.b_threads,
-                            res.b_mem,
-                            res.b_queries,
-                            res.b_time,
-                            res.b_thpt,
-                        );
-                        let r = csv_file.write(out.as_bytes());
-                        assert!(r.is_ok());
-
-                        println!("{:?}", res);
-                    }
-
-                    Err(e) => {
-                        if let Timeout(expected, got, timeout) = e.0 {
-                            println!("Timeout while waiting for {} ms\n", timeout.as_millis());
-                            println!("Expected: `{expected}`\n");
-                            println!("Got:",);
-                            for l in got.lines().take(20) {
-                                println!(" > {l}");
-                            }
-                        } else {
-                            panic!("error: {}", e);
-                        }
-
-                        let r = csv_file.write(format!("{},", env!("GIT_HASH")).as_bytes());
-                        assert!(r.is_ok());
-                        let out = format!(
-                            "memcached_sharded,linux,{},{},{},{},{},failure,failure\n",
-                            protocol,
-                            config.num_servers,
-                            config.num_threads * config.num_servers,
-                            config.mem_size,
-                            config.num_queries,
-                        );
-                        let r = csv_file.write(out.as_bytes());
-                        assert!(r.is_ok());
-
-                        for mc in memcached_ctrls.iter_mut() {
-                            mc.process
-                                .kill(rexpect::process::signal::Signal::SIGKILL)
-                                .expect("couldn't terminate memcached");
-                            while let Ok(l) = mc.read_line() {
-                                println!("MEMCACHED-OUTPUT: {}", l);
-                            }
-                        }
-                        let _ = Command::new("killall").args(&["memcached"]).status();
-                    }
-                };
-
-                let _ = pty.process.kill(rexpect::process::signal::Signal::SIGKILL);
+            let mut memcached_ctrls = Vec::new();
+            for i in 0..num_clients {
+                memcached_ctrls.push(
+                    linux_spawn_memcached(i, &config, timeout_ms).expect("could not spawn memcached"),
+                );
             }
+
+            config.num_threads = total_cores;
+
+            let mut pty =
+            testutils::memcached::spawn_loadbalancer(&config, timeout_ms).expect("failed to spawn load balancer");
+            let mut output = String::new();
+            use rexpect::errors::ErrorKind::Timeout;
+            match parse_memcached_output(&mut pty, &mut output) {
+                Ok(res) => {
+                    let r = csv_file.write(format!("{},", env!("GIT_HASH")).as_bytes());
+                    assert!(r.is_ok());
+                    let out = format!(
+                        "memcached_sharded,linux,{},{},{},{},{},{}\n",
+                        res.b_threads, protocol, res.b_mem, res.b_queries, res.b_time, res.b_thpt,
+                    );
+                    let r = csv_file.write(out.as_bytes());
+                    assert!(r.is_ok());
+
+                    println!("{:?}", res);
+                }
+                Err(e) => {
+                    if let Timeout(expected, got, timeout) = e.0 {
+                        println!("Timeout while waiting for {} ms\n", timeout.as_millis());
+                        println!("Expected: `{expected}`\n");
+                        println!("Got:",);
+                        for l in got.lines().take(5) {
+                            println!(" > {l}");
+                        }
+                    } else {
+                        println!("error: {}", e);
+                    }
+
+                    let r = csv_file.write(format!("{},", env!("GIT_HASH")).as_bytes());
+                    assert!(r.is_ok());
+                    let out = format!(
+                        "memcached_sharded,linux,{},{},failure,failure,failure,failure\n",
+                        config.num_servers, protocol,
+                    );
+                    let r = csv_file.write(out.as_bytes());
+                    assert!(r.is_ok());
+
+                    for mc in memcached_ctrls.iter_mut() {
+                        mc.process
+                            .kill(rexpect::process::signal::Signal::SIGKILL)
+                            .expect("couldn't terminate memcached");
+                        while let Ok(l) = mc.read_line() {
+                            println!("MEMCACHED-OUTPUT: {}", l);
+                        }
+                    }
+                }
+            };
+
+            if total_cores == 1 {
+                total_cores = 0;
+            }
+
+            if num_clients == 3 {
+                total_cores += 3;
+            } else {
+                total_cores += 4;
+            }
+
+            let _ = pty.process.kill(rexpect::process::signal::Signal::SIGKILL);
         }
     }
 

@@ -12,7 +12,7 @@ use rexpect::errors::*;
 use rexpect::session::{spawn_command, PtySession};
 
 pub const MEMCACHED_MEM_SIZE_MB: usize = 4 * 1024;
-pub const MEMCACHED_NUM_QUERIES: usize = 1_000_000;
+pub const MEMCACHED_NUM_QUERIES: usize = 10_000_000;
 
 pub const RACKSCALE_MEMCACHED_CSV_COLUMNS: &str =
     "git_rev,benchmark,os,protocol,npieces,nthreads,mem,queries,time,thpt\n";

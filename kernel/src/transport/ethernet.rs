@@ -95,18 +95,28 @@ pub(crate) fn init_network<'a>() -> KResult<Arc<Mutex<Interface<'a, DevQueuePhy>
 #[allow(unused)]
 pub(crate) fn init_ethernet_rpc(
     server_ip: smoltcp::wire::IpAddress,
-    server_port: u16,
-    send_client_data: bool, // This field is used to indicate if init_client() should send ClientRegistrationRequest
-) -> KResult<rpc::client::Client> {
+    server_port_base: u16,
+    num_cores: u16,
+) -> KResult<Vec<rpc::client::Client>> {
     use crate::arch::rackscale::registration::initialize_client;
     use alloc::boxed::Box;
     use rpc::client::Client;
     use rpc::transport::TCPTransport;
+
+    let mut clients: Vec<rpc::client::Client> = Vec::new();
+
+    let offset = 0;
+    let server_port = server_port_base + offset;
 
     let rpc_transport = Box::new(
         TCPTransport::new(Some(server_ip), server_port, Arc::clone(&ETHERNET_IFACE))
             .map_err(|err| KError::RackscaleRPCError { err })?,
     );
     let mut client = Client::new(rpc_transport);
-    initialize_client(client, send_client_data, false)
+
+    // DCM sets send_client_data (second param) false
+    client = initialize_client(client, false, false).expect("Failed to initialize client");
+    clients.push(client);
+
+    Ok(clients)
 }

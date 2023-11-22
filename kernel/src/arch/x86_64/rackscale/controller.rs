@@ -27,36 +27,63 @@ pub(crate) const CONTROLLER_PORT_BASE: u16 = 6970;
 static ClientReadyCount: AtomicU64 = AtomicU64::new(0);
 static DCMServerReady: AtomicBool = AtomicBool::new(false);
 
+// Used for port allocation ranges for rpc servers
+const MAX_CORES_PER_CLIENT: u16 = 24;
+
 /// Controller main method
 pub(crate) fn run() {
     let mid = *crate::environment::CORE_ID;
 
-    let transports =
-        create_shmem_transport(mid.try_into().unwrap()).expect("Failed to create shmem transport");
-
+    // TODO: still dependent on NUM_SHMEM_TRANSPORTS, ensure it works for eth too
     let mut servers: ArrayVec<Server<'_>, { NUM_SHMEM_TRANSPORTS as usize }> = ArrayVec::new();
-    for transport in transports.into_iter() {
-        let mut server = Server::new(Box::new(transport));
+
+    if crate::CMDLINE
+        .get()
+        .map_or(false, |c| c.transport == Transport::Ethernet)
+    {
+        let transport = Box::new(
+            TCPTransport::new(
+                None,
+                CONTROLLER_PORT_BASE + (mid as u16 - 1) * MAX_CORES_PER_CLIENT,
+                Arc::clone(&ETHERNET_IFACE),
+            )
+            .expect("Failed to create TCP transport"),
+        );
+        let mut server = Server::new(transport);
         register_rpcs(&mut server);
         servers.push(server);
-    }
+        ClientReadyCount.fetch_add(1, Ordering::SeqCst);
+        while !DCMServerReady.load(Ordering::SeqCst) {}
+        servers[0]
+            .add_client(&CLIENT_REGISTRAR)
+            .expect("Failed to accept client");
+    } else if crate::CMDLINE
+        .get()
+        .map_or(false, |c| c.transport == Transport::Shmem)
+    {
+        let transports = create_shmem_transport(mid.try_into().unwrap())
+            .expect("Failed to create shmem transport");
 
-    /*
+        // let mut servers: ArrayVec<Server<'_>, { NUM_SHMEM_TRANSPORTS as usize }> = ArrayVec::new();
+        for transport in transports.into_iter() {
+            let mut server = Server::new(Box::new(transport));
+            register_rpcs(&mut server);
+            servers.push(server);
+        }
+
+        ClientReadyCount.fetch_add(1, Ordering::SeqCst);
+
+        // Wait for all clients to connect before fulfilling any RPCs.
+        while !DCMServerReady.load(Ordering::SeqCst) {}
+
+        for s_index in 0..servers.len() {
+            servers[s_index]
+                .add_client(&CLIENT_REGISTRAR)
+                .expect("Failed to accept client");
+        }
     } else {
         unreachable!("No supported transport layer specified in kernel argument");
     };
-    */
-
-    ClientReadyCount.fetch_add(1, Ordering::SeqCst);
-
-    // Wait for all clients to connect before fulfilling any RPCs.
-    while !DCMServerReady.load(Ordering::SeqCst) {}
-
-    for s_index in 0..servers.len() {
-        servers[s_index]
-            .add_client(&CLIENT_REGISTRAR)
-            .expect("Failed to accept client");
-    }
 
     ClientReadyCount.fetch_add(1, Ordering::SeqCst);
 

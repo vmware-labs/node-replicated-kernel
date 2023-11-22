@@ -121,6 +121,10 @@ unsafe_abomonate!(DCMOps);
 
 lazy_static! {
     pub(crate) static ref DCM_CLIENT: Arc<Mutex<Client>> = Arc::new(Mutex::new(
-        init_ethernet_rpc(IpAddress::v4(172, 31, 0, 20), DCM_CLIENT_PORT, false).unwrap(),
+        init_ethernet_rpc(IpAddress::v4(172, 31, 0, 20), DCM_CLIENT_PORT, 1)
+            .unwrap()
+            .into_iter()
+            .nth(0)
+            .unwrap(),
     ));
 }

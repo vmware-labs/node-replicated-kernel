@@ -1025,14 +1025,15 @@ fn s11_linux_memcached_sharded_benchmark() {
             let mut memcached_ctrls = Vec::new();
             for i in 0..num_clients {
                 memcached_ctrls.push(
-                    linux_spawn_memcached(i, &config, timeout_ms).expect("could not spawn memcached"),
+                    linux_spawn_memcached(i, &config, timeout_ms)
+                        .expect("could not spawn memcached"),
                 );
             }
 
             config.num_threads = total_cores;
 
-            let mut pty =
-            testutils::memcached::spawn_loadbalancer(&config, timeout_ms).expect("failed to spawn load balancer");
+            let mut pty = testutils::memcached::spawn_loadbalancer(&config, timeout_ms)
+                .expect("failed to spawn load balancer");
             let mut output = String::new();
             use rexpect::errors::ErrorKind::Timeout;
             match parse_memcached_output(&mut pty, &mut output) {

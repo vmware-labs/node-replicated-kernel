@@ -16,7 +16,7 @@ use rpc::client::Client;
 use rpc::rpc::RPCError;
 
 use crate::arch::kcb::try_per_core_mem;
-use crate::arch::rackscale::controller::CONTROLLER_PORT_BASE;
+use crate::arch::rackscale::controller::{CONTROLLER_PORT_BASE, MAX_CORES_PER_CLIENT};
 use crate::arch::rackscale::fileops::rw::{RW_SHMEM_BUF, RW_SHMEM_BUF_LEN};
 use crate::arch::rackscale::FrameCacheBase;
 use crate::arch::MAX_MACHINES;
@@ -25,11 +25,12 @@ use crate::error::{KError, KResult};
 use crate::memory::backends::MemManager;
 use crate::memory::shmem_affinity::{local_shmem_affinity, mid_to_shmem_affinity};
 use crate::process::MAX_PROCESSES;
+use crate::transport::shmem::NUM_SHMEM_TRANSPORTS;
 
 /// This is the state the client records about itself
 pub(crate) struct ClientState {
     /// The RPC client used to communicate with the controller
-    pub(crate) rpc_client: Arc<Mutex<Client>>,
+    pub(crate) rpc_clients: Arc<ArrayVec<Mutex<Client>, { NUM_SHMEM_TRANSPORTS as usize }>>,
 
     /// Used to store shmem affinity base pages
     pub(crate) affinity_base_pages: Arc<ArrayVec<Mutex<Box<dyn MemManager + Send>>, MAX_MACHINES>>,
@@ -40,26 +41,28 @@ pub(crate) struct ClientState {
 
 impl ClientState {
     pub(crate) fn new() -> ClientState {
-        // Create network stack and instantiate RPC Client
-        let rpc_client = if crate::CMDLINE
+        let clients = if crate::CMDLINE
             .get()
             .map_or(false, |c| c.transport == Transport::Ethernet)
         {
-            Arc::new(Mutex::new(
-                crate::transport::ethernet::init_ethernet_rpc(
-                    smoltcp::wire::IpAddress::v4(172, 31, 0, 11),
-                    CONTROLLER_PORT_BASE + (*crate::environment::MACHINE_ID as u16 - 1),
-                    true,
-                )
-                .expect("Failed to initialize ethernet RPC"),
-            ))
+            let num_cores: u64 = atopology::MACHINE_TOPOLOGY.num_threads() as u64;
+
+            crate::transport::ethernet::init_ethernet_rpc(
+                smoltcp::wire::IpAddress::v4(172, 31, 0, 11),
+                CONTROLLER_PORT_BASE
+                    + (*crate::environment::MACHINE_ID as u16 - 1) * MAX_CORES_PER_CLIENT,
+                num_cores,
+                false,
+            )
+            .expect("Failed to initialize ethernet RPC")
         } else {
-            // Default is Shmem, even if transport unspecified
-            Arc::new(Mutex::new(
-                crate::transport::shmem::init_shmem_rpc(true)
-                    .expect("Failed to initialize shmem RPC"),
-            ))
+            crate::transport::shmem::init_shmem_rpc().expect("Failed to initialize shmem RPC")
         };
+
+        let mut rpc_clients = ArrayVec::new();
+        for client in clients.into_iter() {
+            rpc_clients.push(Mutex::new(client));
+        }
 
         let mut per_process_base_pages = ArrayVec::new();
         for _i in 0..MAX_PROCESSES {
@@ -76,7 +79,7 @@ impl ClientState {
 
         log::debug!("Finished initializing client state");
         ClientState {
-            rpc_client,
+            rpc_clients: Arc::new(rpc_clients),
             affinity_base_pages: Arc::new(affinity_base_pages),
             per_process_base_pages: Arc::new(per_process_base_pages),
         }

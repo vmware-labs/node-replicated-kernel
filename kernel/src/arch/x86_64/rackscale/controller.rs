@@ -18,7 +18,9 @@ use crate::arch::rackscale::dcm::{
 use crate::arch::MAX_MACHINES;
 use crate::cmdline::Transport;
 use crate::transport::ethernet::ETHERNET_IFACE;
-use crate::transport::shmem::create_shmem_transport;
+use crate::transport::shmem::{create_shmem_transport, NUM_SHMEM_TRANSPORTS};
+
+use crate::arch::rackscale::registration::rpc_servers_to_register;
 
 use super::*;
 
@@ -27,50 +29,100 @@ pub(crate) const CONTROLLER_PORT_BASE: u16 = 6970;
 static ClientReadyCount: AtomicU64 = AtomicU64::new(0);
 static DCMServerReady: AtomicBool = AtomicBool::new(false);
 
+// Used for port allocation ranges for rpc servers
+pub const MAX_CORES_PER_CLIENT: u16 = 24;
+
 /// Controller main method
 pub(crate) fn run() {
+    use core::hint::spin_loop;
+    use core::time::Duration;
     let mid = *crate::environment::CORE_ID;
 
-    // Initialize one server per controller thread
-    let mut server = if crate::CMDLINE
+    // TODO: still dependent on NUM_SHMEM_TRANSPORTS, ensure it works for eth too
+    let mut servers: ArrayVec<Server<'_>, { NUM_SHMEM_TRANSPORTS as usize }> = ArrayVec::new();
+
+    if crate::CMDLINE
         .get()
         .map_or(false, |c| c.transport == Transport::Ethernet)
     {
         let transport = Box::new(
             TCPTransport::new(
                 None,
-                CONTROLLER_PORT_BASE + mid as u16 - 1,
+                CONTROLLER_PORT_BASE + (mid as u16 - 1) * MAX_CORES_PER_CLIENT,
                 Arc::clone(&ETHERNET_IFACE),
             )
             .expect("Failed to create TCP transport"),
         );
         let mut server = Server::new(transport);
         register_rpcs(&mut server);
-        server
+        servers.push(server);
+        ClientReadyCount.fetch_add(1, Ordering::SeqCst);
+        // while !DCMServerReady.load(Ordering::SeqCst) {}
+        servers[0]
+            .add_client(&CLIENT_REGISTRAR)
+            .expect("Failed to accept client");
+
+        // wait until controller learns about client topology
+        while (*rpc_servers_to_register.lock() == 0) {
+            let start = rawtime::Instant::now();
+            while start.elapsed() < Duration::from_secs(1) {
+                spin_loop();
+            }
+        }
+
+        for i in 0..*rpc_servers_to_register.lock() {
+            let transport = Box::new(
+                TCPTransport::new(
+                    None,
+                    CONTROLLER_PORT_BASE + ((mid as u16 - 1) * MAX_CORES_PER_CLIENT) + i as u16 + 1,
+                    Arc::clone(&ETHERNET_IFACE),
+                )
+                .expect("Failed to create TCP transport"),
+            );
+            let mut server = Server::new(transport);
+            register_rpcs(&mut server);
+            servers.push(server);
+            *rpc_servers_to_register.lock() -= 1;
+        }
+
+        ClientReadyCount.fetch_add(1, Ordering::SeqCst);
+
+        // Wait for all clients to connect before fulfilling any RPCs.
+        while !DCMServerReady.load(Ordering::SeqCst) {}
+
+        // already registered the first server
+        for s_index in 1..servers.len() {
+            servers[s_index]
+                .add_client(&CLIENT_REGISTRAR)
+                .expect("Failed to accept client");
+        }
     } else if crate::CMDLINE
         .get()
         .map_or(false, |c| c.transport == Transport::Shmem)
     {
-        let transport = Box::new(
-            create_shmem_transport(mid.try_into().unwrap())
-                .expect("Failed to create shmem transport"),
-        );
+        let transports = create_shmem_transport(mid.try_into().unwrap())
+            .expect("Failed to create shmem transport");
 
-        let mut server = Server::new(transport);
-        register_rpcs(&mut server);
-        server
+        // let mut servers: ArrayVec<Server<'_>, { NUM_SHMEM_TRANSPORTS as usize }> = ArrayVec::new();
+        for transport in transports.into_iter() {
+            let mut server = Server::new(Box::new(transport));
+            register_rpcs(&mut server);
+            servers.push(server);
+        }
+
+        ClientReadyCount.fetch_add(1, Ordering::SeqCst);
+
+        // Wait for all clients to connect before fulfilling any RPCs.
+        while !DCMServerReady.load(Ordering::SeqCst) {}
+
+        for s_index in 0..servers.len() {
+            servers[s_index]
+                .add_client(&CLIENT_REGISTRAR)
+                .expect("Failed to accept client");
+        }
     } else {
         unreachable!("No supported transport layer specified in kernel argument");
     };
-
-    ClientReadyCount.fetch_add(1, Ordering::SeqCst);
-
-    // Wait for all clients to connect before fulfilling any RPCs.
-    while !DCMServerReady.load(Ordering::SeqCst) {}
-
-    server
-        .add_client(&CLIENT_REGISTRAR)
-        .expect("Failed to accept client");
 
     ClientReadyCount.fetch_add(1, Ordering::SeqCst);
 
@@ -114,9 +166,11 @@ pub(crate) fn run() {
     // Start running the RPC server
     log::info!("Starting RPC server for client {:?}!", mid);
     loop {
-        let _handled = server
-            .try_handle()
-            .expect("Controller failed to handle RPC");
+        for s_index in 0..servers.len() {
+            let _handled = servers[s_index]
+                .try_handle()
+                .expect("Controller failed to handle RPC");
+        }
     }
 }
 

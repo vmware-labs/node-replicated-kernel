@@ -7,6 +7,8 @@ use abomonation::{decode, encode, unsafe_abomonate, Abomonation};
 use core2::io::Result as IOResult;
 use core2::io::Write;
 use fallible_collections::{FallibleVec, FallibleVecGlobal};
+use lazy_static::lazy_static;
+use spin::Mutex;
 
 use kpi::system::{CpuThread, MachineId};
 use rpc::client::Client;
@@ -21,29 +23,36 @@ use crate::memory::shmem_affinity::mid_to_shmem_affinity;
 use crate::memory::{Frame, PAddr, LARGE_PAGE_SIZE};
 use crate::transport::shmem::{get_affinity_shmem, get_affinity_shmem_by_mid};
 
+lazy_static! {
+    pub static ref rpc_servers_to_register: Mutex<u64> = Mutex::new(0);
+}
+
 #[derive(Debug, Default)]
 pub(crate) struct ClientRegistrationRequest {
     pub(crate) mid: MachineId,
     pub(crate) shmem_region_base: u64,
     pub(crate) shmem_region_size: usize,
     pub(crate) num_cores: u64,
+    pub(crate) is_first: bool,
 }
 unsafe_abomonate!(
     ClientRegistrationRequest: mid,
     shmem_region_base,
     shmem_region_size,
-    num_cores
+    num_cores,
+    is_first
 );
 
 // Called by client to register client with the controller
 pub(crate) fn initialize_client(
     mut client: Client,
     send_client_data: bool, // This field is used to indicate if init_client() should send ClientRegistrationRequest
+    is_dcm: bool,
 ) -> KResult<Client> {
     // Don't modify this line without modifying testutils/rackscale_runner.rs
     log::warn!("CLIENT READY");
 
-    if send_client_data {
+    if !is_dcm {
         // Fetch system information
         let shmem_region = get_affinity_shmem();
         let hwthreads = atopology::MACHINE_TOPOLOGY.threads();
@@ -63,12 +72,15 @@ pub(crate) fn initialize_client(
         assert!(client_threads.len() == num_threads);
         log::debug!("client_threads: {:?}", client_threads);
 
+        let is_first = if send_client_data { true } else { false };
+
         // Construct client registration request
         let req = ClientRegistrationRequest {
             mid: *crate::environment::MACHINE_ID,
             shmem_region_base: shmem_region.base.as_u64(),
             shmem_region_size: shmem_region.size,
             num_cores: num_threads as u64,
+            is_first: is_first,
         };
 
         // Serialize and send the registration request to the controller
@@ -102,6 +114,12 @@ pub(crate) fn register_client(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result
             req.shmem_region_base,
             req.shmem_region_base + req.shmem_region_size as u64
         );
+
+        if !req.is_first {
+            return Ok(());
+        }
+
+        *rpc_servers_to_register.lock() = req.num_cores - 1;
 
         // Parse out hw_threads
         let hw_threads = match unsafe { decode::<Vec<CpuThread>>(hwthreads_data) } {

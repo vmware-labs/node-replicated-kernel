@@ -1,4 +1,0 @@
-[submodule "lib/node-replication"]
-	path = lib/node-replication
-	url = git@github.com:vmware/node-replication.git
-	branch = mut_scan_vec

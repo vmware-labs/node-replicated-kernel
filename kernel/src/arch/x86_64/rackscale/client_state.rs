@@ -16,7 +16,7 @@ use rpc::client::Client;
 use rpc::rpc::RPCError;
 
 use crate::arch::kcb::try_per_core_mem;
-use crate::arch::rackscale::controller::CONTROLLER_PORT_BASE;
+use crate::arch::rackscale::controller::{CONTROLLER_PORT_BASE, MAX_CORES_PER_CLIENT};
 use crate::arch::rackscale::fileops::rw::{RW_SHMEM_BUF, RW_SHMEM_BUF_LEN};
 use crate::arch::rackscale::FrameCacheBase;
 use crate::arch::MAX_MACHINES;
@@ -41,8 +41,24 @@ pub(crate) struct ClientState {
 
 impl ClientState {
     pub(crate) fn new() -> ClientState {
-        let clients =
-            crate::transport::shmem::init_shmem_rpc().expect("Failed to initialize shmem RPC");
+        let clients = if crate::CMDLINE
+            .get()
+            .map_or(false, |c| c.transport == Transport::Ethernet)
+        {
+            let num_cores: u64 = atopology::MACHINE_TOPOLOGY.num_threads() as u64;
+
+            crate::transport::ethernet::init_ethernet_rpc(
+                smoltcp::wire::IpAddress::v4(172, 31, 0, 11),
+                CONTROLLER_PORT_BASE
+                    + (*crate::environment::MACHINE_ID as u16 - 1) * MAX_CORES_PER_CLIENT,
+                num_cores,
+                false,
+            )
+            .expect("Failed to initialize ethernet RPC")
+        } else {
+            crate::transport::shmem::init_shmem_rpc().expect("Failed to initialize shmem RPC")
+        };
+
         let mut rpc_clients = ArrayVec::new();
         for client in clients.into_iter() {
             rpc_clients.push(Mutex::new(client));

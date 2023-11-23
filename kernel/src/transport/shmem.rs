@@ -393,9 +393,9 @@ pub(crate) fn init_shmem_rpc() -> KResult<Vec<rpc::client::Client>> {
 
         let client = if first {
             first = false;
-            initialize_client(client, true, true).expect("Failed to initialize client")
+            initialize_client(client, true, false).expect("Failed to initialize client")
         } else {
-            initialize_client(client, false, true).expect("Failed to initialize client")
+            initialize_client(client, false, false).expect("Failed to initialize client")
         };
         clients.push(client);
     }

@@ -7,6 +7,8 @@ use abomonation::{decode, encode, unsafe_abomonate, Abomonation};
 use core2::io::Result as IOResult;
 use core2::io::Write;
 use fallible_collections::{FallibleVec, FallibleVecGlobal};
+use lazy_static::lazy_static;
+use spin::Mutex;
 
 use kpi::system::{CpuThread, MachineId};
 use rpc::client::Client;
@@ -20,6 +22,10 @@ use crate::memory::mcache::MCache;
 use crate::memory::shmem_affinity::mid_to_shmem_affinity;
 use crate::memory::{Frame, PAddr, LARGE_PAGE_SIZE};
 use crate::transport::shmem::{get_affinity_shmem, get_affinity_shmem_by_mid};
+
+lazy_static! {
+    pub static ref rpc_servers_to_register: Mutex<u64> = Mutex::new(0);
+}
 
 #[derive(Debug, Default)]
 pub(crate) struct ClientRegistrationRequest {
@@ -41,12 +47,12 @@ unsafe_abomonate!(
 pub(crate) fn initialize_client(
     mut client: Client,
     send_client_data: bool, // This field is used to indicate if init_client() should send ClientRegistrationRequest
-    is_shmem: bool,
+    is_dcm: bool,
 ) -> KResult<Client> {
     // Don't modify this line without modifying testutils/rackscale_runner.rs
     log::warn!("CLIENT READY");
 
-    if is_shmem {
+    if !is_dcm {
         // Fetch system information
         let shmem_region = get_affinity_shmem();
         let hwthreads = atopology::MACHINE_TOPOLOGY.threads();
@@ -112,6 +118,8 @@ pub(crate) fn register_client(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result
         if !req.is_first {
             return Ok(());
         }
+
+        *rpc_servers_to_register.lock() = req.num_cores - 1;
 
         // Parse out hw_threads
         let hw_threads = match unsafe { decode::<Vec<CpuThread>>(hwthreads_data) } {

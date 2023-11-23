@@ -20,6 +20,8 @@ use crate::cmdline::Transport;
 use crate::transport::ethernet::ETHERNET_IFACE;
 use crate::transport::shmem::{create_shmem_transport, NUM_SHMEM_TRANSPORTS};
 
+use crate::arch::rackscale::registration::rpc_servers_to_register;
+
 use super::*;
 
 pub(crate) const CONTROLLER_PORT_BASE: u16 = 6970;
@@ -28,10 +30,12 @@ static ClientReadyCount: AtomicU64 = AtomicU64::new(0);
 static DCMServerReady: AtomicBool = AtomicBool::new(false);
 
 // Used for port allocation ranges for rpc servers
-const MAX_CORES_PER_CLIENT: u16 = 24;
+pub const MAX_CORES_PER_CLIENT: u16 = 24;
 
 /// Controller main method
 pub(crate) fn run() {
+    use core::hint::spin_loop;
+    use core::time::Duration;
     let mid = *crate::environment::CORE_ID;
 
     // TODO: still dependent on NUM_SHMEM_TRANSPORTS, ensure it works for eth too
@@ -53,10 +57,45 @@ pub(crate) fn run() {
         register_rpcs(&mut server);
         servers.push(server);
         ClientReadyCount.fetch_add(1, Ordering::SeqCst);
-        while !DCMServerReady.load(Ordering::SeqCst) {}
+        // while !DCMServerReady.load(Ordering::SeqCst) {}
         servers[0]
             .add_client(&CLIENT_REGISTRAR)
             .expect("Failed to accept client");
+
+        // wait until controller learns about client topology
+        while (*rpc_servers_to_register.lock() == 0) {
+            let start = rawtime::Instant::now();
+            while start.elapsed() < Duration::from_secs(1) {
+                spin_loop();
+            }
+        }
+
+        for i in 0..*rpc_servers_to_register.lock() {
+            let transport = Box::new(
+                TCPTransport::new(
+                    None,
+                    CONTROLLER_PORT_BASE + ((mid as u16 - 1) * MAX_CORES_PER_CLIENT) + i as u16 + 1,
+                    Arc::clone(&ETHERNET_IFACE),
+                )
+                .expect("Failed to create TCP transport"),
+            );
+            let mut server = Server::new(transport);
+            register_rpcs(&mut server);
+            servers.push(server);
+            *rpc_servers_to_register.lock() -= 1;
+        }
+
+        ClientReadyCount.fetch_add(1, Ordering::SeqCst);
+
+        // Wait for all clients to connect before fulfilling any RPCs.
+        while !DCMServerReady.load(Ordering::SeqCst) {}
+
+        // already registered the first server
+        for s_index in 1..servers.len() {
+            servers[s_index]
+                .add_client(&CLIENT_REGISTRAR)
+                .expect("Failed to accept client");
+        }
     } else if crate::CMDLINE
         .get()
         .map_or(false, |c| c.transport == Transport::Shmem)

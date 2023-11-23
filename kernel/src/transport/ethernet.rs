@@ -96,27 +96,47 @@ pub(crate) fn init_network<'a>() -> KResult<Arc<Mutex<Interface<'a, DevQueuePhy>
 pub(crate) fn init_ethernet_rpc(
     server_ip: smoltcp::wire::IpAddress,
     server_port_base: u16,
-    num_cores: u16,
+    num_cores: u64,
+    is_dcm: bool,
 ) -> KResult<Vec<rpc::client::Client>> {
     use crate::arch::rackscale::registration::initialize_client;
     use alloc::boxed::Box;
+    use core::hint::spin_loop;
+    use core::time::Duration;
     use rpc::client::Client;
     use rpc::transport::TCPTransport;
 
     let mut clients: Vec<rpc::client::Client> = Vec::new();
 
-    let offset = 0;
-    let server_port = server_port_base + offset;
+    for i in 0..num_cores {
+        let offset = i;
+        let server_port = server_port_base + offset as u16;
 
-    let rpc_transport = Box::new(
-        TCPTransport::new(Some(server_ip), server_port, Arc::clone(&ETHERNET_IFACE))
-            .map_err(|err| KError::RackscaleRPCError { err })?,
-    );
-    let mut client = Client::new(rpc_transport);
+        let rpc_transport = Box::new(
+            TCPTransport::new(Some(server_ip), server_port, Arc::clone(&ETHERNET_IFACE))
+                .map_err(|err| KError::RackscaleRPCError { err })?,
+        );
+        let mut client = Client::new(rpc_transport);
 
-    // DCM sets send_client_data (second param) false
-    client = initialize_client(client, false, false).expect("Failed to initialize client");
-    clients.push(client);
+        // only send client data on first client registration request
+        let send_client_data = if i == 0 { true } else { false };
+
+        client = initialize_client(client, send_client_data, is_dcm)
+            .expect("Failed to initialize client");
+
+        // After sending client initialization, allow time for controller to
+        // register additional rpc servers before sending more requests
+        if send_client_data && !is_dcm {
+            unsafe {
+                let start = rawtime::Instant::now();
+                while start.elapsed() < Duration::from_secs(5) {
+                    spin_loop();
+                }
+            }
+        }
+
+        clients.push(client);
+    }
 
     Ok(clients)
 }

@@ -563,33 +563,28 @@ impl<T: Clone + Send + 'static> RackscaleBench<T> {
                 test_type, total_cores, num_clients, cores_per_client
             );
 
-            // Calculate and set timeout for this test
-            if is_baseline {
-                test_run.client_timeout = (self.baseline_timeout_fn)(total_cores);
-            } else {
-                test_run.client_timeout = (self.rackscale_timeout_fn)(total_cores);
-            }
-            test_run.controller_timeout = test_run.client_timeout;
-
             // Calculate resources for this tesst
             test_run.cores_per_client = cores_per_client;
             test_run.num_clients = num_clients;
 
+            // Set controller timeout for this test
+            test_run.controller_timeout = test_run.client_timeout;
+
             // Calculate command based on the number of cores
             test_run.cmd = (self.cmd_fn)(total_cores, test_run.arg.clone());
 
-            // Caclulate memory for each component
-            if !is_baseline {
-                test_run.memory = ((self.mem_fn)(total_cores, is_smoke) / test_run.num_clients)
-                    - test_run.shmem_size;
-                assert!(test_run.memory > 0);
-            } else {
-                test_run.memory = (self.mem_fn)(total_cores, is_smoke);
-            }
-
+            // Caclulate memory and timeouts, and then run test
             if is_baseline {
+                test_run.client_timeout = (self.baseline_timeout_fn)(total_cores);
+                // Total client memory in test is: (mem_based_on_cores) + shmem_size * num_clients
+                test_run.memory = (self.mem_fn)(total_cores, is_smoke)
+                    + test_run.shmem_size * test_run.num_clients;
+
                 test_run.run_baseline();
             } else {
+                test_run.client_timeout = (self.rackscale_timeout_fn)(total_cores);
+                test_run.memory = (self.mem_fn)(total_cores, is_smoke) / test_run.num_clients;
+
                 test_run.run_rackscale();
             }
 

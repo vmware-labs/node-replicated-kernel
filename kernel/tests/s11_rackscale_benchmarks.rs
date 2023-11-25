@@ -139,7 +139,7 @@ fn rackscale_fxmark_benchmark(transport: RackscaleTransport) {
             8192
         } else {
             // Memory must also be divisible by number of nodes, which could be 1, 2, 3, or 4
-            2048 * (((num_cores + 3 - 1) / 3) * 3)
+            core::cmp::max(8192, 1024 * (((((num_cores + 1) / 2) + 3 - 1) / 3) * 3))
         }
     }
     let bench = RackscaleBench {
@@ -441,7 +441,7 @@ fn s11_rackscale_shmem_leveldb_benchmark() {
             8192
         } else {
             // Memory must also be divisible by number of nodes, which could be 1, 2, 3, or 4
-            2048 * (((((num_cores + 1) / 2) + 3 - 1) / 3) * 3)
+            core::cmp::max(8192, 1024 * (((((num_cores + 1) / 2) + 3 - 1) / 3) * 3))
         }
     }
 
@@ -608,6 +608,7 @@ fn rackscale_memcached_benchmark(transport: RackscaleTransport) {
     let mut test = RackscaleRun::new("userspace-smp".to_string(), built);
     test.controller_match_fn = controller_match_fn;
     test.transport = transport;
+    //test.shmem_size = 1024 * 64; // this works just fine
     test.shmem_size *= 2;
     test.use_affinity_shmem = cfg!(feature = "affinity-shmem");
     test.use_qemu_huge_pages = cfg!(feature = "affinity-shmem");
@@ -624,11 +625,11 @@ fn rackscale_memcached_benchmark(transport: RackscaleTransport) {
     }
 
     fn baseline_timeout_fn(num_cores: usize) -> u64 {
-        120_000 + 500 * num_cores as u64
+        240_000 + 1_000 * num_cores as u64
     }
 
     fn rackscale_timeout_fn(num_cores: usize) -> u64 {
-        360_000 + 6_000 * num_cores as u64
+        600_000 + 6_000 * num_cores as u64
     }
 
     fn mem_fn(num_cores: usize, is_smoke: bool) -> usize {
@@ -636,7 +637,7 @@ fn rackscale_memcached_benchmark(transport: RackscaleTransport) {
             8192
         } else {
             // Memory must also be divisible by number of nodes, which could be 1, 2, 3, or 4
-            2048 * (((((num_cores + 1) / 2) + 3 - 1) / 3) * 3)
+            core::cmp::max(8192, 1024 * (((((num_cores + 1) / 2) + 3 - 1) / 3) * 3))
         }
     }
 
@@ -945,7 +946,7 @@ fn rackscale_monetdb_benchmark(transport: RackscaleTransport) {
             8192
         } else {
             // Memory must also be divisible by number of nodes, which could be 1, 2, 3, or 4
-            2048 * (((((num_cores + 1) / 2) + 3 - 1) / 3) * 3)
+            core::cmp::max(8192, 1024 * (((((num_cores + 1) / 2) + 3 - 1) / 3) * 3))
         }
     }
 

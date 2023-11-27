@@ -915,7 +915,7 @@ fn s11_linux_memcached_sharded_benchmark() {
         }
     };
 
-    let timeout_ms = if is_smoke { 60_000 } else { 1200_000 };
+    let timeout_ms = if is_smoke { 60_000 } else { std::cmp::max(config.mem_size / 10 * 1000, 60_000) + std::cmp::max(60_000, config.num_queries / 1000) } as u64;
 
     fn run_benchmark_internal(config: &MemcachedShardedConfig, timeout_ms: u64) -> PtySession {
         Command::new("killall").args(&["memcached"]).status().ok();

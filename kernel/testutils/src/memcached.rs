@@ -248,7 +248,7 @@ pub fn spawn_loadbalancer(config: &MemcachedShardedConfig, timeout_ms: u64) -> R
     }
     command.arg(servers.as_str());
     command.current_dir(config.path.as_path());
-    command.env("LD_LIBRARY_PATH", "build/lib")
+    command.env("LD_LIBRARY_PATH", "build/lib");
 
     // give the servers some time to be spawned
     std::thread::sleep(Duration::from_secs(5));

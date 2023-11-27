@@ -205,18 +205,14 @@ impl KernelNode {
         affinity: Option<atopology::NodeId>,
         gtid: kpi::system::GlobalThreadId,
     ) -> Result<(), KError> {
-        NR_REPLICA
-            .get()
-            .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
-                let op = Op::SchedReleaseCore(pid, affinity, gtid);
-                let response = replica.execute_mut(op, *token);
-
-                match response {
-                    Ok(NodeResult::CoreReleased) => Ok(()),
-                    Err(e) => Err(e),
-                    Ok(_) => unreachable!("Got unexpected response"),
-                }
-            })
+        let op = Op::SchedReleaseCore(pid, affinity, gtid);
+        let response = KERNEL_NODE_INSTANCE
+            .execute_mut(op,*NR_REPLICA_REGISTRATION.get().unwrap());
+        match response {
+            Ok(NodeResult::CoreReleased) => Ok(()),
+            Err(e) => Err(e),
+            Ok(_) => unreachable!("Got unexpected response"),
+        }
     }
 }
 

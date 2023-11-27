@@ -15,8 +15,6 @@ use nr2::nr::{Dispatch, NodeReplicated, ThreadToken, rwlock::RwLock};
 use spin::Once;
 
 use crate::arch::process::PROCESS_TABLE;
-use crate::arch::MAX_NUMA_NODES;
-use crate::arch::Module;
 use crate::error::{KError, KResult};
 use crate::memory::vspace::{AddressSpace, MapAction, TlbFlushHandle};
 use crate::memory::{Frame, PAddr, VAddr};

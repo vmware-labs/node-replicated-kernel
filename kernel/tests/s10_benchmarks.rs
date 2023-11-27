@@ -901,7 +901,7 @@ fn s10_memcached_benchmark_internal() {
     } else {
         (
             // keep in sync with the s11_ra
-            2* MEMCACHED_MEM_SIZE_MB, /* MB */
+            4* MEMCACHED_MEM_SIZE_MB, /* MB */
             MEMCACHED_MEM_SIZE_MB,
             MEMCACHED_NUM_QUERIES,
             std::cmp::max(60_000, MEMCACHED_NUM_QUERIES) as u64,

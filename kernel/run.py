@@ -538,7 +538,6 @@ def run_qemu(args):
             affinity_list = args.qemu_affinity[1:-1].replace(",", "")
         # For big machines it can take a while to spawn all threads in qemu
         # if but if the threads are not spawned qemu_affinity.py fails, so we sleep
-        sleep(2.00)
         if args.verbose:
             log("QEMU affinity {}".format(affinity_list))
 

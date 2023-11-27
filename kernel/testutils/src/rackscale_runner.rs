@@ -882,13 +882,13 @@ impl<T: Clone + Send + 'static> RackscaleBench<T> {
             if is_baseline {
                 test_run.client_timeout = (self.baseline_timeout_fn)(total_cores);
                 // Total client memory in test is: (mem_based_on_cores) + shmem_size * num_clients
-                test_run.memory = (self.mem_fn)(total_cores, is_smoke)
+                test_run.memory = (self.mem_fn)(total_cores, cores_per_client, is_smoke)
                     + test_run.shmem_size * test_run.num_clients;
 
                 test_run.run_baseline();
             } else {
                 test_run.client_timeout = (self.rackscale_timeout_fn)(total_cores);
-                test_run.memory = (self.mem_fn)(total_cores, is_smoke) / test_run.num_clients;
+                test_run.memory = (self.mem_fn)(total_cores, cores_per_client, is_smoke) / test_run.num_clients;
 
                 test_run.run_rackscale();
             }

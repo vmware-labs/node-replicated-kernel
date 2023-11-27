@@ -11,7 +11,7 @@ use std::time::Duration;
 use rexpect::errors::*;
 use rexpect::session::{spawn_command, PtySession};
 
-pub const MEMCACHED_MEM_SIZE_MB: usize = 4 * 1024;
+pub const MEMCACHED_MEM_SIZE_MB: usize = 64 * 1024;
 pub const MEMCACHED_NUM_QUERIES: usize = 10_000_000;
 
 pub const RACKSCALE_MEMCACHED_CSV_COLUMNS: &str =
@@ -248,6 +248,7 @@ pub fn spawn_loadbalancer(config: &MemcachedShardedConfig, timeout_ms: u64) -> R
     }
     command.arg(servers.as_str());
     command.current_dir(config.path.as_path());
+    command.env("LD_LIBRARY_PATH", "build/lib")
 
     // give the servers some time to be spawned
     std::thread::sleep(Duration::from_secs(5));

@@ -547,14 +547,15 @@ def run_qemu(args):
                 sudo[python3['./qemu_affinity.py',
                              '-k', affinity_list.split(' '), '--', str(execution.pid)]]()
             except ProcessExecutionError as e:
-                if args.qemu_prealloc or args.qemu_large_pages:
-                    iteration += 1
-                    sleep(2.00)
-                    if iteration > 20 and iteration % 10 == 0:
+                iteration += 1
+                sleep(2.00)
+                if iteration >= 10 and iteration % 10 == 0:
+                    if not (args.qemu_prealloc and args.qemu_large_pages):
+                        # Should not take long if not pre-allocing....
+                        raise
+                    else:   
                         log("Still waiting for Qemu to preallocate memory...")
                     continue
-                else:
-                    raise
             break
 
     # Wait until qemu exits

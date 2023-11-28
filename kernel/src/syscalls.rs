@@ -128,7 +128,7 @@ enum ProcessOperationArgs<W> {
     ReleaseCore(W),
     AllocatePhysical(W, W),
     ReleasePhysical(W),
-    SetReplicas(W, W)
+    SetReplicas(W, W),
 }
 
 impl<W: Into<u64> + LowerHex + Debug + Copy + Clone> ProcessOperationArgs<W> {

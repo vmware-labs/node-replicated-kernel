@@ -60,7 +60,6 @@ impl ClientState {
                 crate::transport::shmem::init_shmem_rpc(true)
                     .expect("Failed to initialize shmem RPC"),
             ))
-
         };
 
         log::info!("per_process_base_pages");

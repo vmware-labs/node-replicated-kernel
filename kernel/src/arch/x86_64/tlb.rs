@@ -54,7 +54,7 @@ lazy_static! {
             use crate::arch::kcb::per_core_mem;
             use crate::memory::shmem_affinity::local_shmem_affinity;
             let local_affinity = local_shmem_affinity();
-            
+
             log::info!("before affinity");
             // We want to allocate the queues in shared memory
             let affinity = {

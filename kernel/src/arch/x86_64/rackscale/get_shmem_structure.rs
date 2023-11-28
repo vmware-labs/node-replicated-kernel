@@ -21,7 +21,7 @@ use crate::error::{KError, KResult};
 use crate::memory::shmem_affinity::local_shmem_affinity;
 use crate::memory::vspace::TlbFlushHandle;
 use crate::memory::{kernel_vaddr_to_paddr, paddr_to_kernel_vaddr, PAddr, VAddr};
-use crate::nr::{KERNEL_NODE_INSTANCE, KernelNode};
+use crate::nr::{KernelNode, KERNEL_NODE_INSTANCE};
 use crate::nrproc::NrProcess;
 use crate::process::MAX_PROCESSES;
 
@@ -134,8 +134,7 @@ pub(crate) fn handle_get_shmem_structure(
                 // to a physical address, and then change it to a shmem offset by subtracting the shmem base.
                 // TODO(rackscale): try to simplify this, and below?
                 let arc_log_paddr = kernel_vaddr_to_paddr(VAddr::from_u64(
-                    (*&client_clone
-                        as *const NodeReplicated<NrProcess<Ring3Process>>) as u64,
+                    (*&client_clone as *const NodeReplicated<NrProcess<Ring3Process>>) as u64,
                 ));
                 logs[i] = arc_log_paddr.as_u64();
             }
@@ -147,10 +146,15 @@ pub(crate) fn handle_get_shmem_structure(
         ShmemStructure::NrLog => {
             let log_clone = Arc::into_raw(Arc::clone(&KERNEL_NODE_INSTANCE));
 
-            let log_paddr =
-                kernel_vaddr_to_paddr(VAddr::from_u64((*&log_clone as *const NodeReplicated<KernelNode>) as u64))
-                    .as_u64();
-            log::info!("nr_node addr {:?} &KERNEL_NODE_INSTANCE = {:p}", log_paddr, &KERNEL_NODE_INSTANCE);
+            let log_paddr = kernel_vaddr_to_paddr(VAddr::from_u64(
+                (*&log_clone as *const NodeReplicated<KernelNode>) as u64,
+            ))
+            .as_u64();
+            log::info!(
+                "nr_node addr {:?} &KERNEL_NODE_INSTANCE = {:p}",
+                log_paddr,
+                &KERNEL_NODE_INSTANCE
+            );
 
             // Modify header and write into output buffer
             unsafe { encode(&[log_paddr], &mut payload) }.unwrap();

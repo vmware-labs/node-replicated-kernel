@@ -42,13 +42,13 @@ use apic::x2apic::X2APICDriver;
 use apic::ApicDriver;
 use klogger::{sprint, sprintln};
 use log::{info, trace, warn};
+use spin::Lazy;
 use x86::bits64::segmentation::Descriptor64;
 use x86::irq::*;
 use x86::segmentation::{
     BuildDescriptor, DescriptorBuilder, GateDescriptorBuilder, SegmentSelector,
 };
 use x86::{dtables, Ring};
-use spin::Lazy;
 
 use crate::arch::process::CURRENT_EXECUTOR;
 use crate::memory::vspace::MapAction;
@@ -527,35 +527,43 @@ unsafe fn timer_handler(_a: &ExceptionArguments) {
     for pid in 0..crate::process::MAX_PROCESSES {
         nrproc::NrProcess::<Ring3Process>::synchronize(pid);
     }
-    
+
     #[cfg(feature = "dynrep")]
     if *crate::environment::MT_ID == 4 {
         use crate::arch::process::current_pid;
         let pid = current_pid().expect("dont have a pid?");
 
-        if rawtime::BOOT_TIME_ANCHOR.elapsed() > rawtime::Duration::from_secs(10) && *REPLICA_STATE == 0 {
+        if rawtime::BOOT_TIME_ANCHOR.elapsed() > rawtime::Duration::from_secs(10)
+            && *REPLICA_STATE == 0
+        {
             info!("got a timer after 10s, remove rid 1");
-            let handles = nrproc::NrProcess::<Ring3Process>::remove_replica(pid, 1).expect("removed");
+            let handles =
+                nrproc::NrProcess::<Ring3Process>::remove_replica(pid, 1).expect("removed");
             #[cfg(not(feature = "rackscale"))]
             super::tlb::shootdown(handles[0].clone());
             unsafe { *REPLICA_STATE.as_mut_ptr() = 1 };
         }
-        if rawtime::BOOT_TIME_ANCHOR.elapsed() > rawtime::Duration::from_secs(20) && *REPLICA_STATE == 1 {
+        if rawtime::BOOT_TIME_ANCHOR.elapsed() > rawtime::Duration::from_secs(20)
+            && *REPLICA_STATE == 1
+        {
             info!("got a timer after 20s, add rid 1");
             let handles = nrproc::NrProcess::<Ring3Process>::add_replica(pid, 1).expect("added");
             #[cfg(not(feature = "rackscale"))]
             super::tlb::shootdown(handles[0].clone());
             unsafe { *REPLICA_STATE.as_mut_ptr() = 2 };
         }
-        if rawtime::BOOT_TIME_ANCHOR.elapsed() > rawtime::Duration::from_secs(30) && *REPLICA_STATE == 2 {
+        if rawtime::BOOT_TIME_ANCHOR.elapsed() > rawtime::Duration::from_secs(30)
+            && *REPLICA_STATE == 2
+        {
             info!("got a timer after 30s");
             unsafe { *REPLICA_STATE.as_mut_ptr() = 3 };
         }
-        if rawtime::BOOT_TIME_ANCHOR.elapsed() > rawtime::Duration::from_secs(40) && *REPLICA_STATE == 3 {
+        if rawtime::BOOT_TIME_ANCHOR.elapsed() > rawtime::Duration::from_secs(40)
+            && *REPLICA_STATE == 3
+        {
             info!("got a timer after 40s");
             unsafe { *REPLICA_STATE.as_mut_ptr() = 4 };
         }
-
     }
     let kcb = get_kcb();
 
@@ -787,7 +795,6 @@ pub extern "C" fn handle_generic_exception(a: ExceptionArguments) -> ! {
                 drop(pborrow);
 
                 kcb_iret_handle(kcb).resume()
-
             } else {
                 // Go to scheduler instead
                 crate::scheduler::schedule()
@@ -798,7 +805,6 @@ pub extern "C" fn handle_generic_exception(a: ExceptionArguments) -> ! {
 
             let kcb = get_kcb();
             if super::process::has_executor() {
-                
                 //let mut pborrow = super::process::CURRENT_EXECUTOR.borrow_mut();
                 //let p = pborrow.as_ref().unwrap();
                 //p.maybe_switch_vspace();

@@ -4,12 +4,12 @@
 use crate::prelude::*;
 use core::fmt::Debug;
 
+use crate::arch::kcb;
 use alloc::sync::Arc;
 use hashbrown::HashMap;
 use log::{error, trace};
 use nr2::nr::{Dispatch, NodeReplicated, ThreadToken};
 use spin::Once;
-use crate::arch::kcb;
 
 use lazy_static::lazy_static;
 
@@ -121,7 +121,6 @@ lazy_static! {
     };
 }
 
-
 #[derive(PartialEq, Clone, Copy, Debug)]
 pub(crate) enum ReadOps {
     CurrentProcess(kpi::system::GlobalThreadId),
@@ -168,7 +167,7 @@ pub(crate) struct KernelNode {
 impl Default for KernelNode {
     fn default() -> KernelNode {
         let k = KernelNode {
-            process_map: HashMap::with_capacity(MAX_PROCESSES),   // with_capacity(MAX_PROCESSES),
+            process_map: HashMap::with_capacity(MAX_PROCESSES), // with_capacity(MAX_PROCESSES),
             scheduler_map: HashMap::with_capacity(24), // with_capacity(MAX_CORES), or, for rackscale, with_capacity(MAX_CORES * MAX_MACHINES)
         };
         k
@@ -188,10 +187,12 @@ impl KernelNode {
         gtid: Option<kpi::system::GlobalThreadId>,
     ) -> Result<kpi::system::GlobalThreadId, KError> {
         // todo node id
-        crate::nr::NR_REPLICA_REGISTRATION.call_once(|| crate::nr::KERNEL_NODE_INSTANCE.register(0).unwrap());
+        crate::nr::NR_REPLICA_REGISTRATION
+            .call_once(|| crate::nr::KERNEL_NODE_INSTANCE.register(0).unwrap());
 
         let op = Op::SchedAllocateCore(pid, affinity, gtid, entry_point);
-        let response = KERNEL_NODE_INSTANCE.execute_mut(op, *NR_REPLICA_REGISTRATION.get().unwrap());
+        let response =
+            KERNEL_NODE_INSTANCE.execute_mut(op, *NR_REPLICA_REGISTRATION.get().unwrap());
 
         match response {
             Ok(NodeResult::CoreAllocated(rgtid)) => Ok(rgtid),
@@ -206,8 +207,8 @@ impl KernelNode {
         gtid: kpi::system::GlobalThreadId,
     ) -> Result<(), KError> {
         let op = Op::SchedReleaseCore(pid, affinity, gtid);
-        let response = KERNEL_NODE_INSTANCE
-            .execute_mut(op,*NR_REPLICA_REGISTRATION.get().unwrap());
+        let response =
+            KERNEL_NODE_INSTANCE.execute_mut(op, *NR_REPLICA_REGISTRATION.get().unwrap());
         match response {
             Ok(NodeResult::CoreReleased) => Ok(()),
             Err(e) => Err(e),

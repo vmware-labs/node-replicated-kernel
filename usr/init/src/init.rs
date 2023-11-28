@@ -989,7 +989,7 @@ pub fn upcall_test() {
 
 pub fn dynamic_replication_test() {
     info!("dynamic_replication_test START");
-    
+
     vibrio::syscalls::Process::set_replicas(false, 0).expect("Can't remove replica 0.");
 
     //vibrio::syscalls::Process::set_replicas(false, 1).expect("Can't remove replica 1.");
@@ -1079,7 +1079,7 @@ pub extern "C" fn _start() -> ! {
 
     #[cfg(feature = "test-core-alloc")]
     core_alloc_test();
-    
+
     #[cfg(feature = "test-dynamic-replication")]
     dynamic_replication_test();
 

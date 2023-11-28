@@ -6,12 +6,12 @@ use alloc::boxed::Box;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use bootloader_shared::Module;
-use nr2::nr::rwlock::RwLock;
 use core::alloc::Allocator;
 use core::cell::RefCell;
 use core::num::NonZeroUsize;
 use core::ops::{Deref, DerefMut};
 use core::sync::atomic::{AtomicUsize, Ordering};
+use nr2::nr::rwlock::RwLock;
 use x86::current::paging::PAddr;
 
 use arrayvec::ArrayVec;
@@ -76,7 +76,7 @@ lazy_static! {
         for pid in 0..MAX_PROCESSES {
             processes.push(
                 Arc::try_new(RwLock::new(NodeReplicated::<NrProcess<UnixProcess>>::new(num_replicas, |afc: AffinityChange| {
-                    return 0; // TODO(dynrep): Return error code
+                    0 // TODO(dynrep): Return error code
                 }).expect("Not enough memory to initialize system"))).expect("Not enough memory to initialize system"));
         }
         processes

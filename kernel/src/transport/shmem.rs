@@ -177,19 +177,25 @@ impl ShmemDevice {
             .expect("Failed to write potential shmem memory region addresses");
 
         // Note: leaving this code as a comment as a way to test if all shmem is writeable.
-        
+
         #[cfg(feature = "rackscale")]
         match crate::CMDLINE.get().map_or(Mode::Native, |c| c.mode) {
             Mode::Controller => {
                 //let mut f=  Frame::new(PAddr::from(0x70003f600000u64),2*1024*1024,12);
                 //log::info!("zeroing out shmem");
                 //unsafe {f.zero()};
-                log::info!("zeroing out shmem {:x} -- {:x}", mem_region.address, mem_region.address + mem_region.size);
+                log::info!(
+                    "zeroing out shmem {:x} -- {:x}",
+                    mem_region.address,
+                    mem_region.address + mem_region.size
+                );
                 for offset in 1..512 {
-                    let myptr: *mut u8 = 
-                            (KERNEL_BASE + mem_region.address + (offset*4096)) as *mut u8;
+                    let myptr: *mut u8 =
+                        (KERNEL_BASE + mem_region.address + (offset * 4096)) as *mut u8;
                     log::info!("at addr {:x}", (myptr as u64 - KERNEL_BASE));
-                    unsafe { *myptr = 0x0; }
+                    unsafe {
+                        *myptr = 0x0;
+                    }
                 }
                 /*
                 let mymemslice = unsafe {
@@ -197,13 +203,16 @@ impl ShmemDevice {
                         (KERNEL_BASE + mem_region.address) as *mut u8,
                         mem_region.size as usize,
                     )
-                }; 
+                };
                 mymemslice.fill(0);*/
-                log::info!("after out shmem {:x} -- {:x}", mem_region.address, mem_region.address + mem_region.size);
+                log::info!(
+                    "after out shmem {:x} -- {:x}",
+                    mem_region.address,
+                    mem_region.address + mem_region.size
+                );
             }
             _ => {}
         }
-         
 
         // Map the MSI-X table into kernel space
         kvspace
@@ -356,7 +365,9 @@ pub(crate) fn create_shmem_transport(mid: MachineId) -> KResult<ShmemTransport<'
     assert!(region_size as u64 >= SHMEM_TRANSPORT_SIZE);
 
     let allocator = ShmemAllocator::new(base_addr.as_u64(), SHMEM_TRANSPORT_SIZE);
-    crate::CMDLINE.get().map(|c| log::info!("c.mode is {:?}", c.mode));
+    crate::CMDLINE
+        .get()
+        .map(|c| log::info!("c.mode is {:?}", c.mode));
 
     match crate::CMDLINE.get().map_or(Mode::Native, |c| c.mode) {
         Mode::Controller => {

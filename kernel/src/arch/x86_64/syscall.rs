@@ -296,8 +296,7 @@ impl<T: Arch86ProcessDispatch> ProcessDispatch<u64> for T {
         let pid = current_pid()?;
         let handles = if add > 0 {
             NrProcess::<Ring3Process>::add_replica(pid, rid as usize).expect("add_replica")
-        }
-        else {
+        } else {
             NrProcess::<Ring3Process>::remove_replica(pid, rid as usize).expect("remove_replica")
         };
 
@@ -308,8 +307,7 @@ impl<T: Arch86ProcessDispatch> ProcessDispatch<u64> for T {
         #[cfg(not(feature = "rackscale"))]
         super::tlb::shootdown(handles[0].clone());
 
-
-        Ok((0,0))
+        Ok((0, 0))
     }
 
     fn exit(&self, code: u64) -> Result<(u64, u64), KError> {

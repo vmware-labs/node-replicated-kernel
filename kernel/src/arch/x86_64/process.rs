@@ -13,17 +13,17 @@ use core::iter::Iterator;
 use core::sync::atomic::{AtomicUsize, Ordering};
 use core::{fmt, ptr};
 
+use crate::arch::kcb;
 use arrayvec::ArrayVec;
+use core::num::NonZeroUsize;
 use fallible_collections::try_vec;
 use fallible_collections::FallibleVec;
 use kpi::arch::SaveArea;
 use kpi::process::{FrameId, ELF_OFFSET, EXECUTOR_OFFSET};
 use lazy_static::lazy_static;
 use log::{debug, info, trace, warn};
-use crate::arch::kcb;
-use core::num::NonZeroUsize;
-use nr2::nr::{NodeReplicated, AffinityChange};
 use nr2::nr::rwlock::RwLock;
+use nr2::nr::{AffinityChange, NodeReplicated};
 use x86::bits64::paging::*;
 use x86::bits64::rflags;
 use x86::{controlregs, Ring};
@@ -82,7 +82,7 @@ lazy_static! {
             .get()
             .map_or(false, |c| c.mode == crate::cmdline::Mode::Controller)
         {
-            // Get the NodeReplicated instances from the controller, 
+            // Get the NodeReplicated instances from the controller,
             // who will have created them in shared memory
             use crate::arch::rackscale::get_shmem_structure::{rpc_get_shmem_structure, ShmemStructure};
 
@@ -104,7 +104,7 @@ lazy_static! {
         use crate::memory::shmem_affinity::local_shmem_affinity;
         let pcm = per_core_mem();
         pcm.set_mem_affinity(local_shmem_affinity()).expect("Can't change affinity");
-        
+
         // Want at least one replica...
         let num_replicas =
             NonZeroUsize::new(core::cmp::max(1, atopology::MACHINE_TOPOLOGY.num_nodes() * (*NUM_MACHINES))).unwrap();
@@ -171,7 +171,7 @@ lazy_static! {
                     use crate::memory::shmem_affinity::local_shmem_affinity;
                     let pcm = per_core_mem();
                     - pcm.set_mem_affinity(local_shmem_affinity()).expect("Can't change affinity");
-                    OR 
+                    OR
                     - pcm.set_mem_affinity(orig).expect("Can't change affinity");
                 }
             }
@@ -191,7 +191,8 @@ lazy_static! {
 }
 
 #[cfg(not(feature = "rackscale"))]
-fn create_process_table() -> ArrayVec<Arc<RwLock<NodeReplicated<NrProcess<Ring3Process>>>>, MAX_PROCESSES> {
+fn create_process_table(
+) -> ArrayVec<Arc<RwLock<NodeReplicated<NrProcess<Ring3Process>>>>, MAX_PROCESSES> {
     // Want at least one replica...
     let num_replicas =
         NonZeroUsize::new(core::cmp::max(1, atopology::MACHINE_TOPOLOGY.num_nodes())).unwrap();
@@ -204,25 +205,29 @@ fn create_process_table() -> ArrayVec<Arc<RwLock<NodeReplicated<NrProcess<Ring3P
             "Expect initialization to happen on node 0."
         );
 
-        let process: Arc<RwLock<NodeReplicated<NrProcess<Ring3Process>>>> = Arc::try_new(RwLock::new(
-            NodeReplicated::new(num_replicas, |afc: AffinityChange| {
-                let pcm = kcb::per_core_mem();
-                //log::info!("Got AffinityChange: {:?}", afc);
-                match afc {
-                    AffinityChange::Replica(r) => {
-                        let affinity = { pcm.physical_memory.borrow().affinity };
-                        pcm.set_mem_affinity(crate::memory::shmem_affinity::mid_to_shmem_affinity(r)).expect("Can't set affinity");
-                        return affinity;
+        let process: Arc<RwLock<NodeReplicated<NrProcess<Ring3Process>>>> =
+            Arc::try_new(RwLock::new(
+                NodeReplicated::new(num_replicas, |afc: AffinityChange| {
+                    let pcm = kcb::per_core_mem();
+                    //log::info!("Got AffinityChange: {:?}", afc);
+                    match afc {
+                        AffinityChange::Replica(r) => {
+                            let affinity = { pcm.physical_memory.borrow().affinity };
+                            pcm.set_mem_affinity(
+                                crate::memory::shmem_affinity::mid_to_shmem_affinity(r),
+                            )
+                            .expect("Can't set affinity");
+                            return affinity;
+                        }
+                        AffinityChange::Revert(orig) => {
+                            pcm.set_mem_affinity(orig).expect("Can't set affinity");
+                            return 0;
+                        }
                     }
-                    AffinityChange::Revert(orig) => {
-                        pcm.set_mem_affinity(orig).expect("Can't set affinity");
-                        return 0;
-                    }
-                }
-            })
-            .expect("Not enough memory to initialize system")),
-        )
-        .expect("Not enough memory to initialize system");
+                })
+                .expect("Not enough memory to initialize system"),
+            ))
+            .expect("Not enough memory to initialize system");
 
         processes.push(process)
     }
@@ -302,15 +307,15 @@ fn create_process_table(
 }
  */
 
- pub(crate) struct ArchProcessManagement;
-
+pub(crate) struct ArchProcessManagement;
 
 impl crate::nrproc::ProcessManager for ArchProcessManagement {
     type Process = Ring3Process;
 
     fn process_table(
         &self,
-    ) -> &'static ArrayVec<Arc<RwLock<NodeReplicated<NrProcess<Self::Process>>>>, MAX_PROCESSES> {
+    ) -> &'static ArrayVec<Arc<RwLock<NodeReplicated<NrProcess<Self::Process>>>>, MAX_PROCESSES>
+    {
         &*super::process::PROCESS_TABLE
     }
 }
@@ -1026,7 +1031,10 @@ impl Executor for Ring3Executor {
         unsafe {
             let current_pml4 = PAddr::from(controlregs::cr3());
             if current_pml4 != replica_pml4 {
-                info!("Switching from 0x{:x} to 0x{:x}", current_pml4, replica_pml4);
+                info!(
+                    "Switching from 0x{:x} to 0x{:x}",
+                    current_pml4, replica_pml4
+                );
                 controlregs::cr3_write(self.pml4.into());
             }
         }

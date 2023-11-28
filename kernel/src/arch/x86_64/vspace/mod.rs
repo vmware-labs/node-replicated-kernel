@@ -113,7 +113,7 @@ impl AddressSpace for VSpace {
     fn root(&self) -> PAddr {
         self.pml4_address()
     }
-    
+
     fn map_frame(&mut self, base: VAddr, frame: Frame, action: MapAction) -> Result<(), KError> {
         if frame.size() == 0 {
             return Err(KError::InvalidFrame);
@@ -205,7 +205,12 @@ impl Drop for VSpace {
 impl VSpace {
     pub(crate) fn new() -> Result<Self, KError> {
         let mut btree = BTreeMap::new();
-        btree.try_insert(VAddr(0x0), MappingInfo::new(Frame::empty(), MapAction::none())).expect("fail");
+        btree
+            .try_insert(
+                VAddr(0x0),
+                MappingInfo::new(Frame::empty(), MapAction::none()),
+            )
+            .expect("fail");
 
         Ok(VSpace {
             mappings: BTreeMap::new(),

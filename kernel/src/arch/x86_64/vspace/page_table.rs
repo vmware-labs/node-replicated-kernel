@@ -41,7 +41,7 @@ impl Clone for PageTable {
             let frame_ptr = unsafe {
                 let ptr = alloc::alloc::alloc_zeroed(PT_LAYOUT);
                 debug_assert!(!ptr.is_null());
-    
+
                 let nptr = NonNull::new_unchecked(ptr);
                 NonNull::slice_from_raw_parts(nptr, PT_LAYOUT.size())
             };
@@ -51,17 +51,17 @@ impl Clone for PageTable {
             unsafe { frame.zero() };
             frame
         }
-    
+
         fn new_pt() -> PDEntry {
             let frame = alloc_frame();
             return PDEntry::new(frame.base, PDFlags::P | PDFlags::RW | PDFlags::US);
         }
-    
+
         fn new_pd() -> PDPTEntry {
             let frame = alloc_frame();
             return PDPTEntry::new(frame.base, PDPTFlags::P | PDPTFlags::RW | PDPTFlags::US);
         }
-    
+
         fn new_pdpt() -> PML4Entry {
             let frame = alloc_frame();
             return PML4Entry::new(frame.base, PML4Flags::P | PML4Flags::RW | PML4Flags::US);
@@ -83,7 +83,6 @@ impl Clone for PageTable {
                             cloned_pdpt[pdpt_idx] = new_pd();
                             let cloned_pdpt_entry = cloned_pdpt[pdpt_idx];
                             drop(cloned_pdpt);
-
 
                             for pd_idx in 0..PAGE_SIZE_ENTRIES {
                                 let pd = self.get_pd(pdpt[pdpt_idx]);
@@ -107,7 +106,6 @@ impl Clone for PageTable {
                                 } else {
                                     // Encountered a 2 MiB mapping
                                     cloned_pd[pd_idx] = pd[pd_idx];
-
                                 }
                             }
                         } else {

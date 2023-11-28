@@ -39,7 +39,7 @@ fn rackscale_userspace_smoke_test(transport: RackscaleTransport) {
             "test-upcall",
             "test-scheduler",
             "test-syscalls",
-            "test-dynamic-replication"
+            "test-dynamic-replication",
         ])
         .set_rackscale(true)
         .release()

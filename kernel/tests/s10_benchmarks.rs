@@ -493,7 +493,10 @@ fn s10_fxmark_benchmark() {
                 if cfg!(feature = "smoke") && cores > 2 {
                     cmdline = cmdline.nodes(std::cmp::max(machine.max_cores() / 16, 1));
                 } else {
-                    cmdline = cmdline.nodes(std::cmp::max(machine.max_cores() / 16, machine.max_numa_nodes()));
+                    cmdline = cmdline.nodes(std::cmp::max(
+                        machine.max_cores() / 16,
+                        machine.max_numa_nodes(),
+                    ));
                 }
 
                 let mut output = String::new();

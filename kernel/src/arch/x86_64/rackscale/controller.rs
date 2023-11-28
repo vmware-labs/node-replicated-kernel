@@ -75,7 +75,7 @@ pub(crate) fn run() {
         .expect("Failed to accept client");
 
     ClientReadyCount.fetch_add(1, Ordering::SeqCst);
-    
+
     log::info!("before ClientReadyCount");
     // Wait for all clients to connect before fulfilling any RPCs.
     while ClientReadyCount.load(Ordering::SeqCst) != (*crate::environment::NUM_MACHINES - 1) as u64

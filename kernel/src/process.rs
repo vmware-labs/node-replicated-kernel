@@ -79,7 +79,11 @@ pub(crate) trait Process: FrameManagement + Clone {
         affinity: atopology::NodeId,
     ) -> Result<(), alloc::collections::TryReserveError>;
 
-    fn allocate_executors(&mut self, frame: Frame, #[cfg(feature = "rackscale")] mid: kpi::system::MachineId) -> Result<usize, KError>;
+    fn allocate_executors(
+        &mut self,
+        frame: Frame,
+        #[cfg(feature = "rackscale")] mid: kpi::system::MachineId,
+    ) -> Result<usize, KError>;
 
     fn vspace_mut(&mut self) -> &mut Self::A;
 
@@ -463,7 +467,10 @@ impl elfloader::ElfLoader for DataSecAllocator {
 pub(crate) fn make_process<P: Process>(binary: &'static str) -> Result<Pid, KError> {
     // Allocate a new process
     let pid = {
-        let response = crate::nr::KERNEL_NODE_INSTANCE.execute_mut(crate::nr::Op::AllocatePid, *crate::nr::NR_REPLICA_REGISTRATION.get().unwrap())?;
+        let response = crate::nr::KERNEL_NODE_INSTANCE.execute_mut(
+            crate::nr::Op::AllocatePid,
+            *crate::nr::NR_REPLICA_REGISTRATION.get().unwrap(),
+        )?;
         if let crate::nr::NodeResult::PidAllocated(pid) = response {
             Ok(pid)
         } else {
@@ -582,11 +589,13 @@ pub(crate) fn allocate_dispatchers<P: Process>(pid: Pid, affinity: NodeId) -> Re
             let pcm = crate::arch::kcb::per_core_mem();
 
             #[cfg(feature = "rackscale")]
-            pcm.set_mem_affinity(affinity).expect("Can't change affinity");
+            pcm.set_mem_affinity(affinity)
+                .expect("Can't change affinity");
             let frame = pcm.mem_manager().allocate_large_page()?;
-            
+
             #[cfg(feature = "rackscale")]
-            pcm.set_mem_affinity(crate::memory::shmem_affinity::local_shmem_affinity()).expect("Can't reset affinity");
+            pcm.set_mem_affinity(crate::memory::shmem_affinity::local_shmem_affinity())
+                .expect("Can't reset affinity");
             frame
         };
 

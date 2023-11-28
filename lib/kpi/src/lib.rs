@@ -105,7 +105,7 @@ pub enum ProcessOperation {
     /// Release a physical memory page from the process.
     ReleasePhysical = 10,
     /// Set Replicas
-    SetReplicas = 11
+    SetReplicas = 11,
 }
 
 impl ProcessOperation {

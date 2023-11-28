@@ -14,7 +14,7 @@ use x86::bits64::paging::VAddr;
 pub struct Process;
 
 impl Process {
-    pub fn set_replicas(add: bool, replica_idx: usize) -> Result<(), SystemCallError>{
+    pub fn set_replicas(add: bool, replica_idx: usize) -> Result<(), SystemCallError> {
         let r = unsafe {
             syscall!(
                 SystemCall::Process as u64,

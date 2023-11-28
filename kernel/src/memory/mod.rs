@@ -86,8 +86,18 @@ impl KernelAllocator {
                     let mut zone_allocator = pcm.ezone_allocator()?;
                     zone_allocator.allocate(layout).map_err(|e| e.into())
                 } else {
+                    if layout.size() == 0xbeef {
+                        log::info!("before 0xbeef bytes");
+                    }
                     let mut zone_allocator = pcm.zone_allocator()?;
-                    zone_allocator.allocate(layout).map_err(|e| e.into())
+                    if layout.size() == 0xbeef {
+                        log::info!("after getting zone allocator");
+                    }
+                    let ptr = zone_allocator.allocate(layout).map_err(|e| e.into());
+                    if layout.size() == 0xbeef {
+                        log::info!("after alloc {:?}", ptr);
+                    }
+                    ptr
                 }
             }
             AllocatorType::MemManager if layout.size() <= LARGE_PAGE_SIZE => {
@@ -219,7 +229,13 @@ impl KernelAllocator {
             (AllocatorType::Zone, KError::CacheExhausted) => {
                 let (needed_base_pages, needed_large_pages) =
                     KernelAllocator::refill_amount(layout);
+                if layout.size() == 0xbeef {
+                    log::info!("before maybe_refill_tcache");
+                }
                 self.maybe_refill_tcache(needed_base_pages, needed_large_pages)?;
+                if layout.size() == 0xbeef {
+                    log::info!("before try_refill_zone");
+                }
                 self.try_refill_zone(layout)
             }
             (AllocatorType::MapBig, _) => {
@@ -561,14 +577,26 @@ impl KernelAllocator {
                 }
             } else {
                 // Needs a large page
-                let frame = cas.pmanager.allocate_large_page()?;
+                if layout.size() == 0xbeef {
+                    log::info!("before allocate_large_page");
+                }
+
+                let mut frame = cas.pmanager.allocate_large_page()?;
                 unsafe {
                     let large_page_ptr: *mut slabmalloc::LargeObjectPage = frame
                         .uninitialized::<slabmalloc::LargeObjectPage>()
                         .as_mut_ptr();
+                    if layout.size() == 0xbeef {
+                        log::info!("before zero frame={:?}", frame);
+                        frame.zero();
+                        log::info!("before refill_large frame={:?}", frame);
+                    }
                     cas.zone_allocator
                         .refill_large(layout, &mut *large_page_ptr)
                         .expect("This should always succeed");
+                    if layout.size() == 0xbeef {
+                        log::info!("after refill_large");
+                    }
                 }
             }
         }

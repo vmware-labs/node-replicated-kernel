@@ -54,7 +54,8 @@ lazy_static! {
             use crate::arch::kcb::per_core_mem;
             use crate::memory::shmem_affinity::local_shmem_affinity;
             let local_affinity = local_shmem_affinity();
-
+            
+            log::info!("before affinity");
             // We want to allocate the queues in shared memory
             let affinity = {
                 let pcm = per_core_mem();
@@ -62,11 +63,19 @@ lazy_static! {
                 pcm.set_mem_affinity(local_affinity).expect("Can't change affinity");
                 affinity
             };
+            log::info!("changed affinity to {} local_affinity={}", affinity, local_affinity);
+            use core::alloc::Layout;
+            let ptr = unsafe { alloc::alloc::alloc(Layout::from_size_align(0xbeef, 16).unwrap()) };
+            log::info!("ptr {:p}", ptr);
 
             let channels = {
                 let num_clients = *crate::environment::NUM_MACHINES - 1;
+                log::info!("{num_clients} machines={}", *crate::environment::NUM_MACHINES);
+
                 let mut channels =
                     Vec::try_with_capacity(num_clients).expect("Not enough memory to initialize system");
+                log::info!("channels done");
+
                 for _i in 0..num_clients {
                     // ArrayQueue does memory allocation on `new`, maybe have try_new,
                     // but this is fine since it's during initialization
@@ -75,12 +84,14 @@ lazy_static! {
 
                 Arc::new(channels)
             };
+            log::info!("after channels");
 
             // Reset mem allocator to use per core memory again
             if affinity != local_affinity {
                 let pcm = per_core_mem();
                 pcm.set_mem_affinity(affinity).expect("Can't change affinity");
             }
+            log::info!("after affinity");
 
             channels
         } else {

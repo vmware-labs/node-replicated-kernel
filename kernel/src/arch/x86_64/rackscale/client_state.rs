@@ -45,6 +45,7 @@ impl ClientState {
             .get()
             .map_or(false, |c| c.transport == Transport::Ethernet)
         {
+            log::info!("before client ready");
             Arc::new(Mutex::new(
                 crate::transport::ethernet::init_ethernet_rpc(
                     smoltcp::wire::IpAddress::v4(172, 31, 0, 11),
@@ -59,14 +60,17 @@ impl ClientState {
                 crate::transport::shmem::init_shmem_rpc(true)
                     .expect("Failed to initialize shmem RPC"),
             ))
+
         };
 
+        log::info!("per_process_base_pages");
         let mut per_process_base_pages = ArrayVec::new();
         for _i in 0..MAX_PROCESSES {
             // TODO(rackscale): this is a bogus affinity because it should really be "ANY_SHMEM"
             per_process_base_pages.push(Mutex::new(FrameCacheBase::new(local_shmem_affinity())));
         }
 
+        log::info!("affinity_base_pages");
         let mut affinity_base_pages = ArrayVec::new();
         for i in 0..MAX_MACHINES {
             affinity_base_pages.push(Mutex::new(Box::new(FrameCacheBase::new(
@@ -74,7 +78,7 @@ impl ClientState {
             )) as Box<dyn MemManager + Send>));
         }
 
-        log::debug!("Finished initializing client state");
+        log::info!("Finished initializing client state");
         ClientState {
             rpc_client,
             affinity_base_pages: Arc::new(affinity_base_pages),

@@ -419,7 +419,9 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
             {
                 use crate::arch::rackscale::controller_state::CONTROLLER_SHMEM_CACHES;
                 lazy_static::initialize(&CONTROLLER_SHMEM_CACHES);
+                log::info!("before lazy_static::initialize DCM_CLIENT");
                 lazy_static::initialize(&crate::arch::rackscale::dcm::DCM_CLIENT);
+                log::info!("after lazy_static::initialize DCM_CLIENT");
             } else {
                 use crate::arch::irq::{
                     REMOTE_TLB_WORK_PENDING_SHMEM_VECTOR, REMOTE_TLB_WORK_PENDING_VECTOR,
@@ -437,6 +439,7 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
             }
         }
         // Initialize the workqueues used for distributed TLB shootdowns
+        log::info!("after lazy_static::initialize RACKSCALE_CLIENT_WORKQUEUES");
         lazy_static::initialize(&crate::arch::tlb::RACKSCALE_CLIENT_WORKQUEUES);
         log::info!("Finished inititializing client work queues");
     }
@@ -472,13 +475,17 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
         .get()
         .map_or(false, |c| c.mode == crate::cmdline::Mode::Controller)
     {
+        log::info!("1 cnrfs");
         let fs_logs = crate::fs::cnrfs::allocate_logs();
         let fs_logs_cloned = fs_logs
             .try_clone()
             .expect("Not enough memory to initialize system");
         // Construct the first replica
+        log::info!("2 cnrfs");
         let fs_replica = MlnrReplica::<MlnrKernelNode>::new(fs_logs_cloned);
         crate::fs::cnrfs::init_cnrfs_on_thread(fs_replica.clone());
+        log::info!("3 cnrfs");
+
         (fs_logs, Some(fs_replica))
     } else {
         use alloc::vec::Vec;

@@ -46,11 +46,19 @@ impl ClientState {
             .map_or(false, |c| c.transport == Transport::Ethernet)
         {
             let num_cores: u64 = atopology::MACHINE_TOPOLOGY.num_threads() as u64;
+            let mid = *crate::environment::MACHINE_ID;
+            let port_base = CONTROLLER_PORT_BASE + ((mid as u16 - 1) * MAX_CORES_PER_CLIENT);
+
+            log::debug!(
+                "Sending ethernet initialization for client with {:?} cores, mid {:?}, and port {:?}",
+                num_cores,
+                mid,
+                port_base,
+            );
 
             crate::transport::ethernet::init_ethernet_rpc(
                 smoltcp::wire::IpAddress::v4(172, 31, 0, 11),
-                CONTROLLER_PORT_BASE
-                    + (*crate::environment::MACHINE_ID as u16 - 1) * MAX_CORES_PER_CLIENT,
+                port_base,
                 num_cores,
                 false,
             )

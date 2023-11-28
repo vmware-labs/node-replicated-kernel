@@ -119,7 +119,7 @@ pub(crate) fn register_client(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result
             return Ok(());
         }
 
-        *rpc_servers_to_register.lock() = req.num_cores - 1;
+        *rpc_servers_to_register.lock() = req.num_cores;
 
         // Parse out hw_threads
         let hw_threads = match unsafe { decode::<Vec<CpuThread>>(hwthreads_data) } {

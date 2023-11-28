@@ -108,9 +108,8 @@ pub(crate) fn init_ethernet_rpc(
 
     let mut clients: Vec<rpc::client::Client> = Vec::new();
 
-    for i in 0..num_cores {
-        let offset = i;
-        let server_port = server_port_base + offset as u16;
+    for core in 0..num_cores {
+        let server_port = server_port_base + core as u16;
 
         let rpc_transport = Box::new(
             TCPTransport::new(Some(server_ip), server_port, Arc::clone(&ETHERNET_IFACE))
@@ -119,7 +118,7 @@ pub(crate) fn init_ethernet_rpc(
         let mut client = Client::new(rpc_transport);
 
         // only send client data on first client registration request
-        let send_client_data = if i == 0 { true } else { false };
+        let send_client_data = if core == 0 { true } else { false };
 
         client = initialize_client(client, send_client_data, is_dcm)
             .expect("Failed to initialize client");

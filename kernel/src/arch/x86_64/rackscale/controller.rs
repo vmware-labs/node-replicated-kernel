@@ -45,36 +45,45 @@ pub(crate) fn run() {
         .get()
         .map_or(false, |c| c.transport == Transport::Ethernet)
     {
+        let port_base = CONTROLLER_PORT_BASE + (mid as u16 - 1) * MAX_CORES_PER_CLIENT;
+
+        log::debug!(
+            "Initializing transport with mid {:?} on port {:?}",
+            mid,
+            port_base
+        );
         let transport = Box::new(
-            TCPTransport::new(
-                None,
-                CONTROLLER_PORT_BASE + (mid as u16 - 1) * MAX_CORES_PER_CLIENT,
-                Arc::clone(&ETHERNET_IFACE),
-            )
-            .expect("Failed to create TCP transport"),
+            TCPTransport::new(None, port_base, Arc::clone(&ETHERNET_IFACE))
+                .expect("Failed to create TCP transport"),
         );
         let mut server = Server::new(transport);
         register_rpcs(&mut server);
         servers.push(server);
+
         ClientReadyCount.fetch_add(1, Ordering::SeqCst);
-        // while !DCMServerReady.load(Ordering::SeqCst) {}
+        while !DCMServerReady.load(Ordering::SeqCst) {}
+
         servers[0]
             .add_client(&CLIENT_REGISTRAR)
             .expect("Failed to accept client");
 
-        // wait until controller learns about client topology
-        while (*rpc_servers_to_register.lock() == 0) {
-            let start = rawtime::Instant::now();
-            while start.elapsed() < Duration::from_secs(1) {
-                spin_loop();
-            }
-        }
+        log::debug!("Initial RPC server initialized. Learning client topology...");
 
-        for i in 0..*rpc_servers_to_register.lock() {
+        // wait until controller learns about client topology
+        while (*rpc_servers_to_register.lock() == 0) {}
+
+        log::debug!(
+            "Received client topology, registering subsequent {:?} cores",
+            *rpc_servers_to_register.lock()
+        );
+
+        // register n-1 servers as we already handled the initial request
+        // will do nothing if no more servers to register
+        for i in 0..*rpc_servers_to_register.lock() - 1 {
             let transport = Box::new(
                 TCPTransport::new(
                     None,
-                    CONTROLLER_PORT_BASE + ((mid as u16 - 1) * MAX_CORES_PER_CLIENT) + i as u16 + 1,
+                    port_base + (i as u16 + 1),
                     Arc::clone(&ETHERNET_IFACE),
                 )
                 .expect("Failed to create TCP transport"),
@@ -82,20 +91,20 @@ pub(crate) fn run() {
             let mut server = Server::new(transport);
             register_rpcs(&mut server);
             servers.push(server);
-            *rpc_servers_to_register.lock() -= 1;
         }
+        *rpc_servers_to_register.lock() = 0;
 
-        ClientReadyCount.fetch_add(1, Ordering::SeqCst);
-
-        // Wait for all clients to connect before fulfilling any RPCs.
-        while !DCMServerReady.load(Ordering::SeqCst) {}
+        log::debug!("Transports added. Adding clients...");
 
         // already registered the first server
+        // will do nothing if no more servers to register
         for s_index in 1..servers.len() {
             servers[s_index]
                 .add_client(&CLIENT_REGISTRAR)
                 .expect("Failed to accept client");
         }
+
+        log::debug!("Finished registering RPC servers for client");
     } else if crate::CMDLINE
         .get()
         .map_or(false, |c| c.transport == Transport::Shmem)

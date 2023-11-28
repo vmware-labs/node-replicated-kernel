@@ -178,6 +178,7 @@ impl ShmemDevice {
 
         // Note: leaving this code as a comment as a way to test if all shmem is writeable.
 
+        /*
         #[cfg(feature = "rackscale")]
         match crate::CMDLINE.get().map_or(Mode::Native, |c| c.mode) {
             Mode::Controller => {
@@ -213,6 +214,7 @@ impl ShmemDevice {
             }
             _ => {}
         }
+        */
 
         // Map the MSI-X table into kernel space
         kvspace

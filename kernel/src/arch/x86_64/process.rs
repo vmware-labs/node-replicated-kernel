@@ -971,8 +971,12 @@ impl Executor for Ring3Executor {
             "Run on remote replica?"
         );
 
+        // THIS IS THE PROBLEM
+        log::info!("Before maybe switch vspace 2");
         self.maybe_switch_vspace();
+        log::info!("After maybe switch vspace 2");
         let entry_point = unsafe { (*self.vcpu_kernel()).resume_with_upcall };
+        log::info!("Entry point is: {:?}", entry_point);
 
         if entry_point == INVALID_EXECUTOR_START {
             Ring3Resumer::new_start(self.entry_point, self.stack_top())
@@ -980,7 +984,6 @@ impl Executor for Ring3Executor {
             // This is similar to `upcall` as it starts executing the defined upcall
             // handler, but on the regular stack (for that dispatcher) and not
             // the upcall stack. It's used to add a new core to a process.
-
             let entry_point = unsafe { (*self.vcpu_kernel()).resume_with_upcall };
             trace!("Added core entry point is at {:#x}", entry_point);
             let cpu_ctl = self.vcpu_addr().as_u64();

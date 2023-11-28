@@ -49,6 +49,7 @@ lazy_static! {
 
             let nr  = Arc::try_new(
                 NodeReplicated::new(num_replicas, |afc: AffinityChange| {
+                    log::info!("Got AffinityChange 1: {:?}", afc);
                     let pcm = kcb::per_core_mem();
                     //log::info!("Got AffinityChange: {:?}", afc);
                     match afc {
@@ -239,11 +240,15 @@ impl Dispatch for KernelNode {
             Op::AllocatePid => {
                 // TODO(performance): O(n) scan probably not what we really
                 // want, fine for now, MAX_PROCESSES is tiny
+                log::info!("in op alloc pid");
                 for i in 0..MAX_PROCESSES {
                     if !self.process_map.contains_key(&i) {
+                        log::info!("in op alloc pid 1");
                         self.process_map.try_reserve(1)?;
+                        log::info!("in op alloc pid 2");
                         let r = self.process_map.insert(i, ());
                         assert!(r.is_none(), "!contains_key");
+                        log::info!("in op alloc pid 3");
                         return Ok(NodeResult::PidAllocated(i));
                     }
                 }

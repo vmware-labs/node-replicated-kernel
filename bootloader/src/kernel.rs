@@ -5,7 +5,9 @@
 use crate::alloc::vec::Vec;
 
 use bootloader_shared::TlsInfo;
+use core::sync::atomic::{AtomicUsize, Ordering};
 use elfloader::{self, ElfLoaderErr};
+use uefi::table::boot::AllocateType;
 use x86::bits64::paging::*;
 
 use crate::vspace::*;
@@ -58,6 +60,11 @@ pub(crate) fn paddr_to_kernel_vaddr(paddr: PAddr) -> VAddr {
 /// All physical mappings are identity mapped with KERNEL_OFFSET as
 /// displacement.
 pub const KERNEL_OFFSET: usize = 1 << 46;
+
+static calls_to_alloc: AtomicUsize = AtomicUsize::new(0);
+
+const NUM_ALLOC_ADDRESSES: usize = 1;
+static ALLOC_ADDRESSES: [usize; NUM_ALLOC_ADDRESSES] = [0x1dc0e000];
 
 /// This struct stores meta-data required to construct
 /// an address space for the kernel and relocate the
@@ -162,14 +169,40 @@ impl<'a> elfloader::ElfLoader for Kernel<'a> {
             is_page_aligned!(max_end),
             "max end is not aligned to page-size"
         );
+
+        let alloc_call_num = calls_to_alloc.fetch_add(1, Ordering::SeqCst);
+        let alloc_type = if alloc_call_num < NUM_ALLOC_ADDRESSES {
+            let alloc_addr = AllocateType::Address(ALLOC_ADDRESSES[alloc_call_num]);
+            info!(
+                "Attempting to allocate index {:?} at {:?}",
+                alloc_call_num, alloc_addr
+            );
+            alloc_addr
+        } else {
+            warn!(
+                "Attempting to allocate index {:?} at AnyPage - this may not work for rackscale",
+                alloc_call_num
+            );
+            AllocateType::AnyPages
+        };
+
         let pbase = VSpace::allocate_pages_aligned(
+            alloc_type,
             ((max_end - min_base) >> BASE_PAGE_SHIFT) as usize,
             uefi::table::boot::MemoryType(KERNEL_ELF),
             max_alignment,
         );
 
         self.offset = VAddr::from(KERNEL_OFFSET + pbase.as_usize());
-        info!("Kernel loaded at address: {:#x}", self.offset);
+        info!(
+            "Kernel loaded at address: {:#x} (paddr={:#x})",
+            self.offset,
+            pbase.as_usize()
+        );
+
+        if alloc_call_num < NUM_ALLOC_ADDRESSES {
+            assert!(pbase.as_usize() == ALLOC_ADDRESSES[alloc_call_num]);
+        }
 
         // Do the mappings:
         for (base, size, _alignment, action) in self.mapping.iter() {

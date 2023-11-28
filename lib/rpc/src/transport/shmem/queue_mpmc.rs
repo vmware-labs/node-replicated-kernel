@@ -154,24 +154,17 @@ impl<'a> State<'a> {
         // Calculate and check total data to push
         let push_data_len = values.iter().fold(0, |acc, x| acc + x.len());
         assert!(push_data_len <= QUEUE_ENTRY_SIZE);
-        log::info!("Attempt to push {:?} bytes", push_data_len);
 
         if push_data_len == 0 {
             return true;
         }
 
         let mask = self.mask;
-        log::info!("before enq");
         let mut pos = self.enqueue_pos(Relaxed);
-        log::info!("after enq");
         loop {
-            log::info!("before node");
             let node = &self.buffer[pos & mask];
-            log::info!("after node");
             let seq = (*node.get()).sequence.load(Acquire);
-            log::info!("after seq");
             let diff: isize = seq as isize - pos as isize;
-            log::info!("seq {:#x} diff {:#x}", seq, diff);
 
             match diff {
                 0 => {
@@ -184,8 +177,6 @@ impl<'a> State<'a> {
                             // Copy each value into the queue
                             let mut offset = 0;
                             for d in values.iter() {
-                                log::info!("d is at {:#x}", d.as_ptr() as usize);
-
                                 (*node.get()).value[offset..offset + d.len()].copy_from_slice(d);
                                 offset += d.len();
                             }
@@ -200,7 +191,7 @@ impl<'a> State<'a> {
                 _ => pos = self.enqueue_pos(Relaxed),
             }
         }
-        log::info!("pushed {:?} bytes", push_data_len);
+        log::trace!("pushed {:?} bytes", push_data_len);
 
         true
     }

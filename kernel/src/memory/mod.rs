@@ -438,7 +438,7 @@ impl KernelAllocator {
             }
             frames
         } else {
-            log::info!("try-refill-shmem needed_base_pages={needed_base_pages} needed_large_pages={needed_large_pages} total_needed_base_pages={total_needed_base_pages} total_needed_large_pages={total_needed_large_pages}");
+            log::trace!("try-refill-shmem needed_base_pages={needed_base_pages} needed_large_pages={needed_large_pages} total_needed_base_pages={total_needed_base_pages} total_needed_large_pages={total_needed_large_pages}");
             rpc_get_shmem_frames(None, total_needed_large_pages)?
         };
 

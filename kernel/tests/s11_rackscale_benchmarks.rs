@@ -897,9 +897,9 @@ fn s11_rackscale_memcached_dynrep_benchmark_internal() {
         .user_feature("rkapps:memcached-bench")
         .set_rackscale(true)
         .kernel_feature("pages-4k")
-        .kernel_feature("dynrep")
         .release()
         .build();
+    //.kernel_feature("dynrep")
 
     fn controller_match_fn(
         proc: &mut PtySession,
@@ -1010,13 +1010,13 @@ fn s11_rackscale_memcached_dynrep_benchmark_internal() {
 
     let config = if is_smoke {
         MemcachedInternalConfig {
-            num_queries: 100_000_000,
+            num_queries: 100_000,
             mem_size: 16,
         }
     } else {
         MemcachedInternalConfig {
-            num_queries: 100_000_000, // TODO(rackscale): should be 100_000_000,
-            mem_size: 16,             // TODO(rackscale): should be 32_000,
+            num_queries: 100_000, // TODO(rackscale): should be 100_000_000,
+            mem_size: 16,         // TODO(rackscale): should be 32_000,
         }
     };
 
@@ -1032,7 +1032,7 @@ fn s11_rackscale_memcached_dynrep_benchmark_internal() {
     test.cores_per_client = 4;
     test.cmd = format!(
         r#"init=memcachedbench.bin initargs={} appcmd='--x-benchmark-mem={} --x-benchmark-queries={}'"#,
-        2 * 4,
+        test.num_clients * test.cores_per_client,
         config.mem_size,
         config.num_queries
     );

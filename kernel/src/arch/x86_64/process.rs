@@ -1038,7 +1038,8 @@ impl Executor for Ring3Executor {
                     "Switching from 0x{:x} to 0x{:x}",
                     current_pml4, replica_pml4
                 );
-                controlregs::cr3_write(self.pml4.into());
+                //  TODO: if the replica changes, maybe this sometimes needs to be self.pml4.into()?
+                controlregs::cr3_write(replica_pml4.into());
             }
         }
     }

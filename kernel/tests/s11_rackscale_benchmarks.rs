@@ -618,7 +618,7 @@ fn rackscale_memcached_internal_benchmark(transport: RackscaleTransport) {
         if cfg!(feature = "smoke") {
             60_000 as u64
         } else {
-            (MEMCACHED_MEM_SIZE_MB / 10 * 1000 + MEMCACHED_NUM_QUERIES) as u64
+            ((MEMCACHED_MEM_SIZE_MB / 10 + MEMCACHED_NUM_QUERIES) * 1000) as u64
         }
     }
 

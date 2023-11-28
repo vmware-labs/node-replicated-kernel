@@ -641,6 +641,7 @@ pub fn wait_for_sigterm_or_successful_exit_no_log(
             use rexpect::errors::ErrorKind::Timeout;
             match e {
                 Error(Timeout(expected, got, _timeout), _st) => {
+                    println!("Timeout");
                     println!("Expected: `{expected}`\n");
                     println!("Got:",);
                     let count = got.lines().count();

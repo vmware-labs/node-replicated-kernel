@@ -40,7 +40,7 @@ pub struct MemcachedResult {
 pub fn parse_memcached_output(p: &mut PtySession, output: &mut String) -> Result<MemcachedResult> {
     // x_benchmark_mem = 10 MB
     let (prev, matched) = p.exp_regex(r#"x_benchmark_mem = (\d+) MB"#)?;
-    // println!("> {}", matched);
+    println!("> {}", matched);
     let b_mem = matched.replace("x_benchmark_mem = ", "").replace(" MB", "");
 
     *output += prev.as_str();
@@ -48,7 +48,7 @@ pub fn parse_memcached_output(p: &mut PtySession, output: &mut String) -> Result
 
     // number of threads: 3
     let (prev, matched) = p.exp_regex(r#"number of threads: (\d+)"#)?;
-    // println!("> {}", matched);
+    println!("> {}", matched);
     let b_threads = matched.replace("number of threads: ", "");
 
     *output += prev.as_str();

@@ -533,36 +533,45 @@ unsafe fn timer_handler(_a: &ExceptionArguments) {
         use crate::arch::process::current_pid;
         let pid = current_pid().expect("dont have a pid?");
 
-        if rawtime::BOOT_TIME_ANCHOR.elapsed() > rawtime::Duration::from_secs(10)
+        if rawtime::BOOT_TIME_ANCHOR.elapsed() > rawtime::Duration::from_secs(33)
             && *REPLICA_STATE == 0
         {
-            info!("got a timer after 10s, remove rid 1");
+            warn!("got a timer after 10s, remove rid 1");
             let handles =
                 nrproc::NrProcess::<Ring3Process>::remove_replica(pid, 1).expect("removed");
             #[cfg(not(feature = "rackscale"))]
             super::tlb::shootdown(handles[0].clone());
             unsafe { *REPLICA_STATE.as_mut_ptr() = 1 };
         }
-        if rawtime::BOOT_TIME_ANCHOR.elapsed() > rawtime::Duration::from_secs(20)
+        if rawtime::BOOT_TIME_ANCHOR.elapsed() > rawtime::Duration::from_secs(36)
             && *REPLICA_STATE == 1
         {
-            info!("got a timer after 20s, add rid 1");
-            let handles = nrproc::NrProcess::<Ring3Process>::add_replica(pid, 1).expect("added");
+            warn!("got a timer after 20s, add rid 1");
+            let handles =
+            nrproc::NrProcess::<Ring3Process>::remove_replica(pid, 2).expect("removed");
             #[cfg(not(feature = "rackscale"))]
             super::tlb::shootdown(handles[0].clone());
             unsafe { *REPLICA_STATE.as_mut_ptr() = 2 };
         }
-        if rawtime::BOOT_TIME_ANCHOR.elapsed() > rawtime::Duration::from_secs(30)
+        if rawtime::BOOT_TIME_ANCHOR.elapsed() > rawtime::Duration::from_secs(39)
             && *REPLICA_STATE == 2
         {
-            info!("got a timer after 30s");
+            warn!("got a timer after 30s");
             unsafe { *REPLICA_STATE.as_mut_ptr() = 3 };
+
+            let handles = nrproc::NrProcess::<Ring3Process>::add_replica(pid, 1).expect("added");
+            #[cfg(not(feature = "rackscale"))]
+            super::tlb::shootdown(handles[0].clone());
         }
-        if rawtime::BOOT_TIME_ANCHOR.elapsed() > rawtime::Duration::from_secs(40)
+        if rawtime::BOOT_TIME_ANCHOR.elapsed() > rawtime::Duration::from_secs(32)
             && *REPLICA_STATE == 3
         {
-            info!("got a timer after 40s");
+            warn!("got a timer after 40s");
             unsafe { *REPLICA_STATE.as_mut_ptr() = 4 };
+
+            let handles = nrproc::NrProcess::<Ring3Process>::add_replica(pid, 2).expect("added");
+            #[cfg(not(feature = "rackscale"))]
+            super::tlb::shootdown(handles[0].clone());
         }
     }
     let kcb = get_kcb();

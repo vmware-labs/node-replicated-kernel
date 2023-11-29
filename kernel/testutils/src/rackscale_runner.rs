@@ -397,11 +397,12 @@ impl<T: Clone + Send + 'static> RackscaleRun<T> {
         let _ignore = dcm.process.kill(SIGKILL);
 
         // If there's been an error, print everything
-        if controller_ret.is_err() || (&client_rets).into_iter().any(|ret| ret.is_err()) {
+        if true { //controller_ret.is_err() || (&client_rets).into_iter().any(|ret| ret.is_err()) {
             let outputs = all_outputs.lock().expect("Failed to get output lock");
             for (name, output) in outputs.iter() {
                 log_qemu_out_with_name(None, name.to_string(), output.to_string());
             }
+            /*
             if controller_ret.is_err() {
                 let dcm_log = dcm.exp_eof();
                 if dcm_log.is_ok() {
@@ -410,6 +411,7 @@ impl<T: Clone + Send + 'static> RackscaleRun<T> {
                     eprintln!("Failed to print DCM log.");
                 }
             }
+            */
         }
 
         for client_ret in client_rets {

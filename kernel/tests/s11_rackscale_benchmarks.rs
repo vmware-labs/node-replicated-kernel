@@ -897,6 +897,7 @@ fn s11_rackscale_memcached_dynrep_benchmark_internal() {
         .user_feature("rkapps:memcached-bench")
         .set_rackscale(true)
         .kernel_feature("pages-4k")
+        .kernel_feature("dynrep")
         .release()
         .build();
     //.kernel_feature("dynrep")
@@ -1010,7 +1011,7 @@ fn s11_rackscale_memcached_dynrep_benchmark_internal() {
 
     let config = if is_smoke {
         MemcachedInternalConfig {
-            num_queries: 100_000,
+            num_queries: 100_000_000,
             mem_size: 16, //4 * 1024,
         }
     } else {
@@ -1024,7 +1025,7 @@ fn s11_rackscale_memcached_dynrep_benchmark_internal() {
     test.controller_match_fn = controller_match_fn;
     test.transport = transport;
     test.controller_timeout *= 2; //*= 8;
-                                  //test.client_timeout *= 8;
+    test.client_timeout *= 2;
     test.shmem_size = 1024 * 64;
     test.use_affinity_shmem = cfg!(feature = "affinity-shmem");
     test.use_qemu_huge_pages = cfg!(feature = "affinity-shmem");

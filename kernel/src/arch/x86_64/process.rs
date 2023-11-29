@@ -1030,15 +1030,52 @@ impl Executor for Ring3Executor {
     }
 
     fn maybe_switch_vspace(&self) {
+        //use crate::arch::vspace::page_table::ReadOnlyPageTable;
+
         let replica_pml4 = NrProcess::<Ring3Process>::ptroot(self.pid).expect("Can't read pml4");
         unsafe {
             let current_pml4 = PAddr::from(controlregs::cr3());
+            /*
+            let pml4_entry = paddr_to_kernel_vaddr(current_pml4).as_ptr::<PML4Entry>();
+            let pml4_slice = core::slice::from_raw_parts(pml4_entry, 512);
+            let current_ropt = ReadOnlyPageTable {
+                pml4: pml4_slice.try_into().unwrap(),
+            };
+            log::info!("Printing current read only page table");
+            let current_walk = current_ropt.walk();
+            log::info!("current len = {:?}", current_walk.len());
+
+            let pml4_entry_rep = paddr_to_kernel_vaddr(replica_pml4).as_ptr::<PML4Entry>();
+            let pml4_slice_rep = core::slice::from_raw_parts(pml4_entry_rep, 512);
+            let rep_ropt = ReadOnlyPageTable {
+                pml4: pml4_slice_rep.try_into().unwrap(),
+            };
+            log::info!("Printing replica read only page table");
+            let rep_walk = rep_ropt.walk();
+
+            //assert!(current_walk == rep_walk);
+            let max = core::cmp::min(current_walk.len(), rep_walk.len());
+            log::info!("current len = {:?} rep len = {:?}", current_walk.len(), rep_walk.len());
+            for i in 0..max {
+                if current_walk[i] != rep_walk[i] {
+                    panic!("index {:?} current={:#x} replica={:#x}", i, current_walk[i], rep_walk[i]);
+                }
+            }
+            */
+
+            /*
+            for i in 0..512 {
+                if pml4_slice[i] != pml4_slice_rep[i] {
+                    log::info!("index={:?} current={:?} replica={:?}", i, pml4_slice[i], pml4_slice_rep[i]);
+                }
+            }
+            */
+
             if current_pml4 != replica_pml4 {
                 info!(
                     "Switching from 0x{:x} to 0x{:x}",
                     current_pml4, replica_pml4
                 );
-                //  TODO: if the replica changes, maybe this sometimes needs to be self.pml4.into()?
                 controlregs::cr3_write(replica_pml4.into());
             }
         }
@@ -1427,6 +1464,8 @@ impl Process for Ring3Process {
         module_name: String,
         writeable_sections: Vec<Frame>,
     ) -> Result<(), KError> {
+        info!("IN PROCESS LOAD");
+
         self.pid = pid;
         // TODO(error-handling): properly unwind on error
         self.writeable_sections.clear();
@@ -1466,11 +1505,26 @@ impl Process for Ring3Process {
         // TODO(broken): Big (>= 2 MiB) allocations should be inserted here too
         // TODO(ugly): Find a better way to express this mess
         let kvspace = super::vspace::INITIAL_VSPACE.lock();
+
+        use crate::arch::vspace::page_table::ReadOnlyPageTable;
+        let pt = ReadOnlyPageTable {
+            pml4: &kvspace.pml4,
+        };
+        let walk = pt.walk();
+        info!("Walk is len: {:?}", walk.len());
+        for (addr_idx, frame, action) in walk {
+            self.vspace
+                .map_frame(addr_idx, frame, action)
+                .expect("failed map");
+        }
+
+        /*
         for i in 128..=510 {
             let kernel_pml_entry = kvspace.pml4[i];
-            trace!("Patched in kernel mappings at {:?}", kernel_pml_entry);
+            info!("Patched in kernel mappings at {:?}", kernel_pml_entry);
             self.vspace.page_table.pml4[i] = kernel_pml_entry;
         }
+        */
 
         Ok(())
     }

@@ -761,6 +761,8 @@ unsafe impl GlobalAlloc for KernelAllocator {
     }
 
     unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
+        #[cfg(feature = "rackscale")]
+        let mut drop = true;
         try_per_core_mem().map_or_else(
             || {
                 unreachable!("Trying to reallocate {:p} {:?} without a KCB.", ptr, layout);
@@ -788,7 +790,8 @@ unsafe impl GlobalAlloc for KernelAllocator {
                             } else if is_shmem_affinity(affinity) && !is_shmem_addr_with_affinity(ptr as u64, affinity, true) {
                                 // TODO(rackscale): should switch to non-shmem affinity for alloc below.
                                 // TODO(rackscale): check if shmem is a match for id?
-                                //panic!("Trying to realloc shmem to wrong or non- shmem allocator");
+                                warn!("Trying to realloc shmem to wrong or non- shmem allocator");
+                                drop = false;
                             } else if !is_shmem_affinity(affinity) && is_shmem_addr(ptr as u64, false, true) {
                                 // TODO(rackscale): should switch to use shmem affinity for alloc below.
                                 // TODO(rackscale): check if shmem is a match for id?
@@ -806,6 +809,12 @@ unsafe impl GlobalAlloc for KernelAllocator {
                             new_ptr,
                             core::cmp::min(layout.size(), new_size),
                         );
+                        #[cfg(feature = "rackscale")]
+                        if drop {
+                            self.dealloc(ptr, layout);
+                        }
+
+                        #[cfg(not(feature = "rackscale"))]
                         self.dealloc(ptr, layout);
                     }
                     new_ptr

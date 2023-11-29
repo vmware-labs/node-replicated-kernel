@@ -49,7 +49,7 @@ lazy_static! {
 
             let nr  = Arc::try_new(
                 NodeReplicated::new(num_replicas, |afc: AffinityChange| {
-                    log::info!("Got AffinityChange 1: {:?}", afc);
+                    log::trace!("Got AffinityChange 1: {:?}", afc);
                     let pcm = kcb::per_core_mem();
                     //log::info!("Got AffinityChange: {:?}", afc);
                     match afc {

@@ -905,7 +905,7 @@ fn s11_rackscale_memcached_dynrep_benchmark_internal() {
     fn controller_match_fn(
         proc: &mut PtySession,
         output: &mut String,
-        _cores_per_client: usize,
+        cores_per_client: usize,
         num_clients: usize,
         file_name: &str,
         is_baseline: bool,
@@ -948,6 +948,30 @@ fn s11_rackscale_memcached_dynrep_benchmark_internal() {
         *output += prev.as_str();
         *output += matched.as_str();
 
+        let mut thread_results = Vec::new();
+        let mut num_not_finished = num_clients * cores_per_client;
+        while num_not_finished > 0 {
+            let (prev, matched) = proc.exp_regex(r#"thread.(\d+).*\r\r"#)?;
+            *output += prev.as_str();
+            *output += matched.as_str();
+
+            if matched.contains("done") {
+                println!("> Thread done: {:?}", matched);
+                num_not_finished -= 1;
+            } else if matched.contains("executed") {
+                let matched = matched.replace("thread.", "");
+                let tokens = matched.split(" ").collect::<Vec<&str>>();
+                let thread_id = tokens[0].to_string();
+                let queries = tokens[2].to_string();
+                let time = tokens[5].to_string();
+                println!(
+                    "> thread {:?} performed {:?} queries in {:?} us",
+                    thread_id, queries, time
+                );
+                thread_results.push((thread_id, queries, time));
+            }
+        }
+
         // benchmark took 129 seconds
         let (prev, matched) = proc.exp_regex(r#"benchmark took (\d+) ms"#)?;
         println!("> {}", matched);
@@ -986,7 +1010,7 @@ fn s11_rackscale_memcached_dynrep_benchmark_internal() {
             .open(file_name)
             .expect("Can't open file");
         if write_headers {
-            let row = "git_rev,benchmark,nthreads,mem,queries,time,thpt,num_clients,num_replicas\n";
+            let row = "git_rev,benchmark,nthreads,mem,queries,time,thpt,num_clients,num_replicas,thead_num\n";
             let r = csv_file.write(row.as_bytes());
             assert!(r.is_ok());
         }
@@ -996,13 +1020,26 @@ fn s11_rackscale_memcached_dynrep_benchmark_internal() {
         let r = csv_file.write(format!("{},", env!("GIT_HASH")).as_bytes());
         assert!(r.is_ok());
         let out = format!(
-            "memcached,{},{},{},{},{},{},{}",
+            "memcached,{},{},{},{},{},{},{},aggregate",
             b_threads, b_mem, b_queries, b_time, b_thpt, actual_num_clients, num_clients
         );
+
         let r = csv_file.write(out.as_bytes());
         assert!(r.is_ok());
         let r = csv_file.write("\n".as_bytes());
         assert!(r.is_ok());
+
+        for (thread_id, queries, time) in thread_results {
+            let out = format!(
+                "memcached,{},{},{},{},,{},{},{}",
+                b_threads, b_mem, queries, time, actual_num_clients, num_clients, thread_id
+            );
+
+            let r = csv_file.write(out.as_bytes());
+            assert!(r.is_ok());
+            let r = csv_file.write("\n".as_bytes());
+            assert!(r.is_ok());
+        }
 
         println!("> {}", output);
 

@@ -1010,7 +1010,7 @@ fn s11_rackscale_memcached_dynrep_benchmark_internal() {
             .open(file_name)
             .expect("Can't open file");
         if write_headers {
-            let row = "git_rev,benchmark,nthreads,mem,queries,time,thpt,num_clients,num_replicas,thead_num\n";
+            let row = "git_rev,benchmark,nthreads,mem,queries,time,thpt,num_clients,num_replicas,thread_num\n";
             let r = csv_file.write(row.as_bytes());
             assert!(r.is_ok());
         }
@@ -1020,8 +1020,15 @@ fn s11_rackscale_memcached_dynrep_benchmark_internal() {
         let r = csv_file.write(format!("{},", env!("GIT_HASH")).as_bytes());
         assert!(r.is_ok());
         let out = format!(
-            "memcached,{},{},{},{},{},{},{},aggregate",
-            b_threads, b_mem, b_queries, b_time, b_thpt, actual_num_clients, num_clients
+            "memcached,{},{},{},{},{},{},{},{}",
+            b_threads,
+            b_mem,
+            b_queries,
+            b_time,
+            b_thpt,
+            actual_num_clients,
+            num_clients,
+            "aggregate"
         );
 
         let r = csv_file.write(out.as_bytes());
@@ -1030,9 +1037,12 @@ fn s11_rackscale_memcached_dynrep_benchmark_internal() {
         assert!(r.is_ok());
 
         for (thread_id, queries, time) in thread_results {
+            let r = csv_file.write(format!("{},", env!("GIT_HASH")).as_bytes());
+            assert!(r.is_ok());
+
             let out = format!(
-                "memcached,{},{},{},{},,{},{},{}",
-                b_threads, b_mem, queries, time, actual_num_clients, num_clients, thread_id
+                "memcached,{},{},{},{},{},{},{},{}",
+                b_threads, b_mem, queries, time, " ", actual_num_clients, num_clients, thread_id
             );
 
             let r = csv_file.write(out.as_bytes());
@@ -1050,11 +1060,15 @@ fn s11_rackscale_memcached_dynrep_benchmark_internal() {
         MemcachedInternalConfig {
             num_queries: 100_000_000,
             mem_size: 16, //4 * 1024,
+                          //num_queries: 1_000_000_000,
+                          //mem_size: 512,
         }
     } else {
         MemcachedInternalConfig {
-            num_queries: 100_000, // TODO(rackscale): should be 100_000_000,
-            mem_size: 16,         // TODO(rackscale): should be 32_000,
+            num_queries: 100_000_000,
+            mem_size: 16, //4 * 1024,
+                          //num_queries: 1_000_000_000, // 1_000_000_000, // TODO(rackscale): should be 100_000_000,
+                          //mem_size: 512,              // TODO(rackscale): should be 32_000,
         }
     };
 
@@ -1069,7 +1083,7 @@ fn s11_rackscale_memcached_dynrep_benchmark_internal() {
     test.file_name = file_name.to_string();
     test.run_dhcpd_for_baseline = true;
     test.num_clients = 3;
-    test.cores_per_client = 1;
+    test.cores_per_client = 1; // 2
     test.cmd = format!(
         r#"init=memcachedbench.bin initargs={} appcmd='--x-benchmark-mem={} --x-benchmark-queries={}'"#,
         test.num_clients * test.cores_per_client,

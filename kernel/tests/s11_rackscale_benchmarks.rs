@@ -1059,14 +1059,14 @@ fn s11_rackscale_memcached_dynrep_benchmark_internal() {
     let config = if is_smoke {
         MemcachedInternalConfig {
             num_queries: 100_000_000,
-            mem_size: 16, //4 * 1024,
+            mem_size: 64*1024, //4 * 1024,
                           //num_queries: 1_000_000_000,
                           //mem_size: 512,
         }
     } else {
         MemcachedInternalConfig {
             num_queries: 100_000_000,
-            mem_size: 16, //4 * 1024,
+            mem_size: 64*1024, //4 * 1024,
                           //num_queries: 1_000_000_000, // 1_000_000_000, // TODO(rackscale): should be 100_000_000,
                           //mem_size: 512,              // TODO(rackscale): should be 32_000,
         }
@@ -1075,14 +1075,15 @@ fn s11_rackscale_memcached_dynrep_benchmark_internal() {
     let mut test = RackscaleRun::new("userspace-smp".to_string(), built);
     test.controller_match_fn = controller_match_fn;
     test.transport = transport;
-    test.controller_timeout *= 2; //*= 8;
-    test.client_timeout *= 2;
-    test.shmem_size = 1024 * 2;
+    test.controller_timeout *= 100; //*= 8; TODO: make this dependent on the memory size
+    test.client_timeout *= 100;
+    test.shmem_size = std::cmp::max(1024 * 2, 2*config.mem_size);
     test.use_affinity_shmem = cfg!(feature = "affinity-shmem");
     test.use_qemu_huge_pages = cfg!(feature = "affinity-shmem");
     test.file_name = file_name.to_string();
     test.run_dhcpd_for_baseline = true;
     test.num_clients = 3;
+    test.memory = 2*4096;
     test.cores_per_client = 1; // 2
     test.cmd = format!(
         r#"init=memcachedbench.bin initargs={} appcmd='--x-benchmark-mem={} --x-benchmark-queries={}'"#,

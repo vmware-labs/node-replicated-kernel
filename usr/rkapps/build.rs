@@ -133,7 +133,7 @@ fn main() {
         println!("CLONE {:?}", out_dir);
         let url = "https://github.com/gz/librettos-packages.git";
         Command::new("git")
-            .args(&["clone", "--depth=1", url, out_dir.as_str()])
+            .args(&["clone", url, out_dir.as_str()])
             .status()
             .unwrap();
 

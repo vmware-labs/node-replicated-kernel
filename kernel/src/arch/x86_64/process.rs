@@ -76,7 +76,7 @@ lazy_static! {
     pub(crate) static ref PROCESS_TABLE: ArrayVec<Arc<RwLock<NodeReplicated<NrProcess<Ring3Process>>>>, MAX_PROCESSES> = {
         use crate::memory::shmem_affinity::mid_to_shmem_affinity;
         use crate::arch::kcb::per_core_mem;
-        use crate::environment::NUM_MACHINES;
+        //use crate::environment::NUM_MACHINES;
 
         if !crate::CMDLINE
             .get()
@@ -107,7 +107,7 @@ lazy_static! {
 
         // Want at least one replica...
         let num_replicas =
-            NonZeroUsize::new(core::cmp::max(1, atopology::MACHINE_TOPOLOGY.num_nodes() * (*NUM_MACHINES))).unwrap();
+            NonZeroUsize::new(3).unwrap();
         let mut processes = ArrayVec::new();
 
         for _pid in 0..MAX_PROCESSES {
@@ -191,6 +191,7 @@ lazy_static! {
 }
 
 #[cfg(not(feature = "rackscale"))]
+#[allow(unused_variables)]
 fn create_process_table(
 ) -> ArrayVec<Arc<RwLock<NodeReplicated<NrProcess<Ring3Process>>>>, MAX_PROCESSES> {
     // Want at least one replica...
@@ -213,6 +214,7 @@ fn create_process_table(
                     match afc {
                         AffinityChange::Replica(r) => {
                             let affinity = { pcm.physical_memory.borrow().affinity };
+                            #[cfg(feature = "rackscale")]
                             pcm.set_mem_affinity(
                                 crate::memory::shmem_affinity::mid_to_shmem_affinity(r),
                             )
@@ -972,9 +974,7 @@ impl Executor for Ring3Executor {
         );
 
         // THIS IS THE PROBLEM
-        log::info!("Before maybe switch vspace 2");
         self.maybe_switch_vspace();
-        log::info!("After maybe switch vspace 2");
         let entry_point = unsafe { (*self.vcpu_kernel()).resume_with_upcall };
         log::info!("Entry point is: {:?}", entry_point);
 
@@ -1035,48 +1035,16 @@ impl Executor for Ring3Executor {
         let replica_pml4 = NrProcess::<Ring3Process>::ptroot(self.pid).expect("Can't read pml4");
         unsafe {
             let current_pml4 = PAddr::from(controlregs::cr3());
-            /*
-            let pml4_entry = paddr_to_kernel_vaddr(current_pml4).as_ptr::<PML4Entry>();
-            let pml4_slice = core::slice::from_raw_parts(pml4_entry, 512);
-            let current_ropt = ReadOnlyPageTable {
-                pml4: pml4_slice.try_into().unwrap(),
-            };
-            log::info!("Printing current read only page table");
-            let current_walk = current_ropt.walk();
-            log::info!("current len = {:?}", current_walk.len());
-
-            let pml4_entry_rep = paddr_to_kernel_vaddr(replica_pml4).as_ptr::<PML4Entry>();
-            let pml4_slice_rep = core::slice::from_raw_parts(pml4_entry_rep, 512);
-            let rep_ropt = ReadOnlyPageTable {
-                pml4: pml4_slice_rep.try_into().unwrap(),
-            };
-            log::info!("Printing replica read only page table");
-            let rep_walk = rep_ropt.walk();
-
-            //assert!(current_walk == rep_walk);
-            let max = core::cmp::min(current_walk.len(), rep_walk.len());
-            log::info!("current len = {:?} rep len = {:?}", current_walk.len(), rep_walk.len());
-            for i in 0..max {
-                if current_walk[i] != rep_walk[i] {
-                    panic!("index {:?} current={:#x} replica={:#x}", i, current_walk[i], rep_walk[i]);
-                }
-            }
-            */
-
-            /*
-            for i in 0..512 {
-                if pml4_slice[i] != pml4_slice_rep[i] {
-                    log::info!("index={:?} current={:?} replica={:?}", i, pml4_slice[i], pml4_slice_rep[i]);
-                }
-            }
-            */
-
             if current_pml4 != replica_pml4 {
-                info!(
+                debug!(
                     "Switching from 0x{:x} to 0x{:x}",
                     current_pml4, replica_pml4
                 );
                 controlregs::cr3_write(replica_pml4.into());
+                debug!("switched");
+            }
+            else {
+                debug!("not switched, the same");
             }
         }
     }

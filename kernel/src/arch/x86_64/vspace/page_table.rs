@@ -37,6 +37,8 @@ pub(crate) struct PageTable {
 
 impl Clone for PageTable {
     fn clone(&self) -> Self {
+        let start = rawtime::Instant::now();
+
         fn alloc_frame() -> Frame {
             let frame_ptr = unsafe {
                 let ptr = alloc::alloc::alloc_zeroed(PT_LAYOUT);
@@ -71,7 +73,7 @@ impl Clone for PageTable {
 
         // Do a DFS and find all mapped entries and replicate them in the new `pt`
         for pml4_idx in 0..PAGE_SIZE_ENTRIES {
-            if pml4_idx < pml4_index(KERNEL_BASE.into()) && self.pml4[pml4_idx].is_present() {
+            if self.pml4[pml4_idx].is_present() {
                 cloned_pt.pml4[pml4_idx] = new_pdpt();
 
                 for pdpt_idx in 0..PAGE_SIZE_ENTRIES {
@@ -115,7 +117,7 @@ impl Clone for PageTable {
                 }
             }
         }
-
+        log::debug!("PageTable::clone() completed in {:?}. {:#x}", start.elapsed(), cloned_pt.pml4_address());
         cloned_pt
     }
 }
@@ -123,7 +125,7 @@ impl Clone for PageTable {
 impl Drop for PageTable {
     #[allow(unreachable_code)]
     fn drop(&mut self) {
-        log::info!("calling drop in PageTable, skipping for now");
+        log::debug!("calling drop in PageTable, skipping for now");
         return;
 
         use alloc::alloc::dealloc;

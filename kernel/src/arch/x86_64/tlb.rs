@@ -172,6 +172,10 @@ impl Shootdown {
 
         if self.vregion.start == 0u64 && self.vregion.end == 0u64 {
             log::info!("got special unmap for 0..0, skipping TLB flush");
+            use crate::process::Executor;
+            let pborrow = super::process::CURRENT_EXECUTOR.borrow_mut();
+            let p = pborrow.as_ref().unwrap();
+            p.maybe_switch_vspace();
             return;
         }
 
@@ -237,6 +241,13 @@ pub(crate) fn remote_dequeue(mid: kpi::system::MachineId) {
             // Process locally, then mark as complete
             shootdown(h);
             s.acknowledge();
+
+            //use crate::process::Executor;
+            //let pborrow = super::process::CURRENT_EXECUTOR.borrow_mut();
+            //let p = pborrow.as_ref().unwrap();
+            //p.maybe_switch_vspace();
+            //drop(pborrow);
+
         }
         None => return,
     }

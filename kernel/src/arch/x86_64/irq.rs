@@ -509,6 +509,14 @@ unsafe fn bkp_handler(a: &ExceptionArguments) {
 #[thread_local]
 pub(crate) static REPLICA_STATE: Lazy<usize> = Lazy::new(|| 0);
 
+
+pub static DYNREP_ENABLED: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
+
+use lazy_static::lazy_static;
+lazy_static! {
+    pub static ref DYNREP_TIME_ANCHOR: rawtime::Instant = rawtime::Instant::now();
+}
+
 /// Handler for the timer exception.
 ///
 /// We currently use it to periodically make sure that a replica
@@ -529,51 +537,74 @@ unsafe fn timer_handler(_a: &ExceptionArguments) {
     }
 
     #[cfg(feature = "dynrep")]
-    if *crate::environment::MT_ID == 4 {
+    if *crate::environment::MT_ID == 0 && DYNREP_ENABLED.load(core::sync::atomic::Ordering::SeqCst) {
         use crate::arch::process::current_pid;
         let pid = current_pid().expect("dont have a pid?");
 
-        if rawtime::BOOT_TIME_ANCHOR.elapsed() > rawtime::Duration::from_secs(33)
+        if DYNREP_TIME_ANCHOR.elapsed() > rawtime::Duration::from_secs(0)
             && *REPLICA_STATE == 0
         {
-            warn!("got a timer after 10s, remove rid 1");
+            warn!("PHASE 1: remove rid 1");
+
             let handles =
                 nrproc::NrProcess::<Ring3Process>::remove_replica(pid, 1).expect("removed");
+
             #[cfg(not(feature = "rackscale"))]
             super::tlb::shootdown(handles[0].clone());
+            #[cfg(feature = "rackscale")]
+            super::tlb::remote_shootdown(handles);
+
             unsafe { *REPLICA_STATE.as_mut_ptr() = 1 };
         }
-        if rawtime::BOOT_TIME_ANCHOR.elapsed() > rawtime::Duration::from_secs(36)
+        if DYNREP_TIME_ANCHOR.elapsed() > rawtime::Duration::from_secs(3)
             && *REPLICA_STATE == 1
         {
-            warn!("got a timer after 20s, add rid 1");
+            warn!("PHASE 2: remove rid 2");
+
             let handles =
-            nrproc::NrProcess::<Ring3Process>::remove_replica(pid, 2).expect("removed");
+                nrproc::NrProcess::<Ring3Process>::remove_replica(pid, 2).expect("removed");
+
             #[cfg(not(feature = "rackscale"))]
             super::tlb::shootdown(handles[0].clone());
+            #[cfg(feature = "rackscale")]
+            super::tlb::remote_shootdown(handles);
+
             unsafe { *REPLICA_STATE.as_mut_ptr() = 2 };
         }
-        if rawtime::BOOT_TIME_ANCHOR.elapsed() > rawtime::Duration::from_secs(39)
+        if DYNREP_TIME_ANCHOR.elapsed() > rawtime::Duration::from_secs(6)
             && *REPLICA_STATE == 2
         {
-            warn!("got a timer after 30s");
-            unsafe { *REPLICA_STATE.as_mut_ptr() = 3 };
+            warn!("PHASE 3: add rid 1");
 
             let handles = nrproc::NrProcess::<Ring3Process>::add_replica(pid, 1).expect("added");
+
             #[cfg(not(feature = "rackscale"))]
             super::tlb::shootdown(handles[0].clone());
+            #[cfg(feature = "rackscale")]
+            super::tlb::remote_shootdown(handles);
+
+            unsafe { *REPLICA_STATE.as_mut_ptr() = 3 };
+
         }
-        if rawtime::BOOT_TIME_ANCHOR.elapsed() > rawtime::Duration::from_secs(32)
+        if DYNREP_TIME_ANCHOR.elapsed() > rawtime::Duration::from_secs(9)
             && *REPLICA_STATE == 3
         {
-            warn!("got a timer after 40s");
-            unsafe { *REPLICA_STATE.as_mut_ptr() = 4 };
+            warn!("PHASE 4: add rid 2");
 
             let handles = nrproc::NrProcess::<Ring3Process>::add_replica(pid, 2).expect("added");
+
             #[cfg(not(feature = "rackscale"))]
             super::tlb::shootdown(handles[0].clone());
+            #[cfg(feature = "rackscale")]
+            super::tlb::remote_shootdown(handles);
+
+            unsafe { *REPLICA_STATE.as_mut_ptr() = 4 };
         }
     }
+    else {
+        //info!("dynrep not enabled MT_ID={} DYNREP_ENABLED.load(core::sync::atomic::Ordering::SeqCst)={}", *crate::environment::MT_ID, DYNREP_ENABLED.load(core::sync::atomic::Ordering::SeqCst));
+    }
+
     let kcb = get_kcb();
 
     if super::process::has_executor() {
@@ -798,10 +829,10 @@ pub extern "C" fn handle_generic_exception(a: ExceptionArguments) -> ! {
                 // Return immediately
                 TLB_TIME.update(|t| t + x86::time::rdtsc() - start);
 
-                let mut pborrow = super::process::CURRENT_EXECUTOR.borrow_mut();
-                let p = pborrow.as_ref().unwrap();
-                p.maybe_switch_vspace();
-                drop(pborrow);
+                //let mut pborrow = super::process::CURRENT_EXECUTOR.borrow_mut();
+                //let p = pborrow.as_ref().unwrap();
+                //p.maybe_switch_vspace();
+                //drop(pborrow);
 
                 kcb_iret_handle(kcb).resume()
             } else {

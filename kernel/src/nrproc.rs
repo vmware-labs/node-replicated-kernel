@@ -33,7 +33,7 @@ pub(crate) fn register_thread_with_process_replicas() {
     #[cfg(not(feature = "rackscale"))]
     let node = *crate::environment::NODE_ID;
     #[cfg(feature = "rackscale")]
-    let node = *crate::environment::MACHINE_ID; // node = 0;
+    let node = *crate::environment::MACHINE_ID - 1; // node = 0;
 
     debug_assert!(PROCESS_TABLE.len() > node, "Invalid Node ID");
 
@@ -170,7 +170,7 @@ impl<P: Process> NrProcess<P> {
             .write(*crate::environment::MT_ID)
             .add_replica(rid)
             .expect("add_replica failed");
-        log::info!("added_replica {pid} {rid}");
+        log::debug!("added_replica {pid} {rid}");
 
         handle
     }

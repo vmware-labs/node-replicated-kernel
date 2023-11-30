@@ -556,7 +556,7 @@ unsafe fn timer_handler(_a: &ExceptionArguments) {
 
             unsafe { *REPLICA_STATE.as_mut_ptr() = 1 };
         }
-        if DYNREP_TIME_ANCHOR.elapsed() > rawtime::Duration::from_secs(3)
+        if DYNREP_TIME_ANCHOR.elapsed() > rawtime::Duration::from_secs(5)
             && *REPLICA_STATE == 1
         {
             warn!("PHASE 2: remove rid 2");
@@ -571,7 +571,7 @@ unsafe fn timer_handler(_a: &ExceptionArguments) {
 
             unsafe { *REPLICA_STATE.as_mut_ptr() = 2 };
         }
-        if DYNREP_TIME_ANCHOR.elapsed() > rawtime::Duration::from_secs(6)
+        if DYNREP_TIME_ANCHOR.elapsed() > rawtime::Duration::from_secs(10)
             && *REPLICA_STATE == 2
         {
             warn!("PHASE 3: add rid 1");
@@ -586,7 +586,7 @@ unsafe fn timer_handler(_a: &ExceptionArguments) {
             unsafe { *REPLICA_STATE.as_mut_ptr() = 3 };
 
         }
-        if DYNREP_TIME_ANCHOR.elapsed() > rawtime::Duration::from_secs(9)
+        if DYNREP_TIME_ANCHOR.elapsed() > rawtime::Duration::from_secs(15)
             && *REPLICA_STATE == 3
         {
             warn!("PHASE 4: add rid 2");

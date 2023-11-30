@@ -11,7 +11,7 @@ use std::time::Duration;
 use rexpect::errors::*;
 use rexpect::session::{spawn_command, PtySession};
 
-pub const MEMCACHED_MEM_SIZE_MB: usize = 64 * 1024;
+pub const MEMCACHED_MEM_SIZE_MB: usize = 64 * 1024; // 64 * 1024;
 pub const MEMCACHED_NUM_QUERIES: usize = 10_000_000;
 
 pub const RACKSCALE_MEMCACHED_CSV_COLUMNS: &str =
@@ -56,14 +56,25 @@ pub fn parse_memcached_output(p: &mut PtySession, output: &mut String) -> Result
 
     // number of keys: 131072
     let (prev, matched) = p.exp_regex(r#"number of keys: (\d+)"#)?;
-    // println!("> {}", matched);
+    println!("> {}", matched);
 
     *output += prev.as_str();
     *output += matched.as_str();
 
+
+    // number of keys: 131072
+    let (prev, matched) = p.exp_regex(r#"Prefilling slabs"#)?;
+    println!("> {}", matched);
+
+    *output += prev.as_str();
+    *output += matched.as_str();
+
+    let (prev, matched) = p.exp_regex(r#"Executing (\d+) queries with (\d+) threads."#)?;
+    println!("> {}", matched);
+
     // benchmark took 129 seconds
     let (prev, matched) = p.exp_regex(r#"benchmark took (\d+) ms"#)?;
-    // println!("> {}", matched);
+    println!("> {}", matched);
     let b_time = matched.replace("benchmark took ", "").replace(" ms", "");
 
     *output += prev.as_str();

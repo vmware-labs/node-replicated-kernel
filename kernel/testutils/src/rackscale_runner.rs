@@ -888,7 +888,7 @@ impl<T: Clone + Send + 'static> RackscaleBench<T> {
                 test_run.run_baseline();
             } else {
                 test_run.client_timeout = (self.rackscale_timeout_fn)(total_cores);
-                test_run.memory = (self.mem_fn)(total_cores, cores_per_client, is_smoke) / test_run.num_clients;
+                test_run.memory = (self.mem_fn)(total_cores, cores_per_client, is_smoke);
 
                 // Set controller timeout for this test
                 test_run.controller_timeout = test_run.client_timeout;

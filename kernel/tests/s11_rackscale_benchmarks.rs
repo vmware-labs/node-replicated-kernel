@@ -518,6 +518,8 @@ fn rackscale_memcached_internal_benchmark(transport: RackscaleTransport) {
         // match the title
         let (prev, matched) = proc.exp_regex(r#"INTERNAL BENCHMARK CONFIGURE"#)?;
 
+        println!("Configured. Waiting for benchmark to start...");
+
         *output += prev.as_str();
         *output += matched.as_str();
 
@@ -618,7 +620,7 @@ fn rackscale_memcached_internal_benchmark(transport: RackscaleTransport) {
         if cfg!(feature = "smoke") {
             60_000 as u64
         } else {
-            ((MEMCACHED_MEM_SIZE_MB / 10 + MEMCACHED_NUM_QUERIES) * 1000) as u64
+            ((MEMCACHED_MEM_SIZE_MB * 1000 / 10 + MEMCACHED_NUM_QUERIES / 1000)) as u64
         }
     }
 
@@ -630,12 +632,13 @@ fn rackscale_memcached_internal_benchmark(transport: RackscaleTransport) {
         } else {
             // Memory must also be divisible by number of nodes, which could be 1, 2, 3, or 4
             // memory = result of this function / num_clients  - shmem_size
-            (base_memory
-                + std::cmp::max(
-                    MEMCACHED_MEM_SIZE_MB * 2,
-                    testutils::helpers::SHMEM_SIZE * 2,
-                ))
-                * num_clients
+            // (base_memory
+            //     + std::cmp::max(
+            //         MEMCACHED_MEM_SIZE_MB * 2,
+            //         testutils::helpers::SHMEM_SIZE * 2,
+            //     ))
+            //     * num_clients
+            base_memory
         }
     }
 

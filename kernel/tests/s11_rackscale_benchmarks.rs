@@ -1063,13 +1063,13 @@ fn s11_rackscale_memcached_dynrep_benchmark_internal() {
     test.transport = transport;
     test.controller_timeout *= 2; //*= 8;
     test.client_timeout *= 2;
-    test.shmem_size = 1024 * 64;
+    test.shmem_size = 1024 * 2;
     test.use_affinity_shmem = cfg!(feature = "affinity-shmem");
     test.use_qemu_huge_pages = cfg!(feature = "affinity-shmem");
     test.file_name = file_name.to_string();
     test.run_dhcpd_for_baseline = true;
     test.num_clients = 3;
-    test.cores_per_client = 4;
+    test.cores_per_client = 1;
     test.cmd = format!(
         r#"init=memcachedbench.bin initargs={} appcmd='--x-benchmark-mem={} --x-benchmark-queries={}'"#,
         test.num_clients * test.cores_per_client,

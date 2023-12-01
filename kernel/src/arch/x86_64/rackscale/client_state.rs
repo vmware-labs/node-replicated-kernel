@@ -67,6 +67,8 @@ impl ClientState {
             crate::transport::shmem::init_shmem_rpc().expect("Failed to initialize shmem RPC")
         };
 
+        log::warn!("CLIENT READY");
+
         let mut rpc_clients = ArrayVec::new();
         for client in clients.into_iter() {
             rpc_clients.push(Mutex::new(client));

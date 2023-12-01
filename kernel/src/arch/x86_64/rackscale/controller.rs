@@ -92,7 +92,6 @@ pub(crate) fn run() {
             register_rpcs(&mut server);
             servers.push(server);
         }
-        *rpc_servers_to_register.lock() = 0;
 
         log::debug!("Transports added. Adding clients...");
 

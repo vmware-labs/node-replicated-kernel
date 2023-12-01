@@ -50,7 +50,7 @@ pub(crate) fn initialize_client(
     is_dcm: bool,
 ) -> KResult<Client> {
     // Don't modify this line without modifying testutils/rackscale_runner.rs
-    log::warn!("CLIENT READY");
+    // log::warn!("CLIENT READY");
 
     if !is_dcm {
         // Fetch system information

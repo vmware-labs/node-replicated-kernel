@@ -125,7 +125,7 @@ pub(crate) fn init_ethernet_rpc(
 
         // After sending client initialization, allow time for controller to
         // register additional rpc servers before sending more requests
-        if send_client_data && !is_dcm {
+        if send_client_data && !is_dcm && num_cores > 1 {
             unsafe {
                 let start = rawtime::Instant::now();
                 while start.elapsed() < Duration::from_secs(5) {

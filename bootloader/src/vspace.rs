@@ -348,14 +348,15 @@ impl<'a> VSpace<'a> {
     }
 
     /// A simple wrapper function for allocating just oen page.
-    pub(crate) fn allocate_one_page() -> PAddr {
-        let paddr = VSpace::allocate_pages(1, uefi::table::boot::MemoryType(KERNEL_PT));
+    pub(crate) fn allocate_one_page(alloc_type: AllocateType) -> PAddr {
+        let paddr = VSpace::allocate_pages(alloc_type, 1, uefi::table::boot::MemoryType(KERNEL_PT));
         trace!("allocate_one_page {:#x}", paddr);
         paddr
     }
 
     /// Does an allocation of physical memory where the base-address is a multiple of `align_to`.
     pub(crate) fn allocate_pages_aligned(
+        alloc_type: AllocateType,
         how_many: usize,
         typ: uefi::table::boot::MemoryType,
         align_to: u64,
@@ -371,7 +372,7 @@ impl<'a> VSpace<'a> {
         assert!(actual_how_many >= how_many);
 
         // The region we allocated
-        let paddr = VSpace::allocate_pages(actual_how_many, typ);
+        let paddr = VSpace::allocate_pages(alloc_type, actual_how_many, typ);
         let end = paddr + (actual_how_many * BASE_PAGE_SIZE);
 
         // The region within the allocated one we actually want
@@ -431,13 +432,17 @@ impl<'a> VSpace<'a> {
     ///
     /// Zeroes the memory we allocate (TODO: I'm not sure if this is already done by UEFI).
     /// Returns a `u64` containing the base to that.
-    pub(crate) fn allocate_pages(how_many: usize, typ: uefi::table::boot::MemoryType) -> PAddr {
+    pub(crate) fn allocate_pages(
+        alloc_type: AllocateType,
+        how_many: usize,
+        typ: uefi::table::boot::MemoryType,
+    ) -> PAddr {
         let st = system_table();
         unsafe {
             match st
                 .as_ref()
                 .boot_services()
-                .allocate_pages(AllocateType::AnyPages, typ, how_many)
+                .allocate_pages(alloc_type, typ, how_many)
             {
                 Ok(num) => {
                     st.as_ref().boot_services().set_mem(
@@ -453,17 +458,17 @@ impl<'a> VSpace<'a> {
     }
 
     fn new_pt(&mut self) -> PDEntry {
-        let paddr: PAddr = VSpace::allocate_one_page();
+        let paddr: PAddr = VSpace::allocate_one_page(AllocateType::AnyPages);
         return PDEntry::new(paddr, PDFlags::P | PDFlags::RW);
     }
 
     fn new_pd(&mut self) -> PDPTEntry {
-        let paddr: PAddr = VSpace::allocate_one_page();
+        let paddr: PAddr = VSpace::allocate_one_page(AllocateType::AnyPages);
         return PDPTEntry::new(paddr, PDPTFlags::P | PDPTFlags::RW);
     }
 
     fn new_pdpt(&mut self) -> PML4Entry {
-        let paddr: PAddr = VSpace::allocate_one_page();
+        let paddr: PAddr = VSpace::allocate_one_page(AllocateType::AnyPages);
         return PML4Entry::new(paddr, PML4Flags::P | PML4Flags::RW);
     }
 
@@ -521,10 +526,18 @@ impl<'a> VSpace<'a> {
     ///  * The base should be a multiple of `BASE_PAGE_SIZE`.
     ///  * The size should be a multiple of `BASE_PAGE_SIZE`.
     #[allow(unused)]
-    pub fn map(&mut self, base: VAddr, size: usize, rights: MapAction, palignment: u64) {
+    pub fn map(
+        &mut self,
+        alloc_type: AllocateType,
+        base: VAddr,
+        size: usize,
+        rights: MapAction,
+        palignment: u64,
+    ) {
         assert!(base.is_base_page_aligned(), "base is not page-aligned");
         assert_eq!(size % BASE_PAGE_SIZE, 0, "size is not page-aligned");
         let paddr = VSpace::allocate_pages_aligned(
+            alloc_type,
             size / BASE_PAGE_SIZE,
             uefi::table::boot::MemoryType(KERNEL_ELF),
             palignment,

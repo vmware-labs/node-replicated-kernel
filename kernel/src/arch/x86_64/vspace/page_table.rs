@@ -7,6 +7,8 @@ use core::mem::transmute;
 use core::pin::Pin;
 use core::ptr::NonNull;
 
+use alloc::vec::Vec;
+
 use kpi::KERNEL_BASE;
 use log::{debug, trace};
 use x86::bits64::paging::*;
@@ -891,7 +893,7 @@ impl PageTable {
 }
 
 pub(crate) struct ReadOnlyPageTable<'a> {
-    pml4: &'a PML4,
+    pub pml4: &'a PML4,
 }
 
 impl<'a> ReadOnlyPageTable<'a> {
@@ -933,6 +935,73 @@ impl<'a> ReadOnlyPageTable<'a> {
     fn get_pdpt(&self, entry: PML4Entry) -> &PDPT {
         assert_ne!(entry.address(), PAddr::zero());
         unsafe { transmute::<VAddr, &mut PDPT>(paddr_to_kernel_vaddr(entry.address())) }
+    }
+
+    pub fn walk(&self) -> Vec<(VAddr, Frame, MapAction)> {
+        log::info!("calling walk in PageTable");
+        let mut my_walk = Vec::with_capacity(1024);
+
+        // Do a DFS and free all page-table memory allocated below kernel-base,
+        // don't free the mapped frames -- we return them later through NR
+        for pml4_idx in 128..PAGE_SIZE_ENTRIES {
+            if self.pml4[pml4_idx].is_present() {
+                for pdpt_idx in 0..PAGE_SIZE_ENTRIES {
+                    let pdpt = self.get_pdpt(self.pml4[pml4_idx]);
+                    if pdpt[pdpt_idx].is_present() {
+                        if !pdpt[pdpt_idx].is_page() {
+                            for pd_idx in 0..PAGE_SIZE_ENTRIES {
+                                let pd = self.get_pd(pdpt[pdpt_idx]);
+                                if pd[pd_idx].is_present() {
+                                    if !pd[pd_idx].is_page() {
+                                        for pt_idx in 0..PAGE_SIZE_ENTRIES {
+                                            let pt = self.get_pt(pd[pd_idx]);
+                                            if pt[pt_idx].is_present() {
+                                                let addr = pt[pt_idx].address();
+                                                let flags = pt[pt_idx].flags();
+                                                let frame = Frame::new(addr, BASE_PAGE_SIZE, 0);
+                                                let vaddr_pos: VAddr = VAddr::from(
+                                                    PML4_SLOT_SIZE * pml4_idx
+                                                        + HUGE_PAGE_SIZE * pdpt_idx
+                                                        + LARGE_PAGE_SIZE * pd_idx
+                                                        + pt_idx * BASE_PAGE_SIZE,
+                                                );
+                                                //let vaddr = paddr_to_kernel_vaddr(addr);
+                                                //log::info!("4K mapping addr={:?} vaddr={:?}", addr, vaddr);
+                                                my_walk.push((vaddr_pos, frame, flags.into()));
+                                            }
+                                        }
+                                    } else {
+                                        // is page
+                                        let addr = pd[pd_idx].address();
+                                        let flags = pd[pd_idx].flags();
+                                        let frame = Frame::new(addr, LARGE_PAGE_SIZE, 0);
+                                        let vaddr_pos: VAddr = VAddr::from(
+                                            PML4_SLOT_SIZE * pml4_idx
+                                                + HUGE_PAGE_SIZE * pdpt_idx
+                                                + LARGE_PAGE_SIZE * pd_idx,
+                                        );
+                                        //let vaddr = paddr_to_kernel_vaddr(addr);
+                                        //log::info!("2 MB mapping addr={:?} vaddr={:?}", addr, vaddr);
+                                        my_walk.push((vaddr_pos, frame, flags.into()));
+                                    }
+                                }
+                            }
+                        } else {
+                            // Encountered Page is a 1 GiB mapping, nothing to free
+                            let addr = pdpt[pdpt_idx].address();
+                            let flags = pdpt[pdpt_idx].flags();
+                            let frame = Frame::new(addr, HUGE_PAGE_SIZE, 0); // TODO: size is wrong
+                            let vaddr_pos: VAddr =
+                                VAddr::from(PML4_SLOT_SIZE * pml4_idx + HUGE_PAGE_SIZE * pdpt_idx);
+                            //let vaddr = paddr_to_kernel_vaddr(addr);
+                            //log::info!("1 GiB mapping addr={:?} vaddr={:?}", addr, vaddr);
+                            my_walk.push((vaddr_pos, frame, flags.into()));
+                        }
+                    }
+                }
+            }
+        }
+        my_walk
     }
 }
 

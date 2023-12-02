@@ -1378,10 +1378,22 @@ impl Process for Ring3Process {
         // TODO(broken): Big (>= 2 MiB) allocations should be inserted here too
         // TODO(ugly): Find a better way to express this mess
         let kvspace = super::vspace::INITIAL_VSPACE.lock();
-        for i in 128..=510 {
-            let kernel_pml_entry = kvspace.pml4[i];
-            trace!("Patched in kernel mappings at {:?}", kernel_pml_entry);
-            self.vspace.page_table.pml4[i] = kernel_pml_entry;
+        // for i in 128..=510 {
+        //     let kernel_pml_entry = kvspace.pml4[i];
+        //     trace!("Patched in kernel mappings at {:?}", kernel_pml_entry);
+        //     self.vspace.page_table.pml4[i] = kernel_pml_entry;
+        // }
+
+        use crate::arch::vspace::page_table::ReadOnlyPageTable;
+        let pt = ReadOnlyPageTable {
+            pml4: &kvspace.pml4,
+        };
+        let walk = pt.walk();
+        // info!("Walk is len: {:?}", walk.len());
+        for (addr_idx, frame, action) in walk {
+            self.vspace
+                .map_frame(addr_idx, frame, action)
+                .expect("failed map");
         }
 
         Ok(())

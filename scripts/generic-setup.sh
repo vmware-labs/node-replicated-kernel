@@ -75,7 +75,7 @@ function install_rust_build_dependencies()
             # otherwise this takes >5min in CI:
             MDBOOK_FLAGS="--no-default-features"
         fi
-        cargo install mdbook $MDBOOK_FLAGS --locked
+        cargo install mdbook $MDBOOK_FLAGS --locked --version 0.4.35
     fi
 }
 

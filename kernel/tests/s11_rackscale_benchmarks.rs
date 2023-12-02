@@ -897,7 +897,6 @@ fn s11_rackscale_memcached_dynrep_benchmark_internal() {
         .user_feature("rkapps:memcached-bench")
         .set_rackscale(true)
         .kernel_feature("pages-4k")
-        .kernel_feature("dynrep")
         .release()
         .build();
     //.kernel_feature("dynrep")

@@ -153,12 +153,12 @@ pub fn rackscale_memcached_checkout(tmpdir: &str) {
     }
 
     println!(
-        "CHECKOUT a703eedd8032ff1e083e8c5972eacc95738c797b {:?}",
+        "CHECKOUT 2c521ec573da7cad604670dde3c9c369dba01f75 {:?}",
         out_dir
     );
 
     let res = Command::new("git")
-        .args(&["checkout", "a703eedd8032ff1e083e8c5972eacc95738c797b"])
+        .args(&["checkout", "2c521ec573da7cad604670dde3c9c369dba01f75"])
         .current_dir(out_dir_path.as_path())
         .output()
         .expect("git checkout failed");

@@ -107,7 +107,7 @@ lazy_static! {
 
         // Want at least one replica...
         let num_replicas =
-            NonZeroUsize::new(1).unwrap();
+            NonZeroUsize::new(3).unwrap();
         let mut processes = ArrayVec::new();
 
         for _pid in 0..MAX_PROCESSES {

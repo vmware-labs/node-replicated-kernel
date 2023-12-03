@@ -33,7 +33,7 @@ pub(crate) fn register_thread_with_process_replicas() {
     #[cfg(not(feature = "rackscale"))]
     let node = *crate::environment::NODE_ID;
     #[cfg(feature = "rackscale")]
-    let node = 0; //*crate::environment::MACHINE_ID - 1; // 0;
+    let node = *crate::environment::MACHINE_ID - 1; // 0;
 
     debug_assert!(PROCESS_TABLE.len() > node, "Invalid Node ID");
 

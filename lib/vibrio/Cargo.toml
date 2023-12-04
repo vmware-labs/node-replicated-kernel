@@ -14,7 +14,7 @@ crate-type = ["staticlib", "rlib"]
 [dependencies]
 kpi = { path = "../kpi" }
 lineup = { path = "../lineup" }
-bitflags = "1.2"
+bitflags = "2.4"
 log = "0.4"
 x86 = { version = "0.52", features = ["unstable"] }
 slabmalloc = "0.10"

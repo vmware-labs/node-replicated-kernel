@@ -73,7 +73,7 @@ core2 = { version = "0.3", default-features = false, features = [ "alloc" ], opt
 serde = { version = "1" }
 serde_cbor = { version = "0.11" }
 rand = { version = "0.8", features = ["small_rng"] }
-ctor = "0.1.20"
+ctor = "0.2.4"
 memfile = "0.2.1"
 
 [target.'cfg(not(target_os = "none"))'.dev-dependencies]

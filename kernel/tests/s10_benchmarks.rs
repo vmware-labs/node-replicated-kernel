@@ -22,7 +22,7 @@ use serde::Serialize;
 
 use testutils::builder::{BuildArgs, Machine};
 use testutils::helpers::{setup_network, spawn_dhcpd, spawn_nrk, DHCP_ACK_MATCH};
-use testutils::memcached::{MEMCACHED_MEM_SIZE_MB, MEMCACHED_NUM_QUERIES};
+use testutils::memcached::{MEMCACHED_MEM_SIZE_MB, MEMCACHED_NUM_QUERIES, parse_memcached_output};
 use testutils::redis::{redis_benchmark, REDIS_BENCHMARK, REDIS_START_MATCH};
 use testutils::runner_args::{check_for_successful_exit, wait_for_sigterm, RunnerArgs};
 
@@ -901,7 +901,7 @@ fn s10_memcached_benchmark_internal() {
     } else {
         (
             // keep in sync with the s11_ra
-            4* MEMCACHED_MEM_SIZE_MB, /* MB */
+            std::cmp::max(8192, 4 * MEMCACHED_MEM_SIZE_MB), /* MB */
             MEMCACHED_MEM_SIZE_MB,
             MEMCACHED_NUM_QUERIES,
             std::cmp::max(60_000, MEMCACHED_NUM_QUERIES) as u64,
@@ -927,7 +927,7 @@ fn s10_memcached_benchmark_internal() {
 
         let cmdline = RunnerArgs::new_with_build("userspace-smp", &build)
             .timeout(timeout)
-            .cores(machine.max_cores())
+            .cores(*thread)
             .nodes(2)
             .use_virtio()
             .memory(qemu_mem)
@@ -942,70 +942,8 @@ fn s10_memcached_benchmark_internal() {
 
             output += dhcp_server.exp_string(DHCP_ACK_MATCH)?.as_str();
 
-            // match the title
-            let (prev, matched) = p.exp_regex(r#"INTERNAL BENCHMARK CONFIGURE"#)?;
 
-            output += prev.as_str();
-            output += matched.as_str();
-
-            // x_benchmark_mem = 10 MB
-            let (prev, matched) = p.exp_regex(r#"x_benchmark_mem = (\d+) MB"#)?;
-            println!("> {}", matched);
-            let b_mem = matched.replace("x_benchmark_mem = ", "").replace(" MB", "");
-
-            output += prev.as_str();
-            output += matched.as_str();
-
-            // number of threads: 3
-            let (prev, matched) = p.exp_regex(r#"number of threads: (\d+)"#)?;
-            println!("> {}", matched);
-            let b_threads = matched.replace("number of threads: ", "");
-
-            output += prev.as_str();
-            output += matched.as_str();
-
-            // number of keys: 131072
-            let (prev, matched) = p.exp_regex(r#"number of keys: (\d+)"#)?;
-            println!("> {}", matched);
-
-            output += prev.as_str();
-            output += matched.as_str();
-
-            let (prev, matched) = p.exp_regex(r#"Executing (\d+) queries with (\d+) threads"#)?;
-            println!("> {}", matched);
-
-            output += prev.as_str();
-            output += matched.as_str();
-
-            // benchmark took 129 seconds
-            let (prev, matched) = p.exp_regex(r#"benchmark took (\d+) ms"#)?;
-            println!("> {}", matched);
-            let b_time = matched.replace("benchmark took ", "").replace(" ms", "");
-
-            output += prev.as_str();
-            output += matched.as_str();
-
-            // benchmark took 7937984 queries / second
-            let (prev, matched) = p.exp_regex(r#"benchmark took (\d+) queries / second"#)?;
-            println!("> {}", matched);
-            let b_thpt = matched
-                .replace("benchmark took ", "")
-                .replace(" queries / second", "");
-
-            output += prev.as_str();
-            output += matched.as_str();
-
-            let (prev, matched) = p.exp_regex(r#"benchmark executed (\d+)"#)?;
-            println!("> {}", matched);
-            let b_queries = matched
-                .replace("benchmark executed ", "")
-                .split(' ')
-                .next()
-                .unwrap()
-                .to_string();
-
-            output += prev.as_str();
-            output += matched.as_str();
+            let ret = parse_memcached_output(&mut p ,*thread, &mut output)?;
 
             // Append parsed results to a CSV file
             let write_headers = !Path::new(file_name).exists();
@@ -1024,7 +962,7 @@ fn s10_memcached_benchmark_internal() {
             assert!(r.is_ok());
             let out = format!(
                 "memcached,{},{},{},{},{}",
-                b_threads, b_mem, b_queries, b_time, b_thpt,
+                ret.b_threads, ret.b_mem,  ret.b_queries,  ret.b_time, ret.b_thpt
             );
             let r = csv_file.write(out.as_bytes());
             assert!(r.is_ok());

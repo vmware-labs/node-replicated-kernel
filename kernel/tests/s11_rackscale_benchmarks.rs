@@ -507,7 +507,7 @@ fn rackscale_memcached_internal_benchmark(transport: RackscaleTransport) {
     fn controller_match_fn(
         proc: &mut PtySession,
         output: &mut String,
-        _cores_per_client: usize,
+        cores_per_client: usize,
         num_clients: usize,
         file_name: &str,
         is_baseline: bool,
@@ -523,7 +523,7 @@ fn rackscale_memcached_internal_benchmark(transport: RackscaleTransport) {
         *output += prev.as_str();
         *output += matched.as_str();
 
-        let ret = parse_memcached_output(proc, output)?;
+        let ret = parse_memcached_output(proc, num_clients * cores_per_client, output)?;
 
         // Append parsed results to a CSV file
         let write_headers = !Path::new(file_name).exists();
@@ -995,7 +995,7 @@ fn s11_linux_memcached_sharded_benchmark() {
 
         let mut pty = run_benchmark_internal(&config, timeout_ms);
         let mut output = String::new();
-        let res = parse_memcached_output(&mut pty, &mut output).expect("could not parse output!");
+        let res = parse_memcached_output(&mut pty, config.num_threads, &mut output).expect("could not parse output!");
         let r = csv_file.write(format!("{},", env!("GIT_HASH")).as_bytes());
         assert!(r.is_ok());
         let out = format!(
@@ -1039,7 +1039,7 @@ fn s11_linux_memcached_sharded_benchmark() {
                 .expect("failed to spawn load balancer");
             let mut output = String::new();
             use rexpect::errors::ErrorKind::Timeout;
-            match parse_memcached_output(&mut pty, &mut output) {
+            match parse_memcached_output(&mut pty, config.num_threads, &mut output) {
                 Ok(res) => {
                     let r = csv_file.write(format!("{},", env!("GIT_HASH")).as_bytes());
                     assert!(r.is_ok());
@@ -1219,8 +1219,8 @@ fn s11_rackscale_memcached_benchmark_sharded_nros() {
     fn controller_match_fn(
         proc: &mut PtySession,
         output: &mut String,
-        _cores_per_client: usize,
-        _num_clients: usize,
+        cores_per_client: usize,
+        num_clients: usize,
         file_name: &str,
         _is_baseline: bool,
         _arg: Option<MemcachedShardedConfig>,
@@ -1233,7 +1233,7 @@ fn s11_rackscale_memcached_benchmark_sharded_nros() {
 
         use rexpect::errors::Error;
         use rexpect::errors::ErrorKind::Timeout;
-        let res = match parse_memcached_output(proc, output) {
+        let res = match parse_memcached_output(proc, num_clients * cores_per_client,  output) {
             Ok(res) => res,
             Err(Error(Timeout(expected, got, timeout), st)) => {
                 println!("Expected: `{expected}`\n");

@@ -37,7 +37,7 @@ pub struct MemcachedResult {
     pub b_thpt: String,
 }
 
-pub fn parse_memcached_output(p: &mut PtySession, output: &mut String) -> Result<MemcachedResult> {
+pub fn parse_memcached_output(p: &mut PtySession, num_threads: usize,  output: &mut String) -> Result<MemcachedResult> {
     // x_benchmark_mem = 10 MB
     let (prev, matched) = p.exp_regex(r#"x_benchmark_mem = (\d+) MB"#)?;
     println!("> {}", matched);
@@ -69,8 +69,62 @@ pub fn parse_memcached_output(p: &mut PtySession, output: &mut String) -> Result
     *output += prev.as_str();
     *output += matched.as_str();
 
+
+    // number of keys: 131072
+    let (prev, matched) = p.exp_regex(r#"Prefilling slabs took (\d+) ms"#)?;
+    println!("> {}", matched);
+
+    *output += prev.as_str();
+    *output += matched.as_str();
+
+    for i in 0..num_threads {
+        let (prev, matched) = p.exp_regex(r#"starting thread (\d+) / (\d+)"#)?;
+        println!("> {}", matched);
+
+        *output += prev.as_str();
+        *output += matched.as_str();
+    }
+
+    // number of keys: 131072
+    let (prev, matched) = p.exp_regex(r#"starting all (\d+) threads"#)?;
+    println!("> {}", matched);
+
+    *output += prev.as_str();
+    *output += matched.as_str();
+
+
+
+    for i in 0..num_threads {
+        let (prev, matched) = p.exp_regex(r#"thread.(\d+) start running"#)?;
+        println!("> {}", matched);
+        *output += prev.as_str();
+        *output += matched.as_str();
+    }
+
+    for i in 0..num_threads {
+        let (prev, matched) = p.exp_regex(r#"populate: thread.(\d+) done. added (\d+) elements, (\d+) not added of which (\d+) already existed"#)?;
+        println!("> {}", matched);
+        *output += prev.as_str();
+        *output += matched.as_str();
+    }
+
     let (prev, matched) = p.exp_regex(r#"Executing (\d+) queries with (\d+) threads."#)?;
     println!("> {}", matched);
+
+    for i in 0..num_threads {
+        let (prev, matched) = p.exp_regex(r#"execute: thread.(\d+) startes executing with connection "#)?;
+        println!("> {}", matched);
+        *output += prev.as_str();
+        *output += matched.as_str();
+    }
+
+    for i in 0..num_threads {
+        let (prev, matched) = p.exp_regex(r#"execute: thread.(\d+) done. executed (\d+) found (\d+), missed (\d+)"#)?;
+        println!("> {}", matched);
+        *output += prev.as_str();
+        *output += matched.as_str();
+    }
+
 
     // benchmark took 129 seconds
     let (prev, matched) = p.exp_regex(r#"benchmark took (\d+) ms"#)?;

@@ -1124,6 +1124,8 @@ fn s11_rackscale_dynrep_userspace() {
         _is_baseline: bool,
         _arg: Option<()>,
     ) -> Result<()> {
+        let (_prev, matched) = proc.exp_regex(r#"dynhash"#)?;
+        println!("> {}", matched);
         *output += proc.exp_string("dynrep_test OK")?.as_str();
         Ok(())
     }

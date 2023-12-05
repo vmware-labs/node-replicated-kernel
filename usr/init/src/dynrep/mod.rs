@@ -6,6 +6,8 @@ use hashbrown::{hash_map::DefaultHashBuilder, HashMap};
 use alloc::sync::Arc;
 use core::num::NonZeroUsize;
 use nr2::nr::{NodeReplicated, rwlock::RwLock, Dispatch};
+use x86::random::rdrand64;
+use rawtime::Instant;
 
 mod allocator;
 use allocator::MyAllocator;
@@ -62,7 +64,23 @@ pub fn userspace_dynrep_test() {
     let replicas = NonZeroUsize::new(1).unwrap();
     let nrht = NodeReplicated::<HashTable>::new(replicas, |_| { 0 }).unwrap();
     let ttkn = nrht.register(0).unwrap();
-    nrht.execute(OpRd::Get(0), ttkn).unwrap();
+
+    let mut ops = 0;
+    let batch_size = 64;
+    let mut random_key :u64 = 0;
+
+    let start = Instant::now();
+    while start.elapsed().as_secs() < 1 {
+       for i in 0..batch_size {
+            unsafe { rdrand64(&mut random_key) };
+            random_key = random_key % NUM_ENTRIES;
+            let _ = nrht.execute(OpRd::Get(random_key), ttkn).unwrap();
+            ops += 1;
+       }
+    }
+    info!(
+        "dynhash,{}", ops
+    );
 
     info!("dynrep_test OK");
 }

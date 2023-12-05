@@ -133,16 +133,16 @@ fn main() {
         println!("CLONE {:?}", out_dir);
         let url = "https://github.com/gz/librettos-packages.git";
         Command::new("git")
-            .args(&["clone", "--depth=1", url, out_dir.as_str()])
+            .args(&["clone", url, out_dir.as_str()])
             .status()
             .unwrap();
 
         println!(
-            "CHECKOUT d090e547b7bc9a7033551b9c2471993f59c5abd6 {:?}",
+            "CHECKOUT 1386c46c25d74eabc255c76184aaccd1eb985768 {:?}",
             out_dir
         );
         Command::new("git")
-            .args(&["checkout", "d090e547b7bc9a7033551b9c2471993f59c5abd6"])
+            .args(&["checkout", "1386c46c25d74eabc255c76184aaccd1eb985768"])
             .current_dir(&Path::new(&out_dir))
             .status()
             .unwrap();

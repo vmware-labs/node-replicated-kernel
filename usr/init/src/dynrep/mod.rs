@@ -4,13 +4,11 @@ use log::info;
 use hashbrown::{hash_map::DefaultHashBuilder, HashMap};
 
 mod allocator;
-
 use allocator::MyAllocator;
 
-static GLOBAL: MyAllocator = MyAllocator;
-
 pub fn userspace_dynrep_test() {
-    let mut h = HashMap::<u64, u64, DefaultHashBuilder, MyAllocator>::with_capacity_in(128, GLOBAL);
+    let allocator = MyAllocator::default();
+    let mut h = HashMap::<u64, u64, DefaultHashBuilder, MyAllocator>::with_capacity_in(128, allocator);
     h.insert(1, 2);
     info!("dynrep_test OK");
 }

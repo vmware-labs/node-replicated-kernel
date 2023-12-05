@@ -85,7 +85,7 @@ fn alloc_physical_test() {
     // Test allocation by checking to see if we can map it okay
     unsafe {
         // Allocate a base page of physical memory
-        let (frame_id, paddr) = vibrio::syscalls::PhysicalMemory::allocate_base_page()
+        let (frame_id, paddr) = vibrio::syscalls::PhysicalMemory::allocate_base_page(1)
             .expect("Failed to get physical memory base page");
         info!("base frame id={:?}, paddr={:?}", frame_id, paddr);
 
@@ -125,7 +125,7 @@ fn alloc_physical_test() {
     }
 
     // Allocate a large page of physical memory
-    let (frame_id2, paddr2) = vibrio::syscalls::PhysicalMemory::allocate_large_page()
+    let (frame_id2, paddr2) = vibrio::syscalls::PhysicalMemory::allocate_large_page(1)
         .expect("Failed to get physical memory large page");
     info!("large frame id={:?}, paddr={:?}", frame_id2, paddr2);
 
@@ -193,7 +193,7 @@ fn rackscale_shootdown_test() {
         // Test allocation by checking to see if we can map it okay
         unsafe {
             // Allocate a base page of physical memory
-            let (frame_id, paddr) = vibrio::syscalls::PhysicalMemory::allocate_base_page()
+            let (frame_id, paddr) = vibrio::syscalls::PhysicalMemory::allocate_base_page(1)
                 .expect("Failed to get physical memory base page");
             info!("base frame id={:?}, paddr={:?}", frame_id, paddr);
 
@@ -270,7 +270,7 @@ fn concurrent_shootdown_test() {
                         unsafe {
                             // Allocate a base page of physical memory
                             let (frame_id, paddr) =
-                                vibrio::syscalls::PhysicalMemory::allocate_base_page()
+                                vibrio::syscalls::PhysicalMemory::allocate_base_page(1)
                                     .expect("Failed to get physical memory base page");
                             info!("base frame id={:?}, paddr={:?}", frame_id, paddr);
 

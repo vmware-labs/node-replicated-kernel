@@ -98,6 +98,7 @@ fn s06_rackscale_phys_alloc_test() {
     let mut test_run = RackscaleRun::new("userspace-smp".to_string(), built);
     test_run.client_match_fn = client_match_fn;
     test_run.wait_for_client = true;
+    test_run.run_rackscale();
 }
 
 #[cfg(not(feature = "baremetal"))]
@@ -128,6 +129,7 @@ fn s06_rackscale_core_alloc_test() {
     let machine = Machine::determine();
     test_run.cores_per_client = core::cmp::min(4, (machine.max_cores() - 1) / 2);
     test_run.num_clients = 2;
+    test_run.run_rackscale();
 }
 
 #[cfg(not(feature = "baremetal"))]

@@ -76,7 +76,6 @@ lazy_static! {
     pub(crate) static ref PROCESS_TABLE: ArrayVec<Arc<RwLock<NodeReplicated<NrProcess<Ring3Process>>>>, MAX_PROCESSES> = {
         use crate::memory::shmem_affinity::mid_to_shmem_affinity;
         use crate::arch::kcb::per_core_mem;
-        //use crate::environment::NUM_MACHINES;
 
         if !crate::CMDLINE
             .get()
@@ -107,7 +106,7 @@ lazy_static! {
 
         // Want at least one replica...
         let num_replicas =
-            NonZeroUsize::new(3).unwrap();
+            NonZeroUsize::new(*crate::environment::NUM_MACHINES - 1).unwrap();
         let mut processes = ArrayVec::new();
 
         for _pid in 0..MAX_PROCESSES {

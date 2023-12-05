@@ -2,13 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 use log::info;
 
-use hashbrown::HashMap;
+use hashbrown::{hash_map::DefaultHashBuilder, HashMap};
+mod allocator;
+
+use allocator::MyAllocator;
+
+static GLOBAL: MyAllocator = MyAllocator;
 
 pub fn userspace_dynrep_test() {
-
-    // TODO: types are a placeholder
-    // TODO: will want to create with HashMap::with_capacity_in() method
-    let mut map: HashMap<usize, usize> = HashMap::new();
-
+    let _h = HashMap::<u64, u64, DefaultHashBuilder, MyAllocator>::with_capacity_in(128, GLOBAL);
     info!("dynrep_test OK");
 }

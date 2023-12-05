@@ -9,7 +9,8 @@
     lang_items,
     core_intrinsics,
     asm_const,
-    once_cell
+    once_cell,
+    allocator_api,
 )]
 
 extern crate alloc;

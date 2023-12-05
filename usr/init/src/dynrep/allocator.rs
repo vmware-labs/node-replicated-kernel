@@ -8,7 +8,7 @@ use core::{
 };
 
 pub const BASE: u64 = 0x0510_0000_0000;
-pub const MAX_FRAMES: u64 = 180;
+pub const MAX_FRAMES: u64 = 600;
 
 #[derive(Clone, Copy)]
 pub struct MyAllocator;

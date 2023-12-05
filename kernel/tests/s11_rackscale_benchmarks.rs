@@ -1137,7 +1137,7 @@ fn s11_rackscale_dynrep_userspace() {
     //test.client_timeout *= 2;
 
     // TODO: may need to increase shmem size in the future?
-    //test.shmem_size = 1024 * 2;
+    test.shmem_size = 1024 * 2;
 
     test.use_affinity_shmem = cfg!(feature = "affinity-shmem");
     test.use_qemu_huge_pages = cfg!(feature = "affinity-shmem");
@@ -1147,7 +1147,7 @@ fn s11_rackscale_dynrep_userspace() {
     //test.num_clients = 3;
 
     // TODO: may need to increase memory in the future
-    //test.memory = 2*4096;
+    test.memory = 2*4096;
 
     // TODO: may need to increase cores per client in the future
     test.cores_per_client = 1;

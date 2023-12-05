@@ -263,7 +263,7 @@ dependencies = [
  "lazy_static",
  "log",
  "nix",
- "nr2",
+ "nr2 0.2.0",
  "num_cpus",
  "parking_lot 0.12.1",
  "rand 0.8.5",
@@ -1202,6 +1202,7 @@ dependencies = [
  "lineup",
  "log",
  "md-5",
+ "nr2 0.2.0 (git+https://github.com/gz/node-replication.git?branch=nr-dymanic-replication)",
  "num-traits",
  "proptest 1.0.0 (git+https://github.com/gz/proptest.git?branch=x86-asm)",
  "rawtime",
@@ -1612,6 +1613,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "nr2"
+version = "0.2.0"
+source = "git+https://github.com/gz/node-replication.git?branch=nr-dymanic-replication#23d79389079659a202abc03a4d9753130acce22d"
+dependencies = [
+ "arr_macro",
+ "arrayvec",
+ "crossbeam-utils 0.8.10",
+ "hashbrown 0.11.2",
+ "log",
+ "loom",
+ "static_assertions",
+]
+
+[[package]]
 name = "nrfs"
 version = "0.0.1"
 source = "git+https://github.com/ankit-iitb/nrfs.git?branch=master#2b688ce16e762c79f1ba6809954de79ad5ba10a1"
@@ -1668,7 +1683,7 @@ dependencies = [
  "memfile",
  "memoffset 0.6.5",
  "node-replication",
- "nr2",
+ "nr2 0.2.0",
  "once_cell",
  "proptest 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "rand 0.8.5",

@@ -21,7 +21,7 @@ struct HashTable {
 
 impl Default for HashTable {
     fn default() -> Self {
-        let allocator = MyAllocator::default();
+        let allocator = MyAllocator{};
         let map = HashMap::<u64, u64, DefaultHashBuilder, MyAllocator>::with_capacity_in(NUM_ENTRIES as usize, allocator);
         HashTable { map }
     }
@@ -60,27 +60,35 @@ impl Dispatch for HashTable {
     }
 }
 
+fn run_bench(core_id : usize, replica: Arc<NodeReplicated<HashTable>>) {
+    let ttkn = replica.register(core_id).unwrap();
+    let mut random_key :u64 = 0;
+    let batch_size = 64;
+    let duration = 5;
+
+    let mut iterations = 0;
+    while iterations <= duration {
+        let mut ops = 0;
+        let start = Instant::now();
+        while start.elapsed().as_secs() < 1 {
+        for i in 0..batch_size {
+                unsafe { rdrand64(&mut random_key) };
+                random_key = random_key % NUM_ENTRIES;
+                let _ = replica.execute(OpRd::Get(random_key), ttkn).unwrap();
+                ops += 1;
+        }
+        }
+        info!(
+            "dynhash,{}", ops
+        );
+        iterations += 1;
+    }
+}
+
 pub fn userspace_dynrep_test() {
     let replicas = NonZeroUsize::new(1).unwrap();
-    let nrht = NodeReplicated::<HashTable>::new(replicas, |_| { 0 }).unwrap();
-    let ttkn = nrht.register(0).unwrap();
-
-    let mut ops = 0;
-    let batch_size = 64;
-    let mut random_key :u64 = 0;
-
-    let start = Instant::now();
-    while start.elapsed().as_secs() < 1 {
-       for i in 0..batch_size {
-            unsafe { rdrand64(&mut random_key) };
-            random_key = random_key % NUM_ENTRIES;
-            let _ = nrht.execute(OpRd::Get(random_key), ttkn).unwrap();
-            ops += 1;
-       }
-    }
-    info!(
-        "dynhash,{}", ops
-    );
-
+    let nrht = Arc::new(NodeReplicated::<HashTable>::new(replicas, |_| { 0 }).unwrap());
+    let core_id = 0;
+    run_bench(core_id, nrht.clone());
     info!("dynrep_test OK");
 }

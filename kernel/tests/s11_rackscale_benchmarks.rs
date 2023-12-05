@@ -1087,12 +1087,49 @@ fn s11_rackscale_dynrep_userspace() {
     fn controller_match_fn(
         proc: &mut PtySession,
         output: &mut String,
-        _cores_per_client: usize,
-        _num_clients: usize,
-        _file_name: &str,
+        cores_per_client: usize,
+        num_clients: usize,
+        file_name: &str,
         _is_baseline: bool,
         _arg: Option<()>,
     ) -> Result<()> {
+        let expected_lines = num_clients * cores_per_client * 5;
+        for _i in 0..expected_lines {
+            let (prev, matched) =
+                proc.exp_regex(r#"init::dynrep: (.*),(\d+),(\d+),(\d+),(\d+)"#)?;
+            *output += prev.as_str();
+            *output += matched.as_str();
+
+            // Append parsed results to a CSV file
+            let write_headers = !Path::new(file_name).exists();
+            let mut csv_file = OpenOptions::new()
+                .append(true)
+                .create(true)
+                .open(file_name)
+                .expect("Can't open file");
+            if write_headers {
+                let row = "git_rev,nclients,cores_per_client,benchmark,machine_id,thread_id,time,operations\n";
+                let r = csv_file.write(row.as_bytes());
+                assert!(r.is_ok());
+            }
+
+            let parts: Vec<&str> = matched.split("init::dynrep: ").collect();
+            assert!(parts.len() >= 2);
+
+            let r = csv_file.write(format!("{},", env!("GIT_HASH")).as_bytes());
+            assert!(r.is_ok());
+
+            let r = csv_file.write(format!("{},", num_clients).as_bytes());
+            assert!(r.is_ok());
+
+            let r = csv_file.write(format!("{},", cores_per_client).as_bytes());
+            assert!(r.is_ok());
+
+            let r = csv_file.write(parts[1].as_bytes());
+            assert!(r.is_ok());
+            let r = csv_file.write("\n".as_bytes());
+            assert!(r.is_ok());
+        }
         *output += proc.exp_string("dynrep_test OK")?.as_str();
         Ok(())
     }

@@ -8,14 +8,21 @@ use log::info;
 
 use hashbrown::{hash_map::DefaultHashBuilder, HashMap};
 
+use core::sync::atomic::AtomicUsize;
+use core::sync::atomic::Ordering;
+
 use lineup::tls2::{Environment, SchedulerControlBlock};
-use nr2::nr::{rwlock::RwLock, Dispatch, NodeReplicated};
+use nr2::nr::{Dispatch, NodeReplicated};
 use x86::bits64::paging::VAddr;
+use x86::random::rdrand64;
+use rawtime::Instant;
 
 mod allocator;
 use allocator::MyAllocator;
 
 pub const NUM_ENTRIES: u64 = 50_000_000;
+
+static POOR_MANS_BARRIER: AtomicUsize = AtomicUsize::new(0);
 
 #[derive(Clone)]
 struct HashTable {
@@ -24,7 +31,7 @@ struct HashTable {
 
 impl Default for HashTable {
     fn default() -> Self {
-        let allocator = MyAllocator::default();
+        let allocator = MyAllocator{};
         let map = HashMap::<u64, u64, DefaultHashBuilder, MyAllocator>::with_capacity_in(
             NUM_ENTRIES as usize,
             allocator,
@@ -66,15 +73,44 @@ impl Dispatch for HashTable {
     }
 }
 
-unsafe extern "C" fn bencher_trampoline(_arg1: *mut u8) -> *mut u8 {
-    thread_routine();
-    ptr::null_mut()
+fn run_bench(mid: usize, core_id : usize, replica: Arc<NodeReplicated<HashTable>>) {
+    let ttkn = replica.register(mid - 1).unwrap();
+    let mut random_key :u64 = 0;
+    let batch_size = 64;
+    let duration = 5;
+
+    let mut iterations = 0;
+    while iterations <= duration {
+        let mut ops = 0;
+        let start = Instant::now();
+        while start.elapsed().as_secs() < 1 {
+        for i in 0..batch_size {
+                unsafe { rdrand64(&mut random_key) };
+                random_key = random_key % NUM_ENTRIES;
+                let _ = replica.execute(OpRd::Get(random_key), ttkn).unwrap();
+                ops += 1;
+        }
+        }
+        info!(
+            "dynhash,{},{},{},{}",mid,core_id, iterations, ops
+        );
+        iterations += 1;
+    }
 }
 
-fn thread_routine() {
+unsafe extern "C" fn bencher_trampoline(args: *mut u8) -> *mut u8 {
     let current_gtid = vibrio::syscalls::System::core_id().expect("Can't get core id");
     let mid = kpi::system::mid_from_gtid(current_gtid);
-    info!("I am thread {:?} and I am on node {:?}", current_gtid, mid);
+    let replica: Arc<NodeReplicated<HashTable>> = Arc::from_raw(args as *const NodeReplicated<HashTable>);
+
+    // Synchronize with all cores
+    POOR_MANS_BARRIER.fetch_sub(1, Ordering::Release);
+    while POOR_MANS_BARRIER.load(Ordering::Acquire) != 0 {
+        core::hint::spin_loop();
+    }
+
+    run_bench(mid, current_gtid, replica.clone());
+    ptr::null_mut()
 }
 
 pub fn userspace_dynrep_test() {
@@ -96,17 +132,11 @@ pub fn userspace_dynrep_test() {
 
     // Create data structure, with as many replicas as there are clients (assuming 1 numa node per client)
     // TODO: change # of replicas to nnodes
-    let replicas = NonZeroUsize::new(1).unwrap();
-    let nrht = NodeReplicated::<HashTable>::new(replicas, |_| 0).unwrap();
-
-    // TODO: populate data structure
-    let ttkn = nrht.register(0).unwrap();
-    nrht.execute(OpRd::Get(0), ttkn).unwrap();
+    let num_replicas = NonZeroUsize::new(nnodes).unwrap();
+    let replicas = Arc::new(NodeReplicated::<HashTable>::new(num_replicas, |_| 0).unwrap());
 
     let s = &vibrio::upcalls::PROCESS_SCHEDULER;
-
     let mut gtids = Vec::with_capacity(ncores);
-
     // We already have current core
     gtids.push(current_gtid);
 
@@ -137,13 +167,14 @@ pub fn userspace_dynrep_test() {
         32 * 4096,
         move |_| {
             let mut thandles = Vec::with_capacity(ncores);
+            POOR_MANS_BARRIER.store(ncores, Ordering::SeqCst);
 
             for core_index in 0..ncores {
                 thandles.push(
                     Environment::thread()
                         .spawn_on_core(
                             Some(bencher_trampoline),
-                            ncores as *mut u8,
+                            Arc::into_raw(replicas.clone()) as *const _ as *mut u8,
                             gtids[core_index],
                         )
                         .expect("Can't spawn bench thread?"),

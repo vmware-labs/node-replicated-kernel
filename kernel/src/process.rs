@@ -51,7 +51,7 @@ pub(crate) type Eid = usize;
 pub(crate) const MAX_PROCESSES: usize = 12;
 
 /// How many registered "named" frames a process can have.
-pub(crate) const MAX_FRAMES_PER_PROCESS: usize = 1023;
+pub(crate) const MAX_FRAMES_PER_PROCESS: usize = 2047;
 
 /// How many writable sections a process can have (part of the ELF file).
 pub(crate) const MAX_WRITEABLE_SECTIONS_PER_PROCESS: usize = 4;
@@ -175,7 +175,7 @@ impl FrameManagement for ProcessFrames {
         // If `self.frames` is too big, the O(n) lookup in this fn might become
         // a problem. better to implement some reverse-map for PAddr -> FrameId
         // then.
-        static_assertions::const_assert!(MAX_FRAMES_PER_PROCESS < 1024);
+        static_assertions::const_assert!(MAX_FRAMES_PER_PROCESS < 2048);
 
         for (frame, ref mut refcnt) in self.frames.iter_mut() {
             if let Some(frame) = frame {

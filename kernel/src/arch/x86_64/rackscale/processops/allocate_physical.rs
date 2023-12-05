@@ -11,7 +11,7 @@ use kpi::FileOperation;
 use rpc::rpc::*;
 
 use super::super::controller_state::SHMEM_MEMSLICE_ALLOCATORS;
-use super::super::dcm::resource_alloc::dcm_resource_alloc;
+use super::super::dcm::affinity_alloc::dcm_affinity_alloc;
 use super::super::kernelrpc::*;
 use crate::arch::process::Ring3Process;
 use crate::arch::rackscale::CLIENT_STATE;
@@ -93,31 +93,23 @@ pub(crate) fn handle_allocate_physical(
             req.pid
         );
         size = req.size;
-        affinity = req.affinity;
+        affinity = req.affinity as usize;
         pid = req.pid;
     } else {
         log::error!("Invalid payload for request: {:?}", hdr);
         construct_error_ret(hdr, payload, KError::from(RPCError::MalformedRequest));
         return Ok(());
     }
+    assert!(
+        affinity > 0 && affinity < *crate::environment::NUM_MACHINES,
+        "invalid affinity (client machine id)"
+    );
 
-    // Let DCM choose node
-    let (_, mids) = dcm_resource_alloc(pid, 0, 1);
-    let mid = mids[0];
-    log::debug!("Received node assignment from DCM: mid {:?}", mid);
-
-    // TODO(error_handling): should handle errors gracefully here, maybe percolate to client?
-    let frame = {
-        let mut manager = &mut SHMEM_MEMSLICE_ALLOCATORS[mid as usize - 1].lock();
-        manager
-            .allocate_large_page()
-            .expect("DCM should ensure we have a frame to allocate here.")
-    };
-
+    let regions = dcm_affinity_alloc(affinity, 1).expect("Failed to get affinity shmem");
     construct_ret(
         hdr,
         payload,
-        Ok((frame.affinity as u64, frame.base.as_u64())),
+        Ok((regions[0].affinity as u64, regions[0].base)),
     );
     Ok(())
 }

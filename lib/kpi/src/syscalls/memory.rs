@@ -6,6 +6,7 @@
 use core::convert::TryInto;
 
 use crate::process::FrameId;
+use crate::system::NodeId;
 use crate::*;
 
 use crate::syscall;
@@ -117,15 +118,19 @@ impl VSpace {
 pub struct PhysicalMemory;
 
 impl PhysicalMemory {
-    pub fn allocate_base_page() -> Result<(FrameId, PAddr), SystemCallError> {
-        PhysicalMemory::allocate_frame(true)
+    pub fn allocate_base_page(affinity: NodeId) -> Result<(FrameId, PAddr), SystemCallError> {
+        PhysicalMemory::allocate_frame(true, affinity)
     }
 
-    pub fn allocate_large_page() -> Result<(FrameId, PAddr), SystemCallError> {
-        PhysicalMemory::allocate_frame(false)
+    pub fn allocate_large_page(affinity: NodeId) -> Result<(FrameId, PAddr), SystemCallError> {
+        PhysicalMemory::allocate_frame(false, affinity)
     }
 
-    fn allocate_frame(is_base: bool) -> Result<(FrameId, PAddr), SystemCallError> {
+    // It says afifnity, but this should be a client machine ID for rackscale
+    fn allocate_frame(
+        is_base: bool,
+        affinity: NodeId,
+    ) -> Result<(FrameId, PAddr), SystemCallError> {
         let page_size = if is_base {
             x86::current::paging::BASE_PAGE_SIZE
         } else {
@@ -136,6 +141,7 @@ impl PhysicalMemory {
                 SystemCall::Process as u64,
                 ProcessOperation::AllocatePhysical as u64,
                 page_size,
+                affinity as u64,
                 3
             );
 

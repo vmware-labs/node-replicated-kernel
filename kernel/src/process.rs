@@ -23,7 +23,6 @@ use log::{debug, info, trace};
 use crate::arch::kcb::per_core_mem;
 use crate::arch::memory::{paddr_to_kernel_vaddr, BASE_PAGE_SIZE, LARGE_PAGE_SIZE};
 use crate::arch::process::{current_pid, with_user_space_access_enabled, ArchProcess};
-use crate::arch::MAX_CORES;
 use crate::cmdline::CommandLineArguments;
 use crate::error::{KError, KResult};
 use crate::fs::fd::FileDescriptorEntry;
@@ -52,7 +51,7 @@ pub(crate) type Eid = usize;
 pub(crate) const MAX_PROCESSES: usize = 12;
 
 /// How many registered "named" frames a process can have.
-pub(crate) const MAX_FRAMES_PER_PROCESS: usize = MAX_CORES;
+pub(crate) const MAX_FRAMES_PER_PROCESS: usize = 1023;
 
 /// How many writable sections a process can have (part of the ELF file).
 pub(crate) const MAX_WRITEABLE_SECTIONS_PER_PROCESS: usize = 4;

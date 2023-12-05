@@ -917,8 +917,12 @@ fn s10_memcached_benchmark_internal() {
     }
     println!();
 
+
+    let total_cores_per_node = core::cmp::max(1, machine.max_cores() / machine.max_numa_nodes());
     for thread in threads.iter() {
         println!("\n\nRunning memcached internal benchmark with {thread} threads, {queries} GETs and {memsize}MB memory. ");
+
+        let num_nodes = (thread + (total_cores_per_node - 1)) / total_cores_per_node;
 
         let kernel_cmdline = format!(
             r#"init=memcachedbench.bin initargs={} appcmd='--x-benchmark-mem={} --x-benchmark-queries={}'"#,
@@ -928,7 +932,7 @@ fn s10_memcached_benchmark_internal() {
         let cmdline = RunnerArgs::new_with_build("userspace-smp", &build)
             .timeout(timeout)
             .cores(*thread)
-            .nodes(2)
+            .nodes(num_nodes)
             .use_virtio()
             .memory(qemu_mem)
             .setaffinity(Vec::new())
@@ -942,6 +946,10 @@ fn s10_memcached_benchmark_internal() {
 
             output += dhcp_server.exp_string(DHCP_ACK_MATCH)?.as_str();
 
+            // somehow that needs to be here ???
+            let (prev, matched) = p.exp_regex(r#"INTERNAL BENCHMARK CONFIGURE"#)?;
+            output += prev.as_str();
+            output += matched.as_str();
 
             let ret = parse_memcached_output(&mut p ,*thread, &mut output)?;
 

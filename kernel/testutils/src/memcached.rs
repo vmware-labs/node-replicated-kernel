@@ -77,26 +77,11 @@ pub fn parse_memcached_output(p: &mut PtySession, num_threads: usize,  output: &
     *output += prev.as_str();
     *output += matched.as_str();
 
-    for i in 0..num_threads {
-        let (prev, matched) = p.exp_regex(r#"starting thread (\d+) / (\d+)"#)?;
+    // there could be some reordering happening here with the prints, so we account for all of them.
+    for i in 0..(2* num_threads + 1) {
+        let (prev, matched) = p.exp_regex(r#"(thread.(\d+) start running|starting all (\d+) threads|starting thread (\d+) / (\d+))"#)?;
         println!("> {}", matched);
 
-        *output += prev.as_str();
-        *output += matched.as_str();
-    }
-
-    // number of keys: 131072
-    let (prev, matched) = p.exp_regex(r#"starting all (\d+) threads"#)?;
-    println!("> {}", matched);
-
-    *output += prev.as_str();
-    *output += matched.as_str();
-
-
-
-    for i in 0..num_threads {
-        let (prev, matched) = p.exp_regex(r#"thread.(\d+) start running"#)?;
-        println!("> {}", matched);
         *output += prev.as_str();
         *output += matched.as_str();
     }

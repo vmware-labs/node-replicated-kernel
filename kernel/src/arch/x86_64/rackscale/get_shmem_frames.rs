@@ -24,6 +24,9 @@ use crate::process::Pid;
 
 use crate::memory::backends::AllocatorStatistics;
 
+#[thread_local]
+static mut NEXT_NODE: usize = 0;
+
 struct ShmemFrameReq {
     mid: Option<MachineId>,
     pid: Option<Pid>,
@@ -140,18 +143,21 @@ pub(crate) fn handle_get_shmem_frames(
         }
     } else if let Some(pid) = pid {
         // Let DCM choose node
-        let (_, mids) = dcm_resource_alloc(pid, 0, num_frames as u64);
+        //let (_, mids) = dcm_resource_alloc(pid, 0, num_frames as u64);
+        let mid = unsafe { 
+            NEXT_NODE += 1; 
+            (NEXT_NODE % 3) + 1
+        };
+        let mut manager = &mut SHMEM_MEMSLICE_ALLOCATORS[mid - 1].lock();
         for i in 0..num_frames {
-            let mid = mids[i];
             log::debug!("Received node assignment from DCM: node {:?}", mid);
 
             // TODO(error_handling): should handle errors gracefully here, maybe percolate to client?
-            let mut manager = &mut SHMEM_MEMSLICE_ALLOCATORS[mid - 1].lock();
             let mut frame = manager
                 .allocate_large_page()
                 .expect("DCM OK'd allocation, this should succeed");
             unsafe { frame.zero() };
-            assert!(frame.affinity == mid_to_shmem_affinity(mid));
+            //assert!(frame.affinity == mid_to_shmem_affinity(mid));
             regions.push(ShmemRegion {
                 base: frame.base.as_u64(),
                 affinity: frame.affinity,

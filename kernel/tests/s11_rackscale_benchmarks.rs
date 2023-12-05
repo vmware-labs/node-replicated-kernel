@@ -1097,6 +1097,65 @@ fn s11_rackscale_memcached_dynrep_benchmark_internal() {
 
 #[test]
 #[cfg(not(feature = "baremetal"))]
+fn s11_rackscale_dynrep_userspace() {
+    let transport = RackscaleTransport::Shmem;
+    //let is_smoke = cfg!(feature = "smoke");
+
+    let file_name = format!(
+        "rackscale_{}_dynrep_userspace.csv",
+        transport.to_string(),
+    );
+    let _ignore = std::fs::remove_file(file_name.clone());
+
+    let built = BuildArgs::default()
+        .module("init")
+        .user_feature("test-dynrep")
+        .set_rackscale(true)
+        .kernel_feature("pages-4k")
+        .release()
+        .build();
+
+    fn controller_match_fn(
+        proc: &mut PtySession,
+        output: &mut String,
+        _cores_per_client: usize,
+        _num_clients: usize,
+        _file_name: &str,
+        _is_baseline: bool,
+        _arg: Option<()>,
+    ) -> Result<()> {
+        *output += proc.exp_string("dynrep_test OK")?.as_str();
+        Ok(())
+    }
+
+    let mut test = RackscaleRun::new("userspace-smp".to_string(), built);
+    test.controller_match_fn = controller_match_fn;
+    test.transport = transport;
+
+    // TODO: will need to increase timeouts in the future
+    //test.controller_timeout *= 2;
+    //test.client_timeout *= 2;
+
+    // TODO: may need to increase shmem size in the future?
+    //test.shmem_size = 1024 * 2;
+
+    test.use_affinity_shmem = cfg!(feature = "affinity-shmem");
+    test.use_qemu_huge_pages = cfg!(feature = "affinity-shmem");
+    test.file_name = file_name.to_string();
+
+    // TODO: will need to increase # of clients in the future
+    //test.num_clients = 3;
+
+    // TODO: may need to increase memory in the future
+    //test.memory = 2*4096;
+
+    // TODO: may need to increase cores per client in the future
+    test.cores_per_client = 1;
+    test.run_rackscale();
+}
+
+#[test]
+#[cfg(not(feature = "baremetal"))]
 fn s11_rackscale_monetdb_benchmark() {
     rackscale_monetdb_benchmark(RackscaleTransport::Shmem);
 }

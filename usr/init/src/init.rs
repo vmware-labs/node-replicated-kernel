@@ -36,6 +36,8 @@ mod memhash;
 mod tests;
 #[cfg(any(feature = "bench-vmops", feature = "bench-vmops-unmaplat"))]
 mod vmops;
+#[cfg(feature = "test-dynrep")]
+mod dynrep;
 
 use crate::fs::{run_fio_syscall_proptests, run_fio_syscall_tests};
 
@@ -1070,6 +1072,9 @@ pub extern "C" fn _start() -> ! {
 
     #[cfg(feature = "test-phys-alloc")]
     alloc_physical_test();
+
+    #[cfg(feature = "test-dynrep")]
+    dynrep::userspace_dynrep_test();
 
     #[cfg(feature = "test-rackscale-shootdown")]
     rackscale_shootdown_test();

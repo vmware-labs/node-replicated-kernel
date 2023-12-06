@@ -15,6 +15,9 @@ use crate::error::KError;
 use crate::memory::vspace::*;
 use crate::memory::{kernel_vaddr_to_paddr, paddr_to_kernel_vaddr, Frame, PAddr, VAddr};
 
+use lazy_static::lazy_static;
+use spin::Mutex;
+
 /// Describes a potential modification operation on existing page tables.
 pub(super) const PT_LAYOUT: Layout =
     unsafe { Layout::from_size_align_unchecked(BASE_PAGE_SIZE, BASE_PAGE_SIZE) };
@@ -30,6 +33,12 @@ enum Modify {
     Unmap,
 }
 
+// Stats for dynamic replication
+lazy_static! {
+    pub static ref ALLOCS: Mutex<u32> = Mutex::new(0);
+    pub static ref DEALLOCS: Mutex<u32> = Mutex::new(0);
+}
+
 /// The actual page-table. We allocate the PML4 upfront.
 pub(crate) struct PageTable {
     pub pml4: Pin<Box<PML4>>,
@@ -38,6 +47,13 @@ pub(crate) struct PageTable {
 impl Clone for PageTable {
     fn clone(&self) -> Self {
         let start = rawtime::Instant::now();
+
+        *ALLOCS.lock() += 1;
+        log::info!(
+            "PageTable::Allocations: {} (pml4 addr: {:?})",
+            *ALLOCS.lock(),
+            self.pml4_address()
+        );
 
         fn alloc_frame() -> Frame {
             let frame_ptr = unsafe {
@@ -70,11 +86,16 @@ impl Clone for PageTable {
         }
 
         let mut cloned_pt = PageTable::new().expect("Can't clone PT");
-
+        let mut p_allocs = 0;
         // Do a DFS and find all mapped entries and replicate them in the new `pt`
         for pml4_idx in 0..PAGE_SIZE_ENTRIES {
+
+            let reached_kernel = pml4_idx >= pml4_index(KERNEL_BASE.into());
             if self.pml4[pml4_idx].is_present() {
                 cloned_pt.pml4[pml4_idx] = new_pdpt();
+                if !reached_kernel {
+                    p_allocs += 1;
+                }
 
                 for pdpt_idx in 0..PAGE_SIZE_ENTRIES {
                     let pdpt = self.get_pdpt(self.pml4[pml4_idx]);
@@ -83,6 +104,9 @@ impl Clone for PageTable {
                     if pdpt[pdpt_idx].is_present() {
                         if !pdpt[pdpt_idx].is_page() {
                             cloned_pdpt[pdpt_idx] = new_pd();
+                            if !reached_kernel {
+                                p_allocs += 1;
+                            }
                             let cloned_pdpt_entry = cloned_pdpt[pdpt_idx];
                             drop(cloned_pdpt);
 
@@ -93,6 +117,9 @@ impl Clone for PageTable {
                                 if pd[pd_idx].is_present() {
                                     if !pd[pd_idx].is_page() {
                                         cloned_pd[pd_idx] = new_pt();
+                                        if !reached_kernel {
+                                            p_allocs += 1;
+                                        }
                                         let cloned_pd_entry = cloned_pd[pd_idx];
                                         drop(cloned_pd);
 
@@ -117,7 +144,12 @@ impl Clone for PageTable {
                 }
             }
         }
-        log::debug!("PageTable::clone() completed in {:?}. {:#x}", start.elapsed(), cloned_pt.pml4_address());
+        log::info!("PageTable::Page Allocations: {}", p_allocs);
+        log::debug!(
+            "PageTable::clone() completed in {:?}. {:#x}",
+            start.elapsed(),
+            cloned_pt.pml4_address()
+        );
         cloned_pt
     }
 }
@@ -126,8 +158,14 @@ impl Drop for PageTable {
     #[allow(unreachable_code)]
     fn drop(&mut self) {
         log::debug!("calling drop in PageTable, skipping for now");
-        return;
-
+        *DEALLOCS.lock() += 1;
+        log::info!(
+            "PageTable::Deallocations: {} (pml4 addr: {:?})",
+            *DEALLOCS.lock(),
+            self.pml4_address()
+        );
+        // return;
+        let mut p_deallocs = 0;
         use alloc::alloc::dealloc;
         // Do a DFS and free all page-table memory allocated below kernel-base,
         // don't free the mapped frames -- we return them later through NR
@@ -149,6 +187,7 @@ impl Drop for PageTable {
                                         let addr = pd[pd_idx].address();
                                         let vaddr = paddr_to_kernel_vaddr(addr);
                                         unsafe { dealloc(vaddr.as_mut_ptr(), PT_LAYOUT) };
+                                        p_deallocs += 1;
                                     }
                                 } else {
                                     // Encountered a 2 MiB mapping, nothing to free
@@ -158,6 +197,7 @@ impl Drop for PageTable {
                             let addr = pdpt[pdpt_idx].address();
                             let vaddr = paddr_to_kernel_vaddr(addr);
                             unsafe { dealloc(vaddr.as_mut_ptr(), PT_LAYOUT) };
+                            p_deallocs += 1;
                         } else {
                             // Encountered Page is a 1 GiB mapping, nothing to free
                         }
@@ -168,9 +208,11 @@ impl Drop for PageTable {
                 let addr = self.pml4[pml4_idx].address();
                 let vaddr = paddr_to_kernel_vaddr(addr);
                 unsafe { dealloc(vaddr.as_mut_ptr(), PT_LAYOUT) };
+                p_deallocs += 1;
                 self.pml4[pml4_idx] = PML4Entry(0x0);
             }
         }
+        log::info!("PageTable::Page Deallocations: {}", p_deallocs);
     }
 }
 

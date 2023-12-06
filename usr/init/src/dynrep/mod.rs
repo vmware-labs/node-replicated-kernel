@@ -12,13 +12,13 @@ use core::sync::atomic::AtomicUsize;
 use core::sync::atomic::Ordering;
 
 use lineup::tls2::{Environment, SchedulerControlBlock};
-use nr2::nr::{Dispatch, NodeReplicated};
+use nr2::nr::{AffinityChange, Dispatch, NodeReplicated};
+use rawtime::Instant;
 use x86::bits64::paging::VAddr;
 use x86::random::rdrand64;
-use rawtime::Instant;
 
 mod allocator;
-use allocator::MyAllocator;
+use allocator::{MyAllocator, ALLOC_AFFINITY};
 
 pub const NUM_ENTRIES: u64 = 50_000_000;
 
@@ -31,7 +31,7 @@ struct HashTable {
 
 impl Default for HashTable {
     fn default() -> Self {
-        let allocator = MyAllocator{};
+        let allocator = MyAllocator {};
         let map = HashMap::<u64, u64, DefaultHashBuilder, MyAllocator>::with_capacity_in(
             NUM_ENTRIES as usize,
             allocator,
@@ -73,9 +73,9 @@ impl Dispatch for HashTable {
     }
 }
 
-fn run_bench(mid: usize, core_id : usize, replica: Arc<NodeReplicated<HashTable>>) {
+fn run_bench(mid: usize, core_id: usize, replica: Arc<NodeReplicated<HashTable>>) {
     let ttkn = replica.register(mid - 1).unwrap();
-    let mut random_key :u64 = 0;
+    let mut random_key: u64 = 0;
     let batch_size = 64;
     let duration = 5;
 
@@ -84,16 +84,14 @@ fn run_bench(mid: usize, core_id : usize, replica: Arc<NodeReplicated<HashTable>
         let mut ops = 0;
         let start = Instant::now();
         while start.elapsed().as_secs() < 1 {
-        for i in 0..batch_size {
+            for i in 0..batch_size {
                 unsafe { rdrand64(&mut random_key) };
                 random_key = random_key % NUM_ENTRIES;
                 let _ = replica.execute(OpRd::Get(random_key), ttkn).unwrap();
                 ops += 1;
+            }
         }
-        }
-        info!(
-            "dynhash,{},{},{},{}",mid,core_id, iterations, ops
-        );
+        info!("dynhash,{},{},{},{}", mid, core_id, iterations, ops);
         iterations += 1;
     }
 }
@@ -101,7 +99,8 @@ fn run_bench(mid: usize, core_id : usize, replica: Arc<NodeReplicated<HashTable>
 unsafe extern "C" fn bencher_trampoline(args: *mut u8) -> *mut u8 {
     let current_gtid = vibrio::syscalls::System::core_id().expect("Can't get core id");
     let mid = kpi::system::mid_from_gtid(current_gtid);
-    let replica: Arc<NodeReplicated<HashTable>> = Arc::from_raw(args as *const NodeReplicated<HashTable>);
+    let replica: Arc<NodeReplicated<HashTable>> =
+        Arc::from_raw(args as *const NodeReplicated<HashTable>);
 
     // Synchronize with all cores
     POOR_MANS_BARRIER.fetch_sub(1, Ordering::Release);
@@ -131,9 +130,29 @@ pub fn userspace_dynrep_test() {
     log::info!("Found {:?} client machines", nnodes);
 
     // Create data structure, with as many replicas as there are clients (assuming 1 numa node per client)
-    // TODO: change # of replicas to nnodes
     let num_replicas = NonZeroUsize::new(nnodes).unwrap();
-    let replicas = Arc::new(NodeReplicated::<HashTable>::new(num_replicas, |_| 0).unwrap());
+    let replicas = Arc::new(
+        NodeReplicated::<HashTable>::new(num_replicas, |afc: AffinityChange| {
+            log::trace!("Got AffinityChange: {:?}", afc);
+            match afc {
+                AffinityChange::Replica(r) => {
+                    let mut affinity = (*ALLOC_AFFINITY).lock();
+                    let old_affinity = *affinity;
+                    *affinity = r;
+                    log::info!("Set alloc affinity to {:?}", r);
+                    return old_affinity;
+                }
+                AffinityChange::Revert(orig) => {
+                    //pcm.set_mem_affinity(orig).expect("Can't set affinity");
+                    let mut affinity = (*ALLOC_AFFINITY).lock();
+                    *affinity = orig;
+                    log::info!("Restored alloc affinity to {:?}", orig);
+                    return 0;
+                }
+            }
+        })
+        .unwrap(),
+    );
 
     let s = &vibrio::upcalls::PROCESS_SCHEDULER;
     let mut gtids = Vec::with_capacity(ncores);

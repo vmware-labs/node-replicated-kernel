@@ -89,7 +89,6 @@ impl Clone for PageTable {
         let mut p_allocs = 0;
         // Do a DFS and find all mapped entries and replicate them in the new `pt`
         for pml4_idx in 0..PAGE_SIZE_ENTRIES {
-
             let reached_kernel = pml4_idx >= pml4_index(KERNEL_BASE.into());
             if self.pml4[pml4_idx].is_present() {
                 cloned_pt.pml4[pml4_idx] = new_pdpt();

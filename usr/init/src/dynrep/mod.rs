@@ -18,7 +18,7 @@ use x86::bits64::paging::VAddr;
 use x86::random::rdrand64;
 
 mod allocator;
-use allocator::{MyAllocator, ALLOC_AFFINITY};
+use allocator::MyAllocator;
 
 pub const NUM_ENTRIES: u64 = 50_000_000;
 
@@ -176,28 +176,7 @@ pub fn userspace_dynrep_test() {
     // TODO: change this to change number of replicas
     let num_replicas = NonZeroUsize::new(nnodes).unwrap(); // NonZeroUsize::new(1).unwrap();
 
-    let replicas = Arc::new(
-        NodeReplicated::<HashTable>::new(num_replicas, |afc: AffinityChange| {
-            log::trace!("Got AffinityChange: {:?}", afc);
-            match afc {
-                AffinityChange::Replica(r) => {
-                    let mut affinity = (*ALLOC_AFFINITY).lock();
-                    let old_affinity = *affinity;
-                    *affinity = r;
-                    log::trace!("Set alloc affinity to {:?}", r + 1);
-                    return old_affinity;
-                }
-                AffinityChange::Revert(orig) => {
-                    //pcm.set_mem_affinity(orig).expect("Can't set affinity");
-                    let mut affinity = (*ALLOC_AFFINITY).lock();
-                    *affinity = orig;
-                    log::trace!("Restored alloc affinity to {:?}", orig + 1);
-                    return 0;
-                }
-            }
-        })
-        .unwrap(),
-    );
+    let replicas = Arc::new(NodeReplicated::<HashTable>::new(num_replicas, |_| 0).unwrap());
 
     let s = &vibrio::upcalls::PROCESS_SCHEDULER;
     let mut gtids = Vec::with_capacity(ncores);

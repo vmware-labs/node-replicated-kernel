@@ -80,7 +80,7 @@ impl Dispatch for HashTable {
 }
 
 fn run_bench(
-    replica_id: usize,
+    machine_id: usize,
     core_id: usize,
     ttkn: ThreadToken,
     replica: Arc<NodeReplicated<HashTable>>,
@@ -101,7 +101,7 @@ fn run_bench(
                 ops += 1;
             }
         }
-        info!("dynhash,{},{},{},{}", replica_id, core_id, iterations, ops);
+        info!("dynhash,{},{},{},{}", machine_id, core_id, iterations, ops);
         iterations += 1;
     }
 }
@@ -109,7 +109,7 @@ fn run_bench(
 unsafe extern "C" fn bencher_trampoline(args: *mut u8) -> *mut u8 {
     let current_gtid = vibrio::syscalls::System::core_id().expect("Can't get core id");
     let mid = kpi::system::mid_from_gtid(current_gtid);
-    let replica_id = if mid == 0 {
+    let machine_id = if mid == 0 {
         let hwthreads = vibrio::syscalls::System::threads().expect("Cant get system topology");
         let mut node_id = 0;
         for hwthread in hwthreads.iter() {
@@ -127,6 +127,8 @@ unsafe extern "C" fn bencher_trampoline(args: *mut u8) -> *mut u8 {
         Arc::from_raw(args as *const NodeReplicated<HashTable>);
 
     // TODO: change replica # here
+    //let replica_id = 0;
+    let replica_id = machine_id;
     log::info!(
         "Registered thread {:?} with replica {:?}",
         current_gtid,
@@ -140,7 +142,7 @@ unsafe extern "C" fn bencher_trampoline(args: *mut u8) -> *mut u8 {
         core::hint::spin_loop();
     }
 
-    run_bench(replica_id, current_gtid, ttkn, replica.clone());
+    run_bench(machine_id, current_gtid, ttkn, replica.clone());
     ptr::null_mut()
 }
 

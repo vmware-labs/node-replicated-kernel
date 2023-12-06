@@ -216,7 +216,7 @@ impl<T: Arch86ProcessDispatch> ProcessDispatch<u64> for T {
         Ok((0, 0))
     }
 
-    fn allocate_physical(&self, page_size: u64, _affinity: u64) -> Result<(u64, u64), KError> {
+    fn allocate_physical(&self, page_size: u64, affinity: u64) -> Result<(u64, u64), KError> {
         let page_size: usize = page_size.try_into().unwrap_or(0);
         //let affinity: usize = arg3.try_into().unwrap_or(0);
         // Validate input
@@ -227,24 +227,36 @@ impl<T: Arch86ProcessDispatch> ProcessDispatch<u64> for T {
         }
 
         let pcm = super::kcb::per_core_mem();
+        let orig_affinity = { pcm.physical_memory.borrow().affinity };
+        pcm.set_mem_affinity((affinity - 1) as atopology::NodeId)
+            .expect("Can't change affinity");
+
         // Figure out what memory to allocate
         let (bp, lp) = if page_size == BASE_PAGE_SIZE {
             (1, 0)
         } else {
             (0, 1)
         };
-        crate::memory::KernelAllocator::try_refill_tcache(bp, lp, MemType::Mem)?;
+        crate::memory::KernelAllocator::try_refill_tcache(bp, lp, MemType::Mem)
+            .expect("Failed to refill tcache");
 
         // Allocate the page (need to make sure we drop pmanager again
         // before we go to NR):
         let frame = {
             let mut pmanager = pcm.mem_manager();
             if page_size == BASE_PAGE_SIZE {
-                pmanager.allocate_base_page()?
+                pmanager
+                    .allocate_base_page()
+                    .expect("Cannot allocate base page")
             } else {
-                pmanager.allocate_large_page()?
+                pmanager
+                    .allocate_large_page()
+                    .expect("Cannot allocate large page")
             }
         };
+
+        pcm.set_mem_affinity(orig_affinity)
+            .expect("Can't change affinity");
 
         // Associate memory with the process
         let pid = current_pid()?;

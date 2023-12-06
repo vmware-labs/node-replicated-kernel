@@ -80,7 +80,7 @@ impl Dispatch for HashTable {
 }
 
 fn run_bench(
-    mid: usize,
+    replica_id: usize,
     core_id: usize,
     ttkn: ThreadToken,
     replica: Arc<NodeReplicated<HashTable>>,
@@ -101,7 +101,7 @@ fn run_bench(
                 ops += 1;
             }
         }
-        info!("dynhash,{},{},{},{}", mid, core_id, iterations, ops);
+        info!("dynhash,{},{},{},{}", replica_id, core_id, iterations, ops);
         iterations += 1;
     }
 }
@@ -109,10 +109,30 @@ fn run_bench(
 unsafe extern "C" fn bencher_trampoline(args: *mut u8) -> *mut u8 {
     let current_gtid = vibrio::syscalls::System::core_id().expect("Can't get core id");
     let mid = kpi::system::mid_from_gtid(current_gtid);
+    let replica_id = if mid == 0 {
+        let hwthreads = vibrio::syscalls::System::threads().expect("Cant get system topology");
+        let mut node_id = 0;
+        for hwthread in hwthreads.iter() {
+            if hwthread.id == current_gtid {
+                node_id = hwthread.node_id;
+                break;
+            }
+        }
+        node_id
+    } else {
+        mid - 1
+    };
 
     let replica: Arc<NodeReplicated<HashTable>> =
         Arc::from_raw(args as *const NodeReplicated<HashTable>);
-    let ttkn = replica.register(mid - 1).unwrap();
+
+    // TODO: change replica # here
+    log::info!(
+        "Registered thread {:?} with replica {:?}",
+        current_gtid,
+        replica_id
+    );
+    let ttkn = replica.register(replica_id).unwrap();
 
     // Synchronize with all cores
     POOR_MANS_BARRIER.fetch_sub(1, Ordering::Release);
@@ -120,7 +140,7 @@ unsafe extern "C" fn bencher_trampoline(args: *mut u8) -> *mut u8 {
         core::hint::spin_loop();
     }
 
-    run_bench(mid, current_gtid, ttkn, replica.clone());
+    run_bench(replica_id, current_gtid, ttkn, replica.clone());
     ptr::null_mut()
 }
 
@@ -132,14 +152,25 @@ pub fn userspace_dynrep_test() {
 
     // Figure out how many clients there are - this will determine how many max replicas we use
     let mut nnodes = 0;
+    let mut nclients = 0;
     for hwthread in hwthreads.iter() {
-        // mid == machine id, otherwise referred to as client id
         let mid = kpi::system::mid_from_gtid(hwthread.id);
-        if mid > nnodes {
-            nnodes = mid;
+        if mid > nclients {
+            nclients = mid;
+        }
+        if hwthread.node_id > nnodes {
+            nnodes = hwthread.node_id;
         }
     }
-    log::info!("Found {:?} client machines", nnodes);
+    if nclients != 0 {
+        // running as DiNOS
+        log::info!("Found {:?} client machines", nclients);
+        nnodes = nclients;
+    } else {
+        // running as NrOS
+        log::info!("Found {:?} nodes", nnodes);
+        nnodes += 1;
+    }
 
     // Create data structure, with as many replicas as there are clients (assuming 1 numa node per client)
     // TODO: change this to change number of replicas
@@ -180,6 +211,7 @@ pub fn userspace_dynrep_test() {
         move |_| {
             let mut thandles = Vec::with_capacity(ncores);
             POOR_MANS_BARRIER.store(ncores, Ordering::SeqCst);
+            log::info!("Set barrier to: {:?}", POOR_MANS_BARRIER);
 
             for core_index in 0..ncores {
                 thandles.push(

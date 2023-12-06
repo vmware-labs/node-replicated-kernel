@@ -1073,13 +1073,17 @@ fn s11_rackscale_dynrep_userspace() {
     let max_numa_nodes = machine.max_numa_nodes();
     let cores_per_client = max_cores / max_numa_nodes;
 
-    let file_name = format!("rackscale_{}_dynrep_userspace.csv", transport.to_string(),);
+    let file_name = if cfg!(feature = "baseline") {
+        format!("nros_dynrep_userspace.csv")
+    } else {
+        format!("rackscale_{}_dynrep_userspace.csv", transport.to_string(),)
+    };
     let _ignore = std::fs::remove_file(file_name.clone());
 
     let built = BuildArgs::default()
         .module("init")
         .user_feature("test-dynrep")
-        .set_rackscale(true)
+        .set_rackscale(!cfg!(feature = "baseline"))
         .kernel_feature("pages-4k")
         .release()
         .build();
@@ -1153,5 +1157,9 @@ fn s11_rackscale_dynrep_userspace() {
     }
     test.memory = 2 * 4096;
     test.shmem_size = 1024 * 2;
-    test.run_rackscale();
+    if cfg!(feature = "baseline") {
+        test.run_baseline();
+    } else {
+        test.run_rackscale();
+    }
 }

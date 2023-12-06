@@ -12,7 +12,7 @@ use core::sync::atomic::AtomicUsize;
 use core::sync::atomic::Ordering;
 
 use lineup::tls2::{Environment, SchedulerControlBlock};
-use nr2::nr::{AffinityChange, Dispatch, NodeReplicated, ThreadToken};
+use nr2::nr::{Dispatch, NodeReplicated, ThreadToken};
 use rawtime::Instant;
 use x86::bits64::paging::VAddr;
 use x86::random::rdrand64;
@@ -32,10 +32,16 @@ struct HashTable {
 impl Default for HashTable {
     fn default() -> Self {
         let allocator = MyAllocator {};
-        let map = HashMap::<u64, u64, DefaultHashBuilder, MyAllocator>::with_capacity_in(
+        let mut map = HashMap::<u64, u64, DefaultHashBuilder, MyAllocator>::with_capacity_in(
             NUM_ENTRIES as usize,
             allocator,
         );
+        for i in 0..NUM_ENTRIES {
+            match map.insert(i, NUM_ENTRIES - i) {
+                None => {}
+                Some(_) => panic!("Key should not exist already"),
+            }
+        }
         HashTable { map }
     }
 }
@@ -102,48 +108,11 @@ fn run_bench(
 
 unsafe extern "C" fn bencher_trampoline(args: *mut u8) -> *mut u8 {
     let current_gtid = vibrio::syscalls::System::core_id().expect("Can't get core id");
-    let hwthreads = vibrio::syscalls::System::threads().expect("Cant get system topology");
     let mid = kpi::system::mid_from_gtid(current_gtid);
-
-    // TODO: use this to change # of replicas used
-    let replica_num = mid - 1; // 1
 
     let replica: Arc<NodeReplicated<HashTable>> =
         Arc::from_raw(args as *const NodeReplicated<HashTable>);
-    let ttkn = replica.register(replica_num).unwrap();
-
-    let mut max_gtid = current_gtid;
-    // Figure out how many clients there are - this will determine how we
-    let mut nnodes = 0;
-    for hwthread in hwthreads.iter() {
-        // mid == machine id, otherwise referred to as client id
-        let mid = kpi::system::mid_from_gtid(hwthread.id);
-        if mid > nnodes {
-            nnodes = mid;
-        }
-        if hwthread.id > max_gtid {
-            max_gtid = hwthread.id;
-        }
-    }
-    let cores_per_machine = (hwthreads.len() / nnodes) as u64;
-
-    let populate_key_start = (NUM_ENTRIES / hwthreads.len() as u64)
-        * (cores_per_machine * (mid as u64 - 1)
-            + (kpi::system::mtid_from_gtid(current_gtid)) as u64);
-    let mut populate_key_end = populate_key_start + (NUM_ENTRIES / hwthreads.len() as u64);
-    if current_gtid == max_gtid {
-        populate_key_end = NUM_ENTRIES;
-    }
-    for key in populate_key_start..populate_key_end {
-        replica
-            .execute_mut(OpWr::Put(key, NUM_ENTRIES - key), ttkn)
-            .unwrap();
-    }
-    log::info!(
-        "populated key region [{}-{})",
-        populate_key_start,
-        populate_key_end
-    );
+    let ttkn = replica.register(mid - 1).unwrap();
 
     // Synchronize with all cores
     POOR_MANS_BARRIER.fetch_sub(1, Ordering::Release);

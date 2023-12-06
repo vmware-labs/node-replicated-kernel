@@ -1,7 +1,6 @@
 use core::slice::from_raw_parts_mut;
 use core::sync::atomic::AtomicU8;
 use core::sync::atomic::Ordering;
-use lazy_static::lazy_static;
 use x86::bits64::paging::LARGE_PAGE_SIZE;
 
 use core::{

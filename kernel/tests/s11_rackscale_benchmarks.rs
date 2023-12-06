@@ -1137,16 +1137,11 @@ fn s11_rackscale_dynrep_userspace() {
     let mut test = RackscaleRun::new("userspace-smp".to_string(), built);
     test.controller_match_fn = controller_match_fn;
     test.transport = transport;
-
-    // TODO: will need to increase timeouts in the future
-    //test.controller_timeout *= 2;
-    //test.client_timeout *= 2;
-
+    test.controller_timeout *= 4;
+    test.client_timeout *= 4;
     test.use_affinity_shmem = cfg!(feature = "affinity-shmem");
     test.use_qemu_huge_pages = cfg!(feature = "affinity-shmem");
     test.file_name = file_name.to_string();
-
-    // TODO: will need to increase # of clients in the future
     if is_smoke {
         test.num_clients = 1;
         test.cores_per_client = 1;
@@ -1156,11 +1151,7 @@ fn s11_rackscale_dynrep_userspace() {
         // TODO: after change above, can just be cores_per_client
         test.cores_per_client = cores_per_client - (test.num_clients + 1);
     }
-
-    // TODO: may need to increase memory in the future
     test.memory = 2 * 4096;
-    // TODO: may need to increase shmem size in the future?
     test.shmem_size = 1024 * 2;
-
     test.run_rackscale();
 }

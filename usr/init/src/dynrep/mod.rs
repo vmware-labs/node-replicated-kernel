@@ -12,7 +12,7 @@ use core::sync::atomic::AtomicUsize;
 use core::sync::atomic::Ordering;
 
 use lineup::tls2::{Environment, SchedulerControlBlock};
-use nr2::nr::{AffinityChange, Dispatch, NodeReplicated};
+use nr2::nr::{AffinityChange, Dispatch, NodeReplicated, ThreadToken};
 use rawtime::Instant;
 use x86::bits64::paging::VAddr;
 use x86::random::rdrand64;
@@ -52,29 +52,33 @@ enum OpWr {
 impl Dispatch for HashTable {
     type ReadOperation<'a> = OpRd;
     type WriteOperation = OpWr;
-    type Response = Result<Option<u64>, ()>;
+    type Response = Result<u64, ()>;
 
     fn dispatch<'a>(&self, op: Self::ReadOperation<'a>) -> Self::Response {
         match op {
-            OpRd::Get(key) => {
-                let val = self.map.get(&key);
-                Ok(val.copied())
-            }
+            OpRd::Get(key) => match self.map.get(&key) {
+                Some(val) => Ok(*val),
+                None => Err(()),
+            },
         }
     }
 
     fn dispatch_mut(&mut self, op: Self::WriteOperation) -> Self::Response {
         match op {
-            OpWr::Put(key, val) => {
-                let resp = self.map.insert(key, val);
-                Ok(resp)
-            }
+            OpWr::Put(key, val) => match self.map.insert(key, val) {
+                None => Ok(0),
+                Some(_) => Err(()),
+            },
         }
     }
 }
 
-fn run_bench(mid: usize, core_id: usize, replica: Arc<NodeReplicated<HashTable>>) {
-    let ttkn = replica.register(mid - 1).unwrap();
+fn run_bench(
+    mid: usize,
+    core_id: usize,
+    ttkn: ThreadToken,
+    replica: Arc<NodeReplicated<HashTable>>,
+) {
     let mut random_key: u64 = 0;
     let batch_size = 64;
     let duration = 5;
@@ -98,9 +102,48 @@ fn run_bench(mid: usize, core_id: usize, replica: Arc<NodeReplicated<HashTable>>
 
 unsafe extern "C" fn bencher_trampoline(args: *mut u8) -> *mut u8 {
     let current_gtid = vibrio::syscalls::System::core_id().expect("Can't get core id");
+    let hwthreads = vibrio::syscalls::System::threads().expect("Cant get system topology");
     let mid = kpi::system::mid_from_gtid(current_gtid);
+
+    // TODO: use this to change # of replicas used
+    let replica_num = mid - 1; // 1
+
     let replica: Arc<NodeReplicated<HashTable>> =
         Arc::from_raw(args as *const NodeReplicated<HashTable>);
+    let ttkn = replica.register(replica_num).unwrap();
+
+    let mut max_gtid = current_gtid;
+    // Figure out how many clients there are - this will determine how we
+    let mut nnodes = 0;
+    for hwthread in hwthreads.iter() {
+        // mid == machine id, otherwise referred to as client id
+        let mid = kpi::system::mid_from_gtid(hwthread.id);
+        if mid > nnodes {
+            nnodes = mid;
+        }
+        if hwthread.id > max_gtid {
+            max_gtid = hwthread.id;
+        }
+    }
+    let cores_per_machine = (hwthreads.len() / nnodes) as u64;
+
+    let populate_key_start = (NUM_ENTRIES / hwthreads.len() as u64)
+        * (cores_per_machine * (mid as u64 - 1)
+            + (kpi::system::mtid_from_gtid(current_gtid)) as u64);
+    let mut populate_key_end = populate_key_start + (NUM_ENTRIES / hwthreads.len() as u64);
+    if current_gtid == max_gtid {
+        populate_key_end = NUM_ENTRIES;
+    }
+    for key in populate_key_start..populate_key_end {
+        replica
+            .execute_mut(OpWr::Put(key, NUM_ENTRIES - key), ttkn)
+            .unwrap();
+    }
+    log::info!(
+        "populated key region [{}-{})",
+        populate_key_start,
+        populate_key_end
+    );
 
     // Synchronize with all cores
     POOR_MANS_BARRIER.fetch_sub(1, Ordering::Release);
@@ -108,7 +151,7 @@ unsafe extern "C" fn bencher_trampoline(args: *mut u8) -> *mut u8 {
         core::hint::spin_loop();
     }
 
-    run_bench(mid, current_gtid, replica.clone());
+    run_bench(mid, current_gtid, ttkn, replica.clone());
     ptr::null_mut()
 }
 
@@ -130,7 +173,9 @@ pub fn userspace_dynrep_test() {
     log::info!("Found {:?} client machines", nnodes);
 
     // Create data structure, with as many replicas as there are clients (assuming 1 numa node per client)
-    let num_replicas = NonZeroUsize::new(nnodes).unwrap();
+    // TODO: change this to change number of replicas
+    let num_replicas = NonZeroUsize::new(nnodes).unwrap(); // NonZeroUsize::new(1).unwrap();
+
     let replicas = Arc::new(
         NodeReplicated::<HashTable>::new(num_replicas, |afc: AffinityChange| {
             log::trace!("Got AffinityChange: {:?}", afc);
@@ -139,14 +184,14 @@ pub fn userspace_dynrep_test() {
                     let mut affinity = (*ALLOC_AFFINITY).lock();
                     let old_affinity = *affinity;
                     *affinity = r;
-                    log::info!("Set alloc affinity to {:?}", r);
+                    log::trace!("Set alloc affinity to {:?}", r + 1);
                     return old_affinity;
                 }
                 AffinityChange::Revert(orig) => {
                     //pcm.set_mem_affinity(orig).expect("Can't set affinity");
                     let mut affinity = (*ALLOC_AFFINITY).lock();
                     *affinity = orig;
-                    log::info!("Restored alloc affinity to {:?}", orig);
+                    log::trace!("Restored alloc affinity to {:?}", orig + 1);
                     return 0;
                 }
             }

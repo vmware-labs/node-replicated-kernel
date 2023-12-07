@@ -12,7 +12,6 @@ use core::sync::atomic::AtomicUsize;
 use core::sync::atomic::Ordering;
 
 use lineup::tls2::{Environment, SchedulerControlBlock};
-use nr2::nr::{Dispatch, NodeReplicated, ThreadToken};
 use rawtime::Instant;
 use x86::bits64::paging::VAddr;
 use x86::random::rdrand64;
@@ -26,7 +25,7 @@ static POOR_MANS_BARRIER: AtomicUsize = AtomicUsize::new(0);
 
 #[derive(Clone)]
 struct HashTable {
-    map: HashMap<u64, u64, DefaultHashBuilder, MyAllocator>,
+   pub map: HashMap<u64, u64, DefaultHashBuilder, MyAllocator>,
 }
 
 impl Default for HashTable {
@@ -46,44 +45,10 @@ impl Default for HashTable {
     }
 }
 
-enum OpRd {
-    Get(u64),
-}
-
-#[derive(PartialEq, Clone)]
-enum OpWr {
-    Put(u64, u64),
-}
-
-impl Dispatch for HashTable {
-    type ReadOperation<'a> = OpRd;
-    type WriteOperation = OpWr;
-    type Response = Result<u64, ()>;
-
-    fn dispatch<'a>(&self, op: Self::ReadOperation<'a>) -> Self::Response {
-        match op {
-            OpRd::Get(key) => match self.map.get(&key) {
-                Some(val) => Ok(*val),
-                None => Err(()),
-            },
-        }
-    }
-
-    fn dispatch_mut(&mut self, op: Self::WriteOperation) -> Self::Response {
-        match op {
-            OpWr::Put(key, val) => match self.map.insert(key, val) {
-                None => Ok(0),
-                Some(_) => Err(()),
-            },
-        }
-    }
-}
-
 fn run_bench(
     machine_id: usize,
     core_id: usize,
-    ttkn: ThreadToken,
-    replica: Arc<NodeReplicated<HashTable>>,
+    replica: Arc<HashTable>,
 ) {
     let mut random_key: u64 = 0;
     let batch_size = 64;
@@ -97,7 +62,7 @@ fn run_bench(
             for i in 0..batch_size {
                 unsafe { rdrand64(&mut random_key) };
                 random_key = random_key % NUM_ENTRIES;
-                let _ = replica.execute(OpRd::Get(random_key), ttkn).unwrap();
+                let _ = replica.map.get(&random_key).expect("Get failed");
                 ops += 1;
             }
         }
@@ -123,8 +88,7 @@ unsafe extern "C" fn bencher_trampoline(args: *mut u8) -> *mut u8 {
         mid - 1
     };
 
-    let replica: Arc<NodeReplicated<HashTable>> =
-        Arc::from_raw(args as *const NodeReplicated<HashTable>);
+    let replica: Arc<HashTable> = Arc::from_raw(args as *const HashTable);
 
     // TODO: change replica # here
     //let replica_id = 0;
@@ -134,7 +98,6 @@ unsafe extern "C" fn bencher_trampoline(args: *mut u8) -> *mut u8 {
         current_gtid,
         replica_id
     );
-    let ttkn = replica.register(replica_id).unwrap();
 
     // Synchronize with all cores
     POOR_MANS_BARRIER.fetch_sub(1, Ordering::Release);
@@ -142,7 +105,7 @@ unsafe extern "C" fn bencher_trampoline(args: *mut u8) -> *mut u8 {
         core::hint::spin_loop();
     }
 
-    run_bench(machine_id, current_gtid, ttkn, replica.clone());
+    run_bench(machine_id, current_gtid, replica.clone());
     ptr::null_mut()
 }
 
@@ -176,9 +139,10 @@ pub fn userspace_dynrep_test() {
 
     // Create data structure, with as many replicas as there are clients (assuming 1 numa node per client)
     // TODO: change this to change number of replicas
-    let num_replicas = NonZeroUsize::new(nnodes).unwrap(); // NonZeroUsize::new(1).unwrap();
-
-    let replicas = Arc::new(NodeReplicated::<HashTable>::new(num_replicas, |_| 0).unwrap());
+    let mut replicas = Vec::with_capacity(nnodes as usize);
+    for i in 0..nnodes {
+        replicas.push(Arc::new(HashTable::default()));
+    }
 
     let s = &vibrio::upcalls::PROCESS_SCHEDULER;
     let mut gtids = Vec::with_capacity(ncores);
@@ -216,11 +180,13 @@ pub fn userspace_dynrep_test() {
             log::info!("Set barrier to: {:?}", POOR_MANS_BARRIER);
 
             for core_index in 0..ncores {
+                let mid = kpi::system::mid_from_gtid(gtids[core_index]);
                 thandles.push(
                     Environment::thread()
                         .spawn_on_core(
                             Some(bencher_trampoline),
-                            Arc::into_raw(replicas.clone()) as *const _ as *mut u8,
+                            Arc::into_raw(replicas[mid - 1].clone()) as *const _ as *mut u8,
+
                             gtids[core_index],
                         )
                         .expect("Can't spawn bench thread?"),

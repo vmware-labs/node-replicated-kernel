@@ -292,6 +292,40 @@ impl<T: Arch86ProcessDispatch> ProcessDispatch<u64> for T {
         Ok((0, 0))
     }
 
+    fn set_replicas(&self, add: u64, rid: u64) -> crate::error::KResult<(u64, u64)> {
+        let pid = current_pid()?;
+
+        if rid == 99 {
+            log::info!("call from memcached");
+            lazy_static::initialize(&super::irq::DYNREP_TIME_ANCHOR);
+            super::irq::DYNREP_ENABLED.store(true, core::sync::atomic::Ordering::SeqCst);
+            info!("set_replicas: MT_ID={} DYNREP_ENABLED={} DYNREP_TIME_ANCHOR={}", 
+                *crate::environment::MT_ID, 
+                super::irq::DYNREP_ENABLED.load(core::sync::atomic::Ordering::SeqCst),
+                super::irq::DYNREP_TIME_ANCHOR.elapsed().as_nanos(),
+            );
+
+            return Ok((0, 0));
+        }
+
+        let handles = if add > 0 {
+            NrProcess::<Ring3Process>::add_replica(pid, rid as usize).expect("add_replica")
+        } else {
+            NrProcess::<Ring3Process>::remove_replica(pid, rid as usize).expect("remove_replica")
+        };
+
+        if handles.len() > 0 {
+            #[cfg(feature = "rackscale")]
+            super::tlb::remote_shootdown(handles);
+
+            // There will only be one handle in non-rackscale build
+            #[cfg(not(feature = "rackscale"))]
+            super::tlb::shootdown(handles[0].clone());
+        }
+
+        Ok((0, 0))
+    }
+
     fn exit(&self, code: u64) -> Result<(u64, u64), KError> {
         debug!("Process got exit, we are done for now...");
         // TODO: For now just a dummy version that exits Qemu

@@ -7,7 +7,7 @@ use alloc::sync::Arc;
 use core::any::Any;
 
 use arrayvec::ArrayVec;
-use node_replication::{Replica, ReplicaToken};
+use nr2::nr::{Replica, ReplicaToken};
 
 use crate::error::KError;
 use crate::memory::mcache::FrameCacheEarly;

@@ -100,7 +100,7 @@ impl Iterator for CoreBitMapIter {
 }
 
 #[cfg_attr(not(target_os = "none"), allow(dead_code))]
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Copy, Clone)]
 pub(crate) enum MappingType {
     _ElfText,
     _ElfData,
@@ -108,6 +108,7 @@ pub(crate) enum MappingType {
     Heap,
 }
 
+#[derive(PartialEq, Clone)]
 pub(crate) struct MappingInfo {
     pub frame: Frame,
     pub rights: MapAction,
@@ -141,6 +142,8 @@ impl fmt::Debug for MappingInfo {
 
 /// Generic address space functionality.
 pub(crate) trait AddressSpace {
+    fn root(&self) -> PAddr;
+
     /// Maps a list of `frames` at `base` in the address space
     /// with the access rights defined by `action`.
     fn map_frames(&mut self, base: VAddr, frames: &[(Frame, MapAction)]) -> Result<(), KError> {

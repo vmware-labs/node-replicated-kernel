@@ -86,8 +86,18 @@ impl KernelAllocator {
                     let mut zone_allocator = pcm.ezone_allocator()?;
                     zone_allocator.allocate(layout).map_err(|e| e.into())
                 } else {
+                    if layout.size() == 0xbeef {
+                        log::info!("before 0xbeef bytes");
+                    }
                     let mut zone_allocator = pcm.zone_allocator()?;
-                    zone_allocator.allocate(layout).map_err(|e| e.into())
+                    if layout.size() == 0xbeef {
+                        log::info!("after getting zone allocator");
+                    }
+                    let ptr = zone_allocator.allocate(layout).map_err(|e| e.into());
+                    if layout.size() == 0xbeef {
+                        log::info!("after alloc {:?}", ptr);
+                    }
+                    ptr
                 }
             }
             AllocatorType::MemManager if layout.size() <= LARGE_PAGE_SIZE => {
@@ -219,7 +229,13 @@ impl KernelAllocator {
             (AllocatorType::Zone, KError::CacheExhausted) => {
                 let (needed_base_pages, needed_large_pages) =
                     KernelAllocator::refill_amount(layout);
+                if layout.size() == 0xbeef {
+                    log::info!("before maybe_refill_tcache");
+                }
                 self.maybe_refill_tcache(needed_base_pages, needed_large_pages)?;
+                if layout.size() == 0xbeef {
+                    log::info!("before try_refill_zone");
+                }
                 self.try_refill_zone(layout)
             }
             (AllocatorType::MapBig, _) => {
@@ -345,6 +361,10 @@ impl KernelAllocator {
         use crate::arch::rackscale::get_shmem_frames::rpc_get_shmem_frames;
         use crate::arch::rackscale::CLIENT_STATE;
 
+        if needed_base_pages == 0 && needed_large_pages == 0 {
+            return Ok(());
+        }
+
         // We only request at large page granularity
         let mut total_needed_large_pages = needed_large_pages;
         let mut total_needed_base_pages = needed_base_pages;
@@ -418,6 +438,7 @@ impl KernelAllocator {
             }
             frames
         } else {
+            log::trace!("try-refill-shmem needed_base_pages={needed_base_pages} needed_large_pages={needed_large_pages} total_needed_base_pages={total_needed_base_pages} total_needed_large_pages={total_needed_large_pages}");
             rpc_get_shmem_frames(None, total_needed_large_pages)?
         };
 
@@ -556,14 +577,26 @@ impl KernelAllocator {
                 }
             } else {
                 // Needs a large page
-                let frame = cas.pmanager.allocate_large_page()?;
+                if layout.size() == 0xbeef {
+                    log::info!("before allocate_large_page");
+                }
+
+                let mut frame = cas.pmanager.allocate_large_page()?;
                 unsafe {
                     let large_page_ptr: *mut slabmalloc::LargeObjectPage = frame
                         .uninitialized::<slabmalloc::LargeObjectPage>()
                         .as_mut_ptr();
+                    if layout.size() == 0xbeef {
+                        log::info!("before zero frame={:?}", frame);
+                        frame.zero();
+                        log::info!("before refill_large frame={:?}", frame);
+                    }
                     cas.zone_allocator
                         .refill_large(layout, &mut *large_page_ptr)
                         .expect("This should always succeed");
+                    if layout.size() == 0xbeef {
+                        log::info!("after refill_large");
+                    }
                 }
             }
         }
@@ -728,6 +761,8 @@ unsafe impl GlobalAlloc for KernelAllocator {
     }
 
     unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
+        #[cfg(feature = "rackscale")]
+        let mut drop = true;
         try_per_core_mem().map_or_else(
             || {
                 unreachable!("Trying to reallocate {:p} {:?} without a KCB.", ptr, layout);
@@ -755,11 +790,13 @@ unsafe impl GlobalAlloc for KernelAllocator {
                             } else if is_shmem_affinity(affinity) && !is_shmem_addr_with_affinity(ptr as u64, affinity, true) {
                                 // TODO(rackscale): should switch to non-shmem affinity for alloc below.
                                 // TODO(rackscale): check if shmem is a match for id?
-                                panic!("Trying to realloc shmem to wrong or non- shmem allocator");
+                                warn!("Trying to realloc shmem to wrong or non- shmem allocator");
+                                drop = false;
                             } else if !is_shmem_affinity(affinity) && is_shmem_addr(ptr as u64, false, true) {
                                 // TODO(rackscale): should switch to use shmem affinity for alloc below.
                                 // TODO(rackscale): check if shmem is a match for id?
-                                panic!("Trying to realloc shmem using non-shmem allocator");
+                                warn!("Trying to realloc shmem using non-shmem allocator");
+                                drop = false;
                             }
                         }
                     }
@@ -773,6 +810,12 @@ unsafe impl GlobalAlloc for KernelAllocator {
                             new_ptr,
                             core::cmp::min(layout.size(), new_size),
                         );
+                        #[cfg(feature = "rackscale")]
+                        if drop {
+                            self.dealloc(ptr, layout);
+                        }
+
+                        #[cfg(not(feature = "rackscale"))]
                         self.dealloc(ptr, layout);
                     }
                     new_ptr

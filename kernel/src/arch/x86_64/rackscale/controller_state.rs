@@ -25,7 +25,7 @@ lazy_static! {
     pub(crate) static ref CONTROLLER_SHMEM_CACHES: Arc<ArrayVec<Mutex<Box<dyn MemManager + Send>>, MAX_MACHINES>> = {
         let mut shmem_caches = ArrayVec::new();
         // TODO(rackscale): think about how we should constrain the mcache?
-        shmem_caches.push(Mutex::new(Box::new(MCache::<2048, 65536>::new_with_frame::<2048, 65536>(
+        shmem_caches.push(Mutex::new(Box::new(MCache::<2048, 2048>::new_with_frame::<2048, 2048>(
             local_shmem_affinity(),
             get_affinity_shmem(),
         )) as Box<dyn MemManager + Send>));
@@ -33,7 +33,7 @@ lazy_static! {
             shmem_caches.push(Mutex::new(Box::new(FrameCacheBase::new(mid_to_shmem_affinity(i)))
                 as Box<dyn MemManager + Send>));
         }
-
+        log::info!("CONTROLLER_SHMEM_CACHES initialized");
         Arc::new(shmem_caches)
     };
 }

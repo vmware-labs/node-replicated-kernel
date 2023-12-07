@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
 use alloc::boxed::Box;
-use core::alloc::{Allocator, Layout};
+use core::alloc::Layout;
 use core::mem::transmute;
 use core::pin::Pin;
 use core::ptr::NonNull;
@@ -14,6 +14,9 @@ use x86::bits64::paging::*;
 use crate::error::KError;
 use crate::memory::vspace::*;
 use crate::memory::{kernel_vaddr_to_paddr, paddr_to_kernel_vaddr, Frame, PAddr, VAddr};
+
+use lazy_static::lazy_static;
+use spin::Mutex;
 
 /// Describes a potential modification operation on existing page tables.
 pub(super) const PT_LAYOUT: Layout =
@@ -30,16 +33,139 @@ enum Modify {
     Unmap,
 }
 
+// Stats for dynamic replication
+lazy_static! {
+    pub static ref ALLOCS: Mutex<u32> = Mutex::new(0);
+    pub static ref DEALLOCS: Mutex<u32> = Mutex::new(0);
+}
+
 /// The actual page-table. We allocate the PML4 upfront.
 pub(crate) struct PageTable {
     pub pml4: Pin<Box<PML4>>,
-    pub allocator: Option<Box<dyn Allocator + Send + Sync>>,
+}
+
+impl Clone for PageTable {
+    fn clone(&self) -> Self {
+        let start = rawtime::Instant::now();
+
+        *ALLOCS.lock() += 1;
+        log::info!(
+            "PageTable::Allocations: {} (pml4 addr: {:?})",
+            *ALLOCS.lock(),
+            self.pml4_address()
+        );
+
+        fn alloc_frame() -> Frame {
+            let frame_ptr = unsafe {
+                let ptr = alloc::alloc::alloc_zeroed(PT_LAYOUT);
+                debug_assert!(!ptr.is_null());
+
+                let nptr = NonNull::new_unchecked(ptr);
+                NonNull::slice_from_raw_parts(nptr, PT_LAYOUT.size())
+            };
+            let vaddr = VAddr::from(frame_ptr.as_ptr() as *const u8 as u64);
+            let paddr = crate::arch::memory::kernel_vaddr_to_paddr(vaddr);
+            let mut frame = Frame::new(paddr, PT_LAYOUT.size(), 0);
+            unsafe { frame.zero() };
+            frame
+        }
+
+        fn new_pt() -> PDEntry {
+            let frame = alloc_frame();
+            return PDEntry::new(frame.base, PDFlags::P | PDFlags::RW | PDFlags::US);
+        }
+
+        fn new_pd() -> PDPTEntry {
+            let frame = alloc_frame();
+            return PDPTEntry::new(frame.base, PDPTFlags::P | PDPTFlags::RW | PDPTFlags::US);
+        }
+
+        fn new_pdpt() -> PML4Entry {
+            let frame = alloc_frame();
+            return PML4Entry::new(frame.base, PML4Flags::P | PML4Flags::RW | PML4Flags::US);
+        }
+
+        let mut cloned_pt = PageTable::new().expect("Can't clone PT");
+        let mut p_allocs = 0;
+        // Do a DFS and find all mapped entries and replicate them in the new `pt`
+        for pml4_idx in 0..PAGE_SIZE_ENTRIES {
+            let reached_kernel = pml4_idx >= pml4_index(KERNEL_BASE.into());
+            if self.pml4[pml4_idx].is_present() {
+                cloned_pt.pml4[pml4_idx] = new_pdpt();
+                if !reached_kernel {
+                    p_allocs += 1;
+                }
+
+                for pdpt_idx in 0..PAGE_SIZE_ENTRIES {
+                    let pdpt = self.get_pdpt(self.pml4[pml4_idx]);
+                    let cloned_pdpt = cloned_pt.get_pdpt_mut(cloned_pt.pml4[pml4_idx]);
+
+                    if pdpt[pdpt_idx].is_present() {
+                        if !pdpt[pdpt_idx].is_page() {
+                            cloned_pdpt[pdpt_idx] = new_pd();
+                            if !reached_kernel {
+                                p_allocs += 1;
+                            }
+                            let cloned_pdpt_entry = cloned_pdpt[pdpt_idx];
+                            drop(cloned_pdpt);
+
+                            for pd_idx in 0..PAGE_SIZE_ENTRIES {
+                                let pd = self.get_pd(pdpt[pdpt_idx]);
+                                let cloned_pd = cloned_pt.get_pd_mut(cloned_pdpt_entry);
+
+                                if pd[pd_idx].is_present() {
+                                    if !pd[pd_idx].is_page() {
+                                        cloned_pd[pd_idx] = new_pt();
+                                        if !reached_kernel {
+                                            p_allocs += 1;
+                                        }
+                                        let cloned_pd_entry = cloned_pd[pd_idx];
+                                        drop(cloned_pd);
+
+                                        for pt_idx in 0..PAGE_SIZE_ENTRIES {
+                                            let pt = self.get_pt(pd[pd_idx]);
+                                            let cloned_pt = cloned_pt.get_pt_mut(cloned_pd_entry);
+
+                                            if pt[pt_idx].is_present() {
+                                                cloned_pt[pt_idx] = pt[pt_idx];
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    // Encountered a 2 MiB mapping
+                                    cloned_pd[pd_idx] = pd[pd_idx];
+                                }
+                            }
+                        } else {
+                            cloned_pdpt[pdpt_idx] = pdpt[pdpt_idx];
+                        }
+                    }
+                }
+            }
+        }
+        log::info!("PageTable::Page Allocations: {}", p_allocs);
+        log::debug!(
+            "PageTable::clone() completed in {:?}. {:#x}",
+            start.elapsed(),
+            cloned_pt.pml4_address()
+        );
+        cloned_pt
+    }
 }
 
 impl Drop for PageTable {
+    #[allow(unreachable_code)]
     fn drop(&mut self) {
+        log::debug!("calling drop in PageTable, skipping for now");
+        *DEALLOCS.lock() += 1;
+        log::info!(
+            "PageTable::Deallocations: {} (pml4 addr: {:?})",
+            *DEALLOCS.lock(),
+            self.pml4_address()
+        );
+        // return;
+        let mut p_deallocs = 0;
         use alloc::alloc::dealloc;
-
         // Do a DFS and free all page-table memory allocated below kernel-base,
         // don't free the mapped frames -- we return them later through NR
         for pml4_idx in 0..PAGE_SIZE_ENTRIES {
@@ -60,6 +186,7 @@ impl Drop for PageTable {
                                         let addr = pd[pd_idx].address();
                                         let vaddr = paddr_to_kernel_vaddr(addr);
                                         unsafe { dealloc(vaddr.as_mut_ptr(), PT_LAYOUT) };
+                                        p_deallocs += 1;
                                     }
                                 } else {
                                     // Encountered a 2 MiB mapping, nothing to free
@@ -69,6 +196,7 @@ impl Drop for PageTable {
                             let addr = pdpt[pdpt_idx].address();
                             let vaddr = paddr_to_kernel_vaddr(addr);
                             unsafe { dealloc(vaddr.as_mut_ptr(), PT_LAYOUT) };
+                            p_deallocs += 1;
                         } else {
                             // Encountered Page is a 1 GiB mapping, nothing to free
                         }
@@ -79,13 +207,19 @@ impl Drop for PageTable {
                 let addr = self.pml4[pml4_idx].address();
                 let vaddr = paddr_to_kernel_vaddr(addr);
                 unsafe { dealloc(vaddr.as_mut_ptr(), PT_LAYOUT) };
+                p_deallocs += 1;
                 self.pml4[pml4_idx] = PML4Entry(0x0);
             }
         }
+        log::info!("PageTable::Page Deallocations: {}", p_deallocs);
     }
 }
 
 impl AddressSpace for PageTable {
+    fn root(&self) -> PAddr {
+        PAddr::from(self.pml4.as_ptr() as u64)
+    }
+
     fn map_frame(&mut self, base: VAddr, frame: Frame, action: MapAction) -> Result<(), KError> {
         // These assertion are checked with error returns in `VSpace`
         debug_assert!(frame.size() > 0);
@@ -171,14 +305,13 @@ impl PageTable {
     /// Create a new address-space.
     ///
     /// Allocate an initial PML4 table for it.
-    pub(crate) fn new(allocator: Box<dyn Allocator + Send + Sync>) -> Result<PageTable, KError> {
+    pub(crate) fn new() -> Result<PageTable, KError> {
         let pml4 = Box::try_new(
             [PML4Entry::new(PAddr::from(0x0u64), PML4Flags::empty()); PAGE_SIZE_ENTRIES],
         )?;
 
         Ok(PageTable {
             pml4: Box::into_pin(pml4),
-            allocator: Some(allocator),
         })
     }
 
@@ -564,7 +697,7 @@ impl PageTable {
                     let cur_rights: MapAction = pt[pt_idx].flags().into();
                     if address != pbase + mapped || cur_rights != rights {
                         panic!(
-                            "Trying to map 4 KiB page but it conflicts with existing mapping {:x}",
+                            "Trying to map 4 KiB page at vbase={vbase:#x} pbase={pbase:#x} but it conflicts with existing mapping {:x}",
                             address
                         );
                     }
@@ -721,7 +854,7 @@ impl PageTable {
                 return Err(KError::AlreadyMapped { base: vbase });
             } else {
                 panic!(
-                    "An existing mapping already covers the 2 MiB range we're trying to map in?"
+                    "An existing mapping already covers the 2 MiB range we're trying to map in? {vbase}"
                 );
             }
         }
@@ -820,16 +953,13 @@ impl PageTable {
     }
 
     fn alloc_frame(&self) -> Frame {
-        let frame_ptr = self.allocator.as_ref().map_or_else(
-            || unsafe {
-                let ptr = alloc::alloc::alloc(PT_LAYOUT);
-                debug_assert!(!ptr.is_null());
+        let frame_ptr = unsafe {
+            let ptr = alloc::alloc::alloc_zeroed(PT_LAYOUT);
+            debug_assert!(!ptr.is_null());
 
-                let nptr = NonNull::new_unchecked(ptr);
-                NonNull::slice_from_raw_parts(nptr, PT_LAYOUT.size())
-            },
-            |allocator| allocator.allocate(PT_LAYOUT).unwrap(),
-        );
+            let nptr = NonNull::new_unchecked(ptr);
+            NonNull::slice_from_raw_parts(nptr, PT_LAYOUT.size())
+        };
         let vaddr = VAddr::from(frame_ptr.as_ptr() as *const u8 as u64);
         let paddr = crate::arch::memory::kernel_vaddr_to_paddr(vaddr);
         let mut frame = Frame::new(paddr, PT_LAYOUT.size(), 0);
@@ -891,8 +1021,10 @@ impl PageTable {
 }
 
 pub(crate) struct ReadOnlyPageTable<'a> {
-    pml4: &'a PML4,
+    pub pml4: &'a PML4,
 }
+
+use alloc::vec::Vec;
 
 impl<'a> ReadOnlyPageTable<'a> {
     /// Get read-only access to the current page-table.
@@ -934,9 +1066,80 @@ impl<'a> ReadOnlyPageTable<'a> {
         assert_ne!(entry.address(), PAddr::zero());
         unsafe { transmute::<VAddr, &mut PDPT>(paddr_to_kernel_vaddr(entry.address())) }
     }
+
+    pub fn walk(&self) -> Vec<(VAddr, Frame, MapAction)> {
+        log::info!("calling walk in PageTable");
+        let mut my_walk = Vec::with_capacity(1024);
+
+        // Do a DFS and free all page-table memory allocated below kernel-base,
+        // don't free the mapped frames -- we return them later through NR
+        for pml4_idx in 128..PAGE_SIZE_ENTRIES {
+            if self.pml4[pml4_idx].is_present() {
+                for pdpt_idx in 0..PAGE_SIZE_ENTRIES {
+                    let pdpt = self.get_pdpt(self.pml4[pml4_idx]);
+                    if pdpt[pdpt_idx].is_present() {
+                        if !pdpt[pdpt_idx].is_page() {
+                            for pd_idx in 0..PAGE_SIZE_ENTRIES {
+                                let pd = self.get_pd(pdpt[pdpt_idx]);
+                                if pd[pd_idx].is_present() {
+                                    if !pd[pd_idx].is_page() {
+                                        for pt_idx in 0..PAGE_SIZE_ENTRIES {
+                                            let pt = self.get_pt(pd[pd_idx]);
+                                            if pt[pt_idx].is_present() {
+                                                let addr = pt[pt_idx].address();
+                                                let flags = pt[pt_idx].flags();
+                                                let frame = Frame::new(addr, BASE_PAGE_SIZE, 0);
+                                                let vaddr_pos: VAddr = VAddr::from(
+                                                    PML4_SLOT_SIZE * pml4_idx
+                                                        + HUGE_PAGE_SIZE * pdpt_idx
+                                                        + LARGE_PAGE_SIZE * pd_idx
+                                                        + pt_idx * BASE_PAGE_SIZE,
+                                                );
+                                                //let vaddr = paddr_to_kernel_vaddr(addr);
+                                                //log::info!("4K mapping addr={:?} vaddr={:?}", addr, vaddr);
+                                                my_walk.push((vaddr_pos, frame, flags.into()));
+                                            }
+                                        }
+                                    } else {
+                                        // is page
+                                        let addr = pd[pd_idx].address();
+                                        let flags = pd[pd_idx].flags();
+                                        let frame = Frame::new(addr, LARGE_PAGE_SIZE, 0);
+                                        let vaddr_pos: VAddr = VAddr::from(
+                                            PML4_SLOT_SIZE * pml4_idx
+                                                + HUGE_PAGE_SIZE * pdpt_idx
+                                                + LARGE_PAGE_SIZE * pd_idx,
+                                        );
+                                        //let vaddr = paddr_to_kernel_vaddr(addr);
+                                        //log::info!("2 MB mapping addr={:?} vaddr={:?}", addr, vaddr);
+                                        my_walk.push((vaddr_pos, frame, flags.into()));
+                                    }
+                                }
+                            }
+                        } else {
+                            // Encountered Page is a 1 GiB mapping, nothing to free
+                            let addr = pdpt[pdpt_idx].address();
+                            let flags = pdpt[pdpt_idx].flags();
+                            let frame = Frame::new(addr, HUGE_PAGE_SIZE, 0); // TODO: size is wrong
+                            let vaddr_pos: VAddr =
+                                VAddr::from(PML4_SLOT_SIZE * pml4_idx + HUGE_PAGE_SIZE * pdpt_idx);
+                            //let vaddr = paddr_to_kernel_vaddr(addr);
+                            //log::info!("1 GiB mapping addr={:?} vaddr={:?}", addr, vaddr);
+                            my_walk.push((vaddr_pos, frame, flags.into()));
+                        }
+                    }
+                }
+            }
+        }
+        my_walk
+    }
 }
 
 impl<'a> AddressSpace for ReadOnlyPageTable<'a> {
+    fn root(&self) -> PAddr {
+        PAddr::from(self.pml4.as_ptr() as u64)
+    }
+
     fn resolve(&self, addr: VAddr) -> Result<(PAddr, MapAction), KError> {
         let pml4_idx = pml4_index(addr);
         if self.pml4[pml4_idx].is_present() {

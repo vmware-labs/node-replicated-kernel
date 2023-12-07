@@ -55,6 +55,7 @@ lazy_static! {
             use crate::memory::shmem_affinity::local_shmem_affinity;
             let local_affinity = local_shmem_affinity();
 
+            log::info!("before affinity");
             // We want to allocate the queues in shared memory
             let affinity = {
                 let pcm = per_core_mem();
@@ -62,11 +63,19 @@ lazy_static! {
                 pcm.set_mem_affinity(local_affinity).expect("Can't change affinity");
                 affinity
             };
+            log::info!("changed affinity to {} local_affinity={}", affinity, local_affinity);
+            use core::alloc::Layout;
+            let ptr = unsafe { alloc::alloc::alloc(Layout::from_size_align(0xbeef, 16).unwrap()) };
+            log::info!("ptr {:p}", ptr);
 
             let channels = {
                 let num_clients = *crate::environment::NUM_MACHINES - 1;
+                log::info!("{num_clients} machines={}", *crate::environment::NUM_MACHINES);
+
                 let mut channels =
                     Vec::try_with_capacity(num_clients).expect("Not enough memory to initialize system");
+                log::info!("channels done");
+
                 for _i in 0..num_clients {
                     // ArrayQueue does memory allocation on `new`, maybe have try_new,
                     // but this is fine since it's during initialization
@@ -75,12 +84,14 @@ lazy_static! {
 
                 Arc::new(channels)
             };
+            log::info!("after channels");
 
             // Reset mem allocator to use per core memory again
             if affinity != local_affinity {
                 let pcm = per_core_mem();
                 pcm.set_mem_affinity(affinity).expect("Can't change affinity");
             }
+            log::info!("after affinity");
 
             channels
         } else {
@@ -159,6 +170,15 @@ impl Shootdown {
         // before this function completes:
         self.acknowledge();
 
+        if self.vregion.start == 0u64 && self.vregion.end == 0u64 {
+            log::info!("got special unmap for 0..0, skipping TLB flush");
+            use crate::process::Executor;
+            let pborrow = super::process::CURRENT_EXECUTOR.borrow_mut();
+            let p = pborrow.as_ref().unwrap();
+            p.maybe_switch_vspace();
+            return;
+        }
+
         let it = self.vregion.clone().step_by(BASE_PAGE_SIZE);
         if it.count() > 20 {
             trace!("flush the entire TLB");
@@ -221,6 +241,13 @@ pub(crate) fn remote_dequeue(mid: kpi::system::MachineId) {
             // Process locally, then mark as complete
             shootdown(h);
             s.acknowledge();
+
+            //use crate::process::Executor;
+            //let pborrow = super::process::CURRENT_EXECUTOR.borrow_mut();
+            //let p = pborrow.as_ref().unwrap();
+            //p.maybe_switch_vspace();
+            //drop(pborrow);
+
         }
         None => return,
     }
@@ -396,6 +423,11 @@ pub(crate) fn shootdown(handle: TlbFlushHandle) {
     // Finally, we also need to shootdown our own TLB
     let shootdown = Shootdown::new(range);
     shootdown.process();
+
+    //use crate::process::Executor;
+    //let pborrow = super::process::CURRENT_EXECUTOR.borrow_mut();
+    //let p = pborrow.as_ref().unwrap();
+    //p.maybe_switch_vspace();
 
     // Wait synchronously on cores to complete
     while !shootdowns.is_empty() {

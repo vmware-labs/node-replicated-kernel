@@ -6,26 +6,28 @@ use alloc::collections::TryReserveError;
 use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
-use core::alloc::Allocator;
 use core::arch::asm;
 use core::cell::RefCell;
 use core::cmp::PartialEq;
 use core::iter::Iterator;
+use core::sync::atomic::{AtomicUsize, Ordering};
 use core::{fmt, ptr};
 
+use crate::arch::kcb;
 use arrayvec::ArrayVec;
+use core::num::NonZeroUsize;
 use fallible_collections::try_vec;
 use fallible_collections::FallibleVec;
 use kpi::arch::SaveArea;
 use kpi::process::{FrameId, ELF_OFFSET, EXECUTOR_OFFSET};
 use lazy_static::lazy_static;
 use log::{debug, info, trace, warn};
-use node_replication::{Dispatch, Log, Replica};
+use nr2::nr::rwlock::RwLock;
+use nr2::nr::{AffinityChange, NodeReplicated};
 use x86::bits64::paging::*;
 use x86::bits64::rflags;
 use x86::{controlregs, Ring};
 
-use crate::arch::kcb::per_core_mem;
 use crate::error::{KError, KResult};
 use crate::fs::{fd::FileDescriptorEntry, MAX_FILES_PER_PROCESS};
 use crate::memory::vspace::{AddressSpace, MapAction};
@@ -69,126 +71,173 @@ pub(crate) fn current_pid() -> KResult<Pid> {
         .pid)
 }
 
+#[cfg(feature = "rackscale")]
 lazy_static! {
-    pub(crate) static ref PROCESS_LOGS: Box<
-        ArrayVec<
-            Arc<Log::<'static, <NrProcess<Ring3Process> as Dispatch>::WriteOperation>>,
-            MAX_PROCESSES,
-        >,
-    > = {
+    pub(crate) static ref PROCESS_TABLE: ArrayVec<Arc<RwLock<NodeReplicated<NrProcess<Ring3Process>>>>, MAX_PROCESSES> = {
+        use crate::memory::shmem_affinity::mid_to_shmem_affinity;
+        use crate::arch::kcb::per_core_mem;
+        //use crate::environment::NUM_MACHINES;
 
-
-        #[cfg(feature = "rackscale")]
-        if crate::CMDLINE
+        if !crate::CMDLINE
             .get()
             .map_or(false, |c| c.mode == crate::cmdline::Mode::Controller)
         {
-            // We want to allocate the logs in controller shared memory
-            use crate::memory::shmem_affinity::local_shmem_affinity;
-            let pcm = per_core_mem();
-            pcm.set_mem_affinity(local_shmem_affinity()).expect("Can't change affinity");
-        } else {
-            // Get location of the logs from the controller, who will have created them in shared memory
+            // Get the NodeReplicated instances from the controller,
+            // who will have created them in shared memory
             use crate::arch::rackscale::get_shmem_structure::{rpc_get_shmem_structure, ShmemStructure};
 
-            let mut log_ptrs = [0u64; MAX_PROCESSES];
-            rpc_get_shmem_structure(ShmemStructure::NrProcLogs, &mut log_ptrs[..]).expect("Failed to get process log pointers");
-            let mut process_logs = Box::new(ArrayVec::new());
-            for i in 0..log_ptrs.len() {
-                let log_ptr = paddr_to_kernel_vaddr(PAddr::from(log_ptrs[i]));
-                let local_log_arc = unsafe {
-                    Arc::from_raw(log_ptr.as_u64()
-                        as *const Log<'static, <NrProcess<Ring3Process> as Dispatch>::WriteOperation>)
+            let mut nr_ptrs = [0u64; MAX_PROCESSES];
+            rpc_get_shmem_structure(ShmemStructure::NrProcess, &mut nr_ptrs[..]).expect("Failed to get process log pointers");
+            let mut processes = ArrayVec::new();
+            for i in 0..nr_ptrs.len() {
+                let nrproc_ptr = paddr_to_kernel_vaddr(PAddr::from(nr_ptrs[i]));
+                let nr_process = unsafe {
+                    Arc::from_raw(nrproc_ptr.as_u64()
+                        as *const RwLock<NodeReplicated<NrProcess<Ring3Process>>>)
                 };
-                process_logs.push(local_log_arc);
+                processes.push(nr_process);
             }
-            return process_logs;
+            return processes;
         }
 
-        let process_logs = {
-            let mut process_logs = Box::try_new(ArrayVec::new()).expect("Can't initialize process log vector.");
-            for _pid in 0..MAX_PROCESSES {
-                let log = Arc::try_new(
-                    Log::<<NrProcess<Ring3Process> as Dispatch>::WriteOperation>::new(LARGE_PAGE_SIZE),
-                )
-                .expect("Can't initialize process logs, out of memory.");
-                process_logs.push(log);
-            }
-            process_logs
-        };
+        // We want to allocate the logs in controller shared memory
+        use crate::memory::shmem_affinity::local_shmem_affinity;
+        let pcm = per_core_mem();
+        pcm.set_mem_affinity(local_shmem_affinity()).expect("Can't change affinity");
 
-        #[cfg(feature = "rackscale")]
-        if crate::CMDLINE
-            .get()
-            .map_or(false, |c| c.mode == crate::cmdline::Mode::Controller)
-        {
-            // Reset mem allocator to use per core memory again
-            let pcm = per_core_mem();
-            pcm.set_mem_affinity(0 as atopology::NodeId).expect("Can't change affinity");
-        }
+        // Want at least one replica...
+        let num_replicas =
+            NonZeroUsize::new(3).unwrap();
+        let mut processes = ArrayVec::new();
 
-        process_logs
-    };
-}
-
-lazy_static! {
-    pub(crate) static ref PROCESS_TABLE: ArrayVec<
-        ArrayVec<Arc<Replica<'static, NrProcess<Ring3Process>>>, MAX_PROCESSES>,
-        MAX_NUMA_NODES,
-    > = create_process_table();
-}
-
-#[cfg(not(feature = "rackscale"))]
-fn create_process_table(
-) -> ArrayVec<ArrayVec<Arc<Replica<'static, NrProcess<Ring3Process>>>, MAX_PROCESSES>, MAX_NUMA_NODES>
-{
-    use crate::memory::detmem::DA;
-
-    // Want at least one replica...
-    let numa_nodes = core::cmp::max(1, atopology::MACHINE_TOPOLOGY.num_nodes());
-
-    let mut numa_cache = ArrayVec::new();
-    for _n in 0..numa_nodes {
-        let process_replicas = ArrayVec::new();
-        debug_assert!(!numa_cache.is_full());
-        numa_cache.push(process_replicas)
-    }
-
-    for pid in 0..MAX_PROCESSES {
-        let allocator = DA::new().expect("Can't initialize process deterministic memory allocator");
-
-        for node in 0..numa_nodes {
-            debug_assert!(!numa_cache[node].is_full());
-
-            let pcm = per_core_mem();
-            pcm.set_mem_affinity(node as atopology::NodeId)
-                .expect("Can't change affinity");
-
-            let p = Box::try_new(
-                Ring3Process::new(pid, Box::new(allocator.clone()))
-                    .expect("Can't create process during init"),
-            )
-            .expect("Not enough memory to initialize processes");
-            let nrp = NrProcess::new(p, Box::new(allocator.clone()));
-
-            numa_cache[node].push(Replica::<NrProcess<Ring3Process>>::with_data(
-                &PROCESS_LOGS[pid],
-                nrp,
-            ));
-
-            pcm.set_mem_affinity(0 as atopology::NodeId)
-                .expect("Can't change affinity");
+        for _pid in 0..MAX_PROCESSES {
             debug_assert_eq!(
                 *crate::environment::NODE_ID,
                 0,
                 "Expect initialization to happen on node 0."
             );
-        }
-    }
 
-    numa_cache
+            let process: Arc<RwLock<NodeReplicated<NrProcess<Ring3Process>>>> = Arc::try_new(
+                RwLock::new(NodeReplicated::new(num_replicas, |afc: AffinityChange| {
+                    let pcm = kcb::per_core_mem();
+                    //log::info!("Got AffinityChange: {:?}", afc);
+                    match afc {
+                        AffinityChange::Replica(r) => {
+                            let affinity = { pcm.physical_memory.borrow().affinity };
+                            pcm.set_mem_affinity(mid_to_shmem_affinity(r)).expect("Can't set affinity");
+                            return affinity;
+                        }
+                        AffinityChange::Revert(orig) => {
+                            pcm.set_mem_affinity(orig).expect("Can't set affinity");
+                            return 0;
+                        }
+                    }
+                })
+                .expect("Not enough memory to initialize system"),
+            ))
+            .expect("Not enough memory to initialize system");
+
+            processes.push(process)
+        }
+
+
+        // Reset mem allocator to use per core memory again
+        let pcm = per_core_mem();
+        pcm.set_mem_affinity(0 as atopology::NodeId).expect("Can't change affinity");
+
+        processes
+
+
+        // NodeReplicated::new(#data-kernels) ->
+        //  - for data_kernel in 0..#data-kernels {
+        //      - change affinity to data_kernel
+        //      - Box::new(bla) [allocator will go go to DCM if necessary]
+        //      - change affinity back to controller
+        //  }
+
+        /*
+         == Controller:
+            |afc: AffinityChange| {
+            let pcm = kcb::per_core_mem();
+            match afc {
+                AffinityChange::Replica(r: MachineId) => {
+                    // We want to allocate the logs in controller shared memory
+                    use crate::memory::shmem_affinity::local_shmem_affinity;
+                    let pcm = per_core_mem();
+                    pcm.set_mem_affinity(mid_to_shmem_affinity(r)).expect("Can't change affinity");
+                }
+                AffinityChange::Revert(orig) => {
+                    // We want to allocate the logs in controller shared memory
+                    use crate::memory::shmem_affinity::local_shmem_affinity;
+                    let pcm = per_core_mem();
+                    - pcm.set_mem_affinity(local_shmem_affinity()).expect("Can't change affinity");
+                    OR
+                    - pcm.set_mem_affinity(orig).expect("Can't change affinity");
+                }
+            }
+            return 0; // TODO(dynrep): Return error code
+
+         == Data kernel
+            - The closure when set on controller probably won't work in data-kernel (diff symbol addresses?)
+            - The binary might be fine because it's identical!
+        */
+    };
 }
 
+#[cfg(not(feature = "rackscale"))]
+lazy_static! {
+    pub(crate) static ref PROCESS_TABLE: ArrayVec<Arc<RwLock<NodeReplicated<NrProcess<Ring3Process>>>>, MAX_PROCESSES> =
+        create_process_table();
+}
+
+#[cfg(not(feature = "rackscale"))]
+#[allow(unused_variables)]
+fn create_process_table(
+) -> ArrayVec<Arc<RwLock<NodeReplicated<NrProcess<Ring3Process>>>>, MAX_PROCESSES> {
+    // Want at least one replica...
+    let num_replicas =
+        NonZeroUsize::new(core::cmp::max(1, atopology::MACHINE_TOPOLOGY.num_nodes())).unwrap();
+    let mut processes = ArrayVec::new();
+
+    for _pid in 0..MAX_PROCESSES {
+        debug_assert_eq!(
+            *crate::environment::NODE_ID,
+            0,
+            "Expect initialization to happen on node 0."
+        );
+
+        let process: Arc<RwLock<NodeReplicated<NrProcess<Ring3Process>>>> =
+            Arc::try_new(RwLock::new(
+                NodeReplicated::new(num_replicas, |afc: AffinityChange| {
+                    let pcm = kcb::per_core_mem();
+                    //log::info!("Got AffinityChange: {:?}", afc);
+                    match afc {
+                        AffinityChange::Replica(r) => {
+                            let affinity = { pcm.physical_memory.borrow().affinity };
+                            #[cfg(feature = "rackscale")]
+                            pcm.set_mem_affinity(
+                                crate::memory::shmem_affinity::mid_to_shmem_affinity(r),
+                            )
+                            .expect("Can't set affinity");
+                            return affinity;
+                        }
+                        AffinityChange::Revert(orig) => {
+                            pcm.set_mem_affinity(orig).expect("Can't set affinity");
+                            return 0;
+                        }
+                    }
+                })
+                .expect("Not enough memory to initialize system"),
+            ))
+            .expect("Not enough memory to initialize system");
+
+        processes.push(process)
+    }
+
+    processes
+}
+
+/*
 #[cfg(feature = "rackscale")]
 fn create_process_table(
 ) -> ArrayVec<ArrayVec<Arc<Replica<'static, NrProcess<Ring3Process>>>, MAX_PROCESSES>, MAX_NUMA_NODES>
@@ -258,6 +307,7 @@ fn create_process_table(
 
     numa_cache
 }
+ */
 
 pub(crate) struct ArchProcessManagement;
 
@@ -266,10 +316,8 @@ impl crate::nrproc::ProcessManager for ArchProcessManagement {
 
     fn process_table(
         &self,
-    ) -> &'static ArrayVec<
-        ArrayVec<Arc<Replica<'static, NrProcess<Self::Process>>>, MAX_PROCESSES>,
-        MAX_NUMA_NODES,
-    > {
+    ) -> &'static ArrayVec<Arc<RwLock<NodeReplicated<NrProcess<Self::Process>>>>, MAX_PROCESSES>
+    {
         &*super::process::PROCESS_TABLE
     }
 }
@@ -925,8 +973,10 @@ impl Executor for Ring3Executor {
             "Run on remote replica?"
         );
 
+        // THIS IS THE PROBLEM
         self.maybe_switch_vspace();
         let entry_point = unsafe { (*self.vcpu_kernel()).resume_with_upcall };
+        log::info!("Entry point is: {:?}", entry_point);
 
         if entry_point == INVALID_EXECUTOR_START {
             Ring3Resumer::new_start(self.entry_point, self.stack_top())
@@ -934,7 +984,6 @@ impl Executor for Ring3Executor {
             // This is similar to `upcall` as it starts executing the defined upcall
             // handler, but on the regular stack (for that dispatcher) and not
             // the upcall stack. It's used to add a new core to a process.
-
             let entry_point = unsafe { (*self.vcpu_kernel()).resume_with_upcall };
             trace!("Added core entry point is at {:#x}", entry_point);
             let cpu_ctl = self.vcpu_addr().as_u64();
@@ -981,11 +1030,21 @@ impl Executor for Ring3Executor {
     }
 
     fn maybe_switch_vspace(&self) {
+        //use crate::arch::vspace::page_table::ReadOnlyPageTable;
+
+        let replica_pml4 = NrProcess::<Ring3Process>::ptroot(self.pid).expect("Can't read pml4");
         unsafe {
             let current_pml4 = PAddr::from(controlregs::cr3());
-            if current_pml4 != self.pml4 {
-                trace!("Switching to 0x{:x}", self.pml4);
-                controlregs::cr3_write(self.pml4.into());
+            if current_pml4 != replica_pml4 {
+                debug!(
+                    "Switching from 0x{:x} to 0x{:x}",
+                    current_pml4, replica_pml4
+                );
+                controlregs::cr3_write(replica_pml4.into());
+                debug!("switched");
+            }
+            else {
+                debug!("not switched, the same");
             }
         }
     }
@@ -1026,8 +1085,41 @@ pub(crate) struct Ring3Process {
     pub read_only_offset: VAddr,
 }
 
+static NEXT_PID: AtomicUsize = AtomicUsize::new(0);
+
+impl Default for NrProcess<Ring3Process> {
+    fn default() -> Self {
+        let next_pid = NEXT_PID.fetch_add(1, Ordering::Relaxed);
+        NrProcess::new(
+            Box::try_new(
+                Ring3Process::new(next_pid as Pid).expect("Failed to set-up process during init"),
+            )
+            .expect("Failed to initialize process during init"),
+        )
+    }
+}
+
+impl Clone for Ring3Process {
+    fn clone(&self) -> Self {
+        Ring3Process {
+            pid: self.pid,
+            current_eid: self.current_eid,
+            vspace: self.vspace.clone(),
+            offset: self.offset,
+            pinfo: self.pinfo.clone(),
+            entry_point: self.entry_point,
+            executor_cache: self.executor_cache.clone(),
+            executor_offset: self.executor_offset,
+            fds: self.fds.clone(),
+            pfm: self.pfm.clone(),
+            writeable_sections: self.writeable_sections.clone(),
+            read_only_offset: self.read_only_offset,
+        }
+    }
+}
+
 impl Ring3Process {
-    fn new(pid: Pid, allocator: Box<dyn Allocator + Sync + Send>) -> Result<Self, KError> {
+    fn new(pid: Pid) -> Result<Self, KError> {
         const NONE_EXECUTOR: Option<Vec<Box<Ring3Executor>>> = None;
         #[cfg(not(feature = "rackscale"))]
         let executor_cache: ArrayVec<Option<Vec<Box<Ring3Executor>>>, MAX_NUMA_NODES> =
@@ -1051,7 +1143,7 @@ impl Ring3Process {
             pid: pid,
             current_eid: 0,
             offset: VAddr::from(ELF_OFFSET),
-            vspace: VSpace::new(allocator)?,
+            vspace: VSpace::new()?,
             entry_point: VAddr::from(0usize),
             executor_cache,
             executor_offset: VAddr::from(EXECUTOR_OFFSET),
@@ -1120,7 +1212,8 @@ impl elfloader::ElfLoader for Ring3Process {
             };
 
             info!(
-                "ELF Allocate: {:#x} -- {:#x} align to {:#x} with flags {:?} ({:?})",
+                "{}: ELF Allocate: {:#x} -- {:#x} align to {:#x} with flags {:?} ({:?})",
+                *crate::environment::MT_ID,
                 page_base,
                 page_base + size_page,
                 align_to,
@@ -1339,6 +1432,8 @@ impl Process for Ring3Process {
         module_name: String,
         writeable_sections: Vec<Frame>,
     ) -> Result<(), KError> {
+        info!("IN PROCESS LOAD");
+
         self.pid = pid;
         // TODO(error-handling): properly unwind on error
         self.writeable_sections.clear();
@@ -1378,11 +1473,26 @@ impl Process for Ring3Process {
         // TODO(broken): Big (>= 2 MiB) allocations should be inserted here too
         // TODO(ugly): Find a better way to express this mess
         let kvspace = super::vspace::INITIAL_VSPACE.lock();
+
+        use crate::arch::vspace::page_table::ReadOnlyPageTable;
+        let pt = ReadOnlyPageTable {
+            pml4: &kvspace.pml4,
+        };
+        let walk = pt.walk();
+        info!("Walk is len: {:?}", walk.len());
+        for (addr_idx, frame, action) in walk {
+            self.vspace
+                .map_frame(addr_idx, frame, action)
+                .expect("failed map");
+        }
+
+        /*
         for i in 128..=510 {
             let kernel_pml_entry = kvspace.pml4[i];
-            trace!("Patched in kernel mappings at {:?}", kernel_pml_entry);
+            info!("Patched in kernel mappings at {:?}", kernel_pml_entry);
             self.vspace.page_table.pml4[i] = kernel_pml_entry;
         }
+        */
 
         Ok(())
     }
@@ -1430,57 +1540,26 @@ impl Process for Ring3Process {
     fn allocate_executors(
         &mut self,
         memory: Frame,
-
         #[cfg(feature = "rackscale")] mid: kpi::system::MachineId,
     ) -> Result<usize, KError> {
         let executor_space_requirement = Ring3Executor::EXECUTOR_SPACE_REQUIREMENT;
         let executors_to_create = memory.size() / executor_space_requirement;
 
         // Only map to kernel space for local (valid) frames
-        #[cfg(feature = "rackscale")]
-        if mid == *crate::environment::MACHINE_ID {
-            KernelAllocator::try_refill_tcache(20, 0, MemType::Mem).expect("Refill didn't work");
-            self.vspace
-                .map_frame(
-                    self.executor_offset,
-                    memory,
-                    MapAction::user() | MapAction::write(),
-                )
-                .expect("Can't map user-space executor memory.");
-            log::debug!(
-                "executor space base expanded {:#x} size: {} end {:#x}",
+        KernelAllocator::try_refill_tcache(20, 0, MemType::Mem).expect("Refill didn't work");
+        self.vspace
+            .map_frame(
                 self.executor_offset,
-                memory.size(),
-                self.executor_offset + memory.size()
-            );
-        } else {
-            log::debug!(
-                "skipping executor space vspace mapping for mid={:?} on mid={:?} {:#x} size: {} end {:#x}",
-                mid,
-                *crate::environment::MACHINE_ID,
-                self.executor_offset,
-                memory.size(),
-                self.executor_offset + memory.size()
-            );
-        }
-
-        #[cfg(not(feature = "rackscale"))]
-        {
-            KernelAllocator::try_refill_tcache(20, 0, MemType::Mem).expect("Refill didn't work");
-            self.vspace
-                .map_frame(
-                    self.executor_offset,
-                    memory,
-                    MapAction::user() | MapAction::write(),
-                )
-                .expect("Can't map user-space executor memory.");
-            log::debug!(
-                "executor space base expanded {:#x} size: {} end {:#x}",
-                self.executor_offset,
-                memory.size(),
-                self.executor_offset + memory.size()
-            );
-        }
+                memory,
+                MapAction::user() | MapAction::write(),
+            )
+            .expect("Can't map user-space executor memory.");
+        log::debug!(
+            "executor space base expanded {:#x} size: {} end {:#x}",
+            self.executor_offset,
+            memory.size(),
+            self.executor_offset + memory.size()
+        );
 
         let executor_space = executor_space_requirement * executors_to_create;
         let prange = memory.base..memory.base + executor_space;
@@ -1606,14 +1685,12 @@ impl FrameManagement for Ring3Process {
 #[cfg(target_os = "none")]
 pub(crate) fn spawn(binary: &'static str) -> Result<Pid, KError> {
     use crate::process::make_process;
-
     let pid = make_process::<Ring3Process>(binary)?;
 
     // Let the controller pick the initial core for the process
     #[cfg(feature = "rackscale")]
     {
         use crate::arch::rackscale::processops::request_core::rpc_request_core;
-
         let (_gtid, _) = rpc_request_core(pid, true, INVALID_EXECUTOR_START.as_u64())
             .expect("Failed to get core for newly spawned process");
     }

@@ -2,3 +2,7 @@
 	path = lib/node-replication
 	branch = mut_scan_vec
 	url = git@github.com:gz/node-replication.git
+[submodule "lib/node-replication2"]
+	path = lib/node-replication2
+	url = git@github.com:gz/node-replication.git
+	branch = nr-dymanic-replication

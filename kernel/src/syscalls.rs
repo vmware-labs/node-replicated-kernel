@@ -113,6 +113,7 @@ pub(crate) trait ProcessDispatch<W: Into<u64> + LowerHex + Debug + Copy + Clone>
     fn release_core(&self, cord_id: W) -> KResult<(W, W)>;
     fn allocate_physical(&self, page_size: W, affinity: W) -> KResult<(W, W)>;
     fn release_physical(&self, page_id: W) -> KResult<(W, W)>;
+    fn set_replicas(&self, add: W, replicas: W) -> KResult<(W, W)>;
     fn exit(&self, code: W) -> KResult<(W, W)>;
 }
 
@@ -127,6 +128,7 @@ enum ProcessOperationArgs<W> {
     ReleaseCore(W),
     AllocatePhysical(W, W),
     ReleasePhysical(W),
+    SetReplicas(W, W),
 }
 
 impl<W: Into<u64> + LowerHex + Debug + Copy + Clone> ProcessOperationArgs<W> {
@@ -149,6 +151,7 @@ impl<W: Into<u64> + LowerHex + Debug + Copy + Clone> ProcessOperationArgs<W> {
             ProcessOperation::ReleaseCore => Ok(Self::ReleaseCore(arg2)),
             ProcessOperation::AllocatePhysical => Ok(Self::AllocatePhysical(arg2, arg3)),
             ProcessOperation::ReleasePhysical => Ok(Self::ReleasePhysical(arg2)),
+            ProcessOperation::SetReplicas => Ok(Self::SetReplicas(arg2, arg3)),
             ProcessOperation::SubscribeEvent => {
                 error!("SubscribeEvent is not implemented");
                 Err(KError::InvalidProcessOperation { a: arg1.into() })
@@ -284,6 +287,7 @@ pub(crate) trait SystemCallDispatch<W: Into<u64> + LowerHex + Debug + Copy + Clo
                 self.allocate_physical(page_size, affinity)
             }
             Poa::ReleasePhysical(frame_id) => self.release_physical(frame_id),
+            Poa::SetReplicas(add, replicas) => self.set_replicas(add, replicas),
         }
     }
 

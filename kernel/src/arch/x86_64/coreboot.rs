@@ -8,6 +8,7 @@
 
 use alloc::sync::Arc;
 use alloc::vec::Vec;
+use core::num::NonZeroUsize;
 use core::sync::atomic::{AtomicBool, Ordering};
 
 use apic::ApicDriver;
@@ -17,7 +18,6 @@ use fallible_collections::FallibleVecGlobal;
 use fallible_collections::TryClone;
 use log::debug;
 use log::trace;
-use node_replication::{Log, Replica};
 use x86::apic::ApicId;
 use x86::current::paging::PAddr;
 
@@ -28,8 +28,6 @@ use crate::memory::backends::PhysicalPageProvider;
 use crate::memory::global::GlobalMemory;
 use crate::memory::vspace::MapAction;
 use crate::memory::Frame;
-use crate::nr::KernelNode;
-use crate::nr::Op;
 use crate::round_up;
 use crate::stack::OwnedStack;
 use crate::stack::Stack;
@@ -57,8 +55,6 @@ pub(crate) struct AppCoreArgs {
     pub(super) global_pmem: &'static GlobalMemory,
     pub(super) thread: atopology::ThreadId,
     pub(super) node: atopology::NodeId,
-    pub(super) _log: Arc<Log<'static, Op>>,
-    pub(super) replica: Arc<Replica<'static, KernelNode>>,
     pub(super) fs_replica: Option<Arc<MlnrReplica<'static, MlnrKernelNode>>>,
 }
 
@@ -333,8 +329,6 @@ pub(crate) unsafe fn initialize<A>(
 ///  - Initialized topology
 ///  - Local APIC driver
 pub(super) fn boot_app_cores(
-    log: Arc<Log<'static, Op>>,
-    bsp_replica: Arc<Replica<'static, KernelNode>>,
     fs_logs: Vec<Arc<MlnrLog<'static, Modify>>>,
     fs_replica: Option<Arc<MlnrReplica<'static, MlnrKernelNode>>>,
 ) {
@@ -347,28 +341,23 @@ pub(super) fn boot_app_cores(
 
     // Let's go with one replica per NUMA node for now:
     let numa_nodes = core::cmp::max(1, atopology::MACHINE_TOPOLOGY.num_nodes());
+    let numa_nodes = NonZeroUsize::new(numa_nodes).expect("At least one NUMA node");
 
-    let mut replicas: Vec<Arc<Replica<'static, KernelNode>>> =
-        Vec::try_with_capacity(numa_nodes).expect("Not enough memory to initialize system");
     let mut fs_replicas: Vec<Arc<MlnrReplica<'static, MlnrKernelNode>>> =
-        Vec::try_with_capacity(numa_nodes).expect("Not enough memory to initialize system");
+        Vec::try_with_capacity(numa_nodes.get()).expect("Not enough memory to initialize system");
 
     // Push the replica for node 0
-    debug_assert!(replicas.capacity() >= 1, "No re-allocation.");
-    replicas.push(bsp_replica);
     if let Some(node_0_fs_replica) = fs_replica {
         debug_assert!(fs_replicas.capacity() >= 1, "No re-allocation.");
         fs_replicas.push(node_0_fs_replica);
     }
 
     let pcm = kcb::per_core_mem();
+    let numa_nodes = core::cmp::max(1, atopology::MACHINE_TOPOLOGY.num_nodes());
+
     for node in 1..numa_nodes {
         pcm.set_mem_affinity(node as atopology::NodeId)
             .expect("Can't set affinity");
-
-        debug_assert!(replicas.capacity() > node, "No re-allocation.");
-        replicas.push(Replica::<'static, KernelNode>::new(&log));
-
         if fs_replicas.len() > 0 {
             debug_assert!(fs_replicas.capacity() > node, "No re-allocation.");
             fs_replicas.push(MlnrReplica::new(
@@ -434,10 +423,6 @@ pub(super) fn boot_app_cores(
             global_memory,
             global_pmem,
             thread: thread.id,
-            _log: log.clone(),
-            replica: replicas[node as usize]
-                .try_clone()
-                .expect("Not enough memory to initialize system"),
             fs_replica: thread_fs_replica,
         })
         .expect("Not enough memory to initialize system");
@@ -473,6 +458,4 @@ pub(super) fn boot_app_cores(
         debug!("Core {:?} has started", thread.apic_id());
         pcm.set_mem_affinity(0).expect("Can't set affinity");
     }
-
-    core::mem::forget(replicas);
 }

@@ -15,7 +15,8 @@ resolver = "2"
 [dependencies]
 # Our own dependencies:
 apic = { path = "../lib/apic/" }
-node-replication = { path = "../lib/node-replication/nr" } #"0.1.1"
+node-replication = { path = "../lib/node-replication/nr" }
+nr2 = { path = "../lib/node-replication2/node-replication" }
 cnr = { path = "../lib/node-replication/cnr" }
 kpi = { path = "../lib/kpi" }
 rpc = { path = "../lib/rpc", optional = true }
@@ -102,6 +103,8 @@ rackscale = ["rpc"]
 gdb = []
 # Use to enable 4kiB only in kernel - useful for memcached, similar benchmarks
 pages-4k = []
+# dynrep benchmarking
+dynrep = []
 
 #
 # The following features are used for testing *only* and should not be enabled

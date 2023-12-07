@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
 use alloc::boxed::Box;
-use core::alloc::Allocator;
 use core::ops::Bound::*;
 
 use fallible_collections::btree::BTreeMap;
@@ -70,8 +69,7 @@ lazy_static! {
             //   allocated with slabmalloc (maybe we can have a no_drop variant
             //   of PageTable?)
             PageTable {
-                pml4: Box::into_pin(Box::from_raw(pml4_table)),
-                allocator: None,
+                pml4: Box::into_pin(Box::from_raw(pml4_table))
             }
         }
 
@@ -94,7 +92,7 @@ lazy_static! {
 /// - This clearly needs a better solution. See also the part where we patch
 ///   this into the process page-table.
 pub(crate) unsafe fn init_large_objects_pml4() {
-    log::info!("init_large_objects_pml4()");
+    //log::info!("init_large_objects_pml4()");
     let mut vspace = INITIAL_VSPACE.lock();
     let frame_ptr = alloc::alloc::alloc(PT_LAYOUT);
 
@@ -105,12 +103,17 @@ pub(crate) unsafe fn init_large_objects_pml4() {
     (*vspace.pml4)[132] = PML4Entry::new(frame.base, PML4Flags::P | PML4Flags::RW);
 }
 
+#[derive(Clone)]
 pub(crate) struct VSpace {
     pub mappings: BTreeMap<VAddr, MappingInfo>,
     pub page_table: PageTable,
 }
 
 impl AddressSpace for VSpace {
+    fn root(&self) -> PAddr {
+        self.pml4_address()
+    }
+
     fn map_frame(&mut self, base: VAddr, frame: Frame, action: MapAction) -> Result<(), KError> {
         if frame.size() == 0 {
             return Err(KError::InvalidFrame);
@@ -123,7 +126,6 @@ impl AddressSpace for VSpace {
             // virtual addr should be aligned to page-size
             return Err(KError::InvalidBase);
         }
-
         let tomap_range = base.as_usize()..base.as_usize() + frame.size;
 
         // Check all mapping in that region to see if we can allow this map:
@@ -151,9 +153,9 @@ impl AddressSpace for VSpace {
                 });
             }
         }
-
-        self.mappings
-            .try_insert(base, MappingInfo::new(frame, action))?;
+        //log::info!("VSpace::map_frame base={:x} frame={:?} action={:?}", base.as_usize(), frame, action);
+        //self.mappings
+        //    .try_insert(base, MappingInfo::new(frame, action))?;
         let r = self.page_table.map_frame(base, frame, action);
         r
     }
@@ -201,10 +203,18 @@ impl Drop for VSpace {
 }
 
 impl VSpace {
-    pub(crate) fn new(allocator: Box<dyn Allocator + Sync + Send>) -> Result<Self, KError> {
+    pub(crate) fn new() -> Result<Self, KError> {
+        let mut btree = BTreeMap::new();
+        btree
+            .try_insert(
+                VAddr(0x0),
+                MappingInfo::new(Frame::empty(), MapAction::none()),
+            )
+            .expect("fail");
+
         Ok(VSpace {
             mappings: BTreeMap::new(),
-            page_table: PageTable::new(allocator)?,
+            page_table: PageTable::new()?,
         })
     }
 

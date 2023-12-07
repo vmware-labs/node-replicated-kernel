@@ -147,9 +147,10 @@ pub(crate) fn handle_get_shmem_frames(
 
             // TODO(error_handling): should handle errors gracefully here, maybe percolate to client?
             let mut manager = &mut SHMEM_MEMSLICE_ALLOCATORS[mid - 1].lock();
-            let frame = manager
+            let mut frame = manager
                 .allocate_large_page()
                 .expect("DCM OK'd allocation, this should succeed");
+            unsafe { frame.zero() };
             assert!(frame.affinity == mid_to_shmem_affinity(mid));
             regions.push(ShmemRegion {
                 base: frame.base.as_u64(),

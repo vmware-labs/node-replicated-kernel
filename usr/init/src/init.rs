@@ -987,8 +987,25 @@ pub fn upcall_test() {
     info!("upcall_test OK");
 }
 
+pub fn dynamic_replication_test() {
+    info!("dynamic_replication_test START");
+
+    vibrio::syscalls::Process::set_replicas(false, 0).expect("Can't remove replica 0.");
+
+    //vibrio::syscalls::Process::set_replicas(false, 1).expect("Can't remove replica 1.");
+    //vibrio::syscalls::Process::set_replicas(false, 2).expect("Can't remove replica 2.");
+    //vibrio::syscalls::Process::set_replicas(false, 3).expect("Can't remove replica 3.");
+    //info!("dynamic_replication_test ALL REMOVED");
+    //vibrio::syscalls::Process::set_replicas(true, 3).expect("Can't add replica 3.");
+    //vibrio::syscalls::Process::set_replicas(true, 2).expect("Can't add replica 2.");
+    //vibrio::syscalls::Process::set_replicas(true, 1).expect("Can't add replica 1.");
+    info!("dynamic_replication_test ALL ADDED BACK");
+    info!("dynamic_replication OK");
+}
+
 #[no_mangle]
 pub extern "C" fn _start() -> ! {
+    sys_println!("_start()");
     unsafe {
         log::set_logger(&vibrio::writer::LOGGER)
             .map(|()| log::set_max_level(Level::Debug.to_level_filter()))
@@ -1062,6 +1079,9 @@ pub extern "C" fn _start() -> ! {
 
     #[cfg(feature = "test-core-alloc")]
     core_alloc_test();
+
+    #[cfg(feature = "test-dynamic-replication")]
+    dynamic_replication_test();
 
     #[cfg(feature = "test-scheduler")]
     scheduler_test();

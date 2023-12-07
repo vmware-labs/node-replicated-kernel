@@ -51,6 +51,11 @@ impl Default for ModelAddressSpace {
 }
 
 impl AddressSpace for ModelAddressSpace {
+    // TODO(correctness): I don't know if this is correct for the model
+    fn root(&self) -> PAddr {
+        PAddr::zero()
+    }
+
     fn map_frame(&mut self, base: VAddr, frame: Frame, action: MapAction) -> Result<(), KError> {
         // Don't allow mapping of zero-sized frames
         if frame.size() == 0 {

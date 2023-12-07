@@ -14,6 +14,24 @@ use x86::bits64::paging::VAddr;
 pub struct Process;
 
 impl Process {
+    pub fn set_replicas(add: bool, replica_idx: usize) -> Result<(), SystemCallError> {
+        let r = unsafe {
+            syscall!(
+                SystemCall::Process as u64,
+                ProcessOperation::SetReplicas as u64,
+                add as u64,
+                replica_idx as u64,
+                1
+            )
+        };
+
+        if r == 0 {
+            Ok(())
+        } else {
+            Err(SystemCallError::from(r))
+        }
+    }
+
     /// Request to run on `core_id` starting at `entry_point`.
     pub fn request_core(core_id: usize, entry_point: VAddr) -> Result<CoreToken, SystemCallError> {
         let (r, gtid, _eid) = unsafe {

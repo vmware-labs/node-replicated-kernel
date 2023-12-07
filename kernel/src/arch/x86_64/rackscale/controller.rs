@@ -65,8 +65,10 @@ pub(crate) fn run() {
 
     ClientReadyCount.fetch_add(1, Ordering::SeqCst);
 
+    log::info!("before DCMServerReady");
     // Wait for all clients to connect before fulfilling any RPCs.
     while !DCMServerReady.load(Ordering::SeqCst) {}
+    log::info!("after DCMServerReady");
 
     server
         .add_client(&CLIENT_REGISTRAR)
@@ -74,10 +76,19 @@ pub(crate) fn run() {
 
     ClientReadyCount.fetch_add(1, Ordering::SeqCst);
 
+    log::info!("before ClientReadyCount");
     // Wait for all clients to connect before fulfilling any RPCs.
     while ClientReadyCount.load(Ordering::SeqCst) != (*crate::environment::NUM_MACHINES - 1) as u64
     {
     }
+
+    log::info!("before lazy_static::initialize(&PROCESS_TABLE);");
+    // TODO(dynrep): here is the point where we have all the memory regions and
+    // could create NodeReplicated instances for each client.
+    // Initialize processes
+    use crate::arch::process::PROCESS_TABLE;
+    lazy_static::initialize(&PROCESS_TABLE);
+    lazy_static::initialize(&crate::nr::KERNEL_NODE_INSTANCE);
 
     #[cfg(feature = "test-controller-shmem-alloc")]
     {

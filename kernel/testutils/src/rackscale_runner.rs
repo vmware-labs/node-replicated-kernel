@@ -397,11 +397,12 @@ impl<T: Clone + Send + 'static> RackscaleRun<T> {
         let _ignore = dcm.process.kill(SIGKILL);
 
         // If there's been an error, print everything
-        if controller_ret.is_err() || (&client_rets).into_iter().any(|ret| ret.is_err()) {
+        if true { //controller_ret.is_err() || (&client_rets).into_iter().any(|ret| ret.is_err()) {
             let outputs = all_outputs.lock().expect("Failed to get output lock");
             for (name, output) in outputs.iter() {
                 log_qemu_out_with_name(None, name.to_string(), output.to_string());
             }
+            /*
             if controller_ret.is_err() {
                 let dcm_log = dcm.exp_eof();
                 if dcm_log.is_ok() {
@@ -410,12 +411,13 @@ impl<T: Clone + Send + 'static> RackscaleRun<T> {
                     eprintln!("Failed to print DCM log.");
                 }
             }
+            */
         }
 
         for client_ret in client_rets {
-            client_ret.unwrap();
+            client_ret.expect("client_ret");
         }
-        controller_ret.unwrap();
+        controller_ret.expect("controller_ret");
     }
 
     pub fn run_baseline(&self) {
@@ -512,8 +514,12 @@ impl<T: Clone + Send + 'static> RackscaleBench<T> {
 
         // Find max cores, max numa, and max cores per node
         let machine = Machine::determine();
-        let max_cores = if is_smoke { 2 } else { machine.max_cores() };
-        let max_numa = machine.max_numa_nodes();
+        let max_cores = if is_smoke { 8 } else { machine.max_cores() };
+        let max_numa = if is_smoke {
+            4
+        } else {
+            machine.max_numa_nodes()
+        };
         let total_cores_per_node = core::cmp::max(1, max_cores / max_numa);
 
         // Do initial network configuration
@@ -524,7 +530,7 @@ impl<T: Clone + Send + 'static> RackscaleBench<T> {
             setup_network(num_clients + 1);
         }
 
-        let mut total_cores = 1;
+        let mut total_cores = 4;
         while total_cores < max_cores {
             // Round up to get the number of clients
             let new_num_clients = (total_cores + (total_cores_per_node - 1)) / total_cores_per_node;

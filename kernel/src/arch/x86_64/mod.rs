@@ -24,24 +24,18 @@ use core::mem::transmute;
 use core::sync::atomic::AtomicBool;
 use core::sync::atomic::Ordering;
 
-#[cfg(feature = "rackscale")]
-use crate::nr::NR_LOG;
 pub use bootloader_shared::*;
 use cnr::Replica as MlnrReplica;
 use fallible_collections::TryClone;
 use klogger::sprint;
 use log::{debug, error, info};
-use node_replication::Replica;
 use x86::{controlregs, cpuid};
-#[cfg(not(feature = "rackscale"))]
-use {crate::nr::Op, node_replication::Log};
 
 use crate::cmdline::CommandLineArguments;
 use crate::fs::cnrfs::MlnrKernelNode;
 use crate::memory::global::GlobalMemory;
 use crate::memory::mcache;
 use crate::memory::per_core::PerCoreMemory;
-use crate::nr::KernelNode;
 use crate::ExitReason;
 
 use coreboot::AppCoreArgs;
@@ -194,20 +188,23 @@ pub(crate) fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
     serial::init();
 
     {
-        let local_ridx = args.replica.register().unwrap();
-        crate::nr::NR_REPLICA.call_once(|| (args.replica.clone(), local_ridx));
-
         #[cfg(feature = "rackscale")]
         if crate::CMDLINE
             .get()
             .map_or(false, |c| c.mode == crate::cmdline::Mode::Client)
         {
+            let local_ridx = crate::nr::KERNEL_NODE_INSTANCE.register(args.node).unwrap();
+            crate::nr::NR_REPLICA_REGISTRATION.call_once(|| local_ridx);
             crate::nrproc::register_thread_with_process_replicas();
             crate::arch::rackscale::client_state::create_client_rpc_shmem_buffers();
         }
 
         #[cfg(not(feature = "rackscale"))]
-        crate::nrproc::register_thread_with_process_replicas();
+        {
+            let local_ridx = crate::nr::KERNEL_NODE_INSTANCE.register(args.node).unwrap();
+            crate::nr::NR_REPLICA_REGISTRATION.call_once(|| local_ridx);
+            crate::nrproc::register_thread_with_process_replicas();
+        }
 
         // For rackscale, only the controller needs cnrfs
         if let Some(core_fs_replica) = &args.fs_replica {
@@ -216,9 +213,8 @@ pub(crate) fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
 
         // Don't modify this line without adjusting `coreboot` integration test:
         info!(
-            "Core #{} initialized (replica idx {:?}) in {:?}.",
+            "Core #{} initialized in {:?}.",
             args.thread,
-            local_ridx,
             start.elapsed()
         );
     }
@@ -244,9 +240,6 @@ pub(crate) fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
 #[start]
 #[no_mangle]
 fn _start(argc: isize, _argv: *const *const u8) -> isize {
-    #[cfg(not(feature = "rackscale"))]
-    use crate::memory::LARGE_PAGE_SIZE;
-
     // Very early init:
     sprint!("\r\n");
     sprint!("NRK booting on x86_64...\r\n");
@@ -426,7 +419,9 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
             {
                 use crate::arch::rackscale::controller_state::CONTROLLER_SHMEM_CACHES;
                 lazy_static::initialize(&CONTROLLER_SHMEM_CACHES);
+                log::info!("before lazy_static::initialize DCM_CLIENT");
                 lazy_static::initialize(&crate::arch::rackscale::dcm::DCM_CLIENT);
+                log::info!("after lazy_static::initialize DCM_CLIENT");
             } else {
                 use crate::arch::irq::{
                     REMOTE_TLB_WORK_PENDING_SHMEM_VECTOR, REMOTE_TLB_WORK_PENDING_VECTOR,
@@ -444,6 +439,7 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
             }
         }
         // Initialize the workqueues used for distributed TLB shootdowns
+        log::info!("after lazy_static::initialize RACKSCALE_CLIENT_WORKQUEUES");
         lazy_static::initialize(&crate::arch::tlb::RACKSCALE_CLIENT_WORKQUEUES);
         log::info!("Finished inititializing client work queues");
     }
@@ -453,17 +449,12 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     // Set-up interrupt routing drivers (I/O APIC controllers)
     irq::ioapic_initialize();
 
-    // Create the global operation log and first replica and store it (needs
-    // TLS)
     #[cfg(not(feature = "rackscale"))]
-    let (log, bsp_replica) = {
-        let log: Arc<Log<Op>> = Arc::try_new(Log::<Op>::new(LARGE_PAGE_SIZE))
-            .expect("Not enough memory to initialize system");
-        let bsp_replica = Replica::<KernelNode>::new(&log);
-        let local_ridx = bsp_replica.register().unwrap();
-        crate::nr::NR_REPLICA.call_once(|| (bsp_replica.clone(), local_ridx));
-        (log, bsp_replica)
-    };
+    {
+        lazy_static::initialize(&crate::nr::KERNEL_NODE_INSTANCE);
+        let local_ridx = crate::nr::KERNEL_NODE_INSTANCE.register(0).unwrap();
+        crate::nr::NR_REPLICA_REGISTRATION.call_once(|| local_ridx);
+    }
 
     // Starting to initialize file-system
     #[cfg(not(feature = "rackscale"))]
@@ -484,13 +475,17 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
         .get()
         .map_or(false, |c| c.mode == crate::cmdline::Mode::Controller)
     {
+        log::info!("1 cnrfs");
         let fs_logs = crate::fs::cnrfs::allocate_logs();
         let fs_logs_cloned = fs_logs
             .try_clone()
             .expect("Not enough memory to initialize system");
         // Construct the first replica
+        log::info!("2 cnrfs");
         let fs_replica = MlnrReplica::<MlnrKernelNode>::new(fs_logs_cloned);
         crate::fs::cnrfs::init_cnrfs_on_thread(fs_replica.clone());
+        log::info!("3 cnrfs");
+
         (fs_logs, Some(fs_replica))
     } else {
         use alloc::vec::Vec;
@@ -500,9 +495,6 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     // Intialize PCI
     crate::pci::init();
 
-    // Initialize processes
-    lazy_static::initialize(&process::PROCESS_LOGS);
-
     #[cfg(not(feature = "rackscale"))]
     {
         lazy_static::initialize(&process::PROCESS_TABLE);
@@ -510,24 +502,21 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     }
 
     #[cfg(feature = "rackscale")]
-    let (log, bsp_replica) = {
+    {
         if crate::CMDLINE
             .get()
             .map_or(false, |c| c.mode == crate::cmdline::Mode::Client)
         {
             lazy_static::initialize(&process::PROCESS_TABLE);
             crate::nrproc::register_thread_with_process_replicas();
+
+            lazy_static::initialize(&crate::nr::KERNEL_NODE_INSTANCE);
+            let kernel_node = crate::nr::KERNEL_NODE_INSTANCE.clone();
+
+            let local_ridx = kernel_node.register(0).unwrap();
+            log::info!("Kernel node replica idx is {:?}", local_ridx);
+            crate::nr::NR_REPLICA_REGISTRATION.call_once(|| local_ridx);
         }
-
-        // this calls an RPC on the client, which is why we do this later in initialization than in non-rackscale
-        lazy_static::initialize(&NR_LOG);
-
-        // For rackscale, only the controller is going to create the base log.
-        // All clients will use this to create replicas.
-        let bsp_replica = Replica::<KernelNode>::new(&NR_LOG);
-        let local_ridx = bsp_replica.register().unwrap();
-        crate::nr::NR_REPLICA.call_once(|| (bsp_replica.clone(), local_ridx));
-        (&NR_LOG.clone(), bsp_replica)
     };
 
     #[cfg(feature = "gdb")]
@@ -540,7 +529,7 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     }
 
     // Bring up the rest of the system (needs topology, APIC, and global memory)
-    coreboot::boot_app_cores(log.clone(), bsp_replica, fs_logs, fs_replica);
+    coreboot::boot_app_cores(fs_logs, fs_replica);
 
     // Done with initialization, now we go in
     // the arch-independent part:

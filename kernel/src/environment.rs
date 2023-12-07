@@ -13,6 +13,19 @@ use crate::arch::{MAX_CORES, MAX_MACHINES, MAX_NUMA_NODES};
 pub(crate) static CORE_ID: Lazy<usize> =
     Lazy::new(|| new_gtid(atopology::MACHINE_TOPOLOGY.current_thread().id, *MACHINE_ID));
 
+#[thread_local]
+pub(crate) static MT_ID: Lazy<usize> = Lazy::new(|| {
+    #[cfg(feature = "rackscale")]
+    return (*crate::environment::MACHINE_ID - 1) * (atopology::MACHINE_TOPOLOGY.num_threads())
+        + atopology::MACHINE_TOPOLOGY.current_thread().id;
+    #[cfg(not(feature = "rackscale"))]
+    *CORE_ID
+});
+
+/// Number of nodes in the current deployment.
+#[allow(unused)]
+pub(crate) static NUM_NODES: Lazy<usize> = Lazy::new(|| atopology::MACHINE_TOPOLOGY.num_nodes());
+
 /// The NUMA node id of the current core (hardware thread).
 #[thread_local]
 pub(crate) static NODE_ID: Lazy<usize> = Lazy::new(|| {
@@ -58,7 +71,7 @@ pub fn init_topology() {
         "We don't support as many replicas as we have NUMA nodes."
     );
     assert!(
-        node_replication::MAX_REPLICAS_PER_LOG >= nodes,
+        nr2::nr::MAX_REPLICAS_PER_LOG >= nodes,
         "We don't support as many replicas as we have NUMA nodes."
     );
     assert!(

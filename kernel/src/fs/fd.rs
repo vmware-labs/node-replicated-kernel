@@ -105,6 +105,16 @@ pub(crate) struct FileDescriptorEntry {
     offset: AtomicUsize,
 }
 
+impl Clone for FileDescriptorEntry {
+    fn clone(&self) -> Self {
+        Self {
+            mnode: self.mnode,
+            flags: self.flags,
+            offset: AtomicUsize::new(self.offset()),
+        }
+    }
+}
+
 impl FileDescriptorEntry {
     pub(super) fn update(&mut self, mnode: MnodeNum, flags: FileFlags) {
         self.mnode = mnode;

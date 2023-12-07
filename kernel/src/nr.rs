@@ -1,16 +1,16 @@
 // Copyright © 2021 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
-
+#![allow(dead_code, warnings)]
 use crate::prelude::*;
 use core::fmt::Debug;
 
+use crate::arch::kcb;
 use alloc::sync::Arc;
 use hashbrown::HashMap;
 use log::{error, trace};
-use node_replication::{Dispatch, Replica, ReplicaToken};
+use nr2::nr::{Dispatch, NodeReplicated, ThreadToken};
 use spin::Once;
 
-#[cfg(feature = "rackscale")]
 use lazy_static::lazy_static;
 
 use crate::error::KError;
@@ -19,46 +19,106 @@ use crate::process::{Pid, MAX_PROCESSES};
 
 /// Kernel scheduler / process mgmt. replica
 #[thread_local]
-pub(crate) static NR_REPLICA: Once<(Arc<Replica<'static, KernelNode>>, ReplicaToken)> = Once::new();
+pub(crate) static NR_REPLICA_REGISTRATION: Once<ThreadToken> = Once::new();
 
 // Base nr log. The rackscale controller needs to save a reference to this, so it can give
 // clones to client so they can create replicas of their own.
 #[cfg(feature = "rackscale")]
 lazy_static! {
-    pub(crate) static ref NR_LOG: Arc<node_replication::Log<'static, Op>> = {
+    pub(crate) static ref KERNEL_NODE_INSTANCE: Arc<NodeReplicated<KernelNode>> = {
+        use core::num::NonZeroUsize;
+        use nr2::nr::AffinityChange;
+        use crate::memory::shmem_affinity::mid_to_shmem_affinity;
+        use crate::memory::shmem_affinity::local_shmem_affinity;
+
         if crate::CMDLINE
             .get()
             .map_or(false, |c| c.mode == crate::cmdline::Mode::Controller)
         {
-            use node_replication::Log;
-            use crate::arch::kcb::per_core_mem;
-            use crate::memory::{LARGE_PAGE_SIZE, shmem_affinity::local_shmem_affinity};
+            // Want at least one replica...
+            let num_replicas =
+                NonZeroUsize::new(core::cmp::max(1, *crate::environment::NUM_MACHINES-1)).unwrap();
+            log::info!("NodeReplicated<KernelNode> creating with {} replicas", num_replicas);
 
-            let pcm = per_core_mem();
-            pcm.set_mem_affinity(local_shmem_affinity())
-                .expect("Can't change affinity");
+            let cur_affinity = {
+                let pcm = kcb::per_core_mem();
+                let cur_affinity = pcm.physical_memory.borrow().affinity;
+                let ret = pcm.set_mem_affinity(local_shmem_affinity()).expect("Can't set affinity");
+                cur_affinity
+            };
 
-            let log = Arc::try_new(Log::<Op>::new(LARGE_PAGE_SIZE)).expect("Not enough memory to initialize system");
+            let nr  = Arc::try_new(
+                NodeReplicated::new(num_replicas, |afc: AffinityChange| {
+                    log::trace!("Got AffinityChange 1: {:?}", afc);
+                    let pcm = kcb::per_core_mem();
+                    //log::info!("Got AffinityChange: {:?}", afc);
+                    match afc {
+                        AffinityChange::Replica(r) => {
+                            let affinity = { pcm.physical_memory.borrow().affinity };
+                            pcm.set_mem_affinity(mid_to_shmem_affinity(r)).expect("Can't set affinity");
+                            return affinity;
+                        }
+                        AffinityChange::Revert(orig) => {
+                            pcm.set_mem_affinity(orig).expect("Can't set affinity");
+                            return 0;
+                        }
+                    }
+                })
+                .expect("Not enough memory to initialize system"),
+            )
+            .expect("Not enough memory to initialize system");
 
-            // Reset mem allocator to use per core memory again
-            let pcm = per_core_mem();
-            pcm.set_mem_affinity(0 as atopology::NodeId)
-                .expect("Can't change affinity");
+            {
+                let pcm = kcb::per_core_mem();
+                pcm.set_mem_affinity(cur_affinity).expect("Can't set affinity");
+            }
 
-            log
+            nr
         } else {
-            use node_replication::Log;
             use crate::memory::{paddr_to_kernel_vaddr, PAddr};
-
             use crate::arch::rackscale::get_shmem_structure::{rpc_get_shmem_structure, ShmemStructure};
 
             // Get location of the nr log from the controller, who will created them in shared memory
-            let mut log_ptrs = [0u64; 1];
-            rpc_get_shmem_structure(ShmemStructure::NrLog, &mut log_ptrs).expect("Failed to get nr log from controller");
-            let log_ptr = paddr_to_kernel_vaddr(PAddr::from(log_ptrs[0]));
-            let local_log_arc = unsafe { Arc::from_raw(log_ptr.as_u64() as *const Log<'static, Op>) };
-            local_log_arc
+            let mut node_replicated_ptrs = [0u64; 1];
+            rpc_get_shmem_structure(ShmemStructure::NrLog, &mut node_replicated_ptrs).expect("Failed to get nr log from controller");
+            let nr_ptr = paddr_to_kernel_vaddr(PAddr::from(node_replicated_ptrs[0]));
+            let nr_instance = unsafe { Arc::from_raw(nr_ptr.as_u64() as *const NodeReplicated<KernelNode>) };
+            nr_instance
         }
+    };
+}
+
+#[cfg(not(feature = "rackscale"))]
+lazy_static! {
+    pub(crate) static ref KERNEL_NODE_INSTANCE: Arc<NodeReplicated<KernelNode>> = {
+        use core::num::NonZeroUsize;
+        use crate::nr::KernelNode;
+        use nr2::nr::{AffinityChange, NodeReplicated};
+
+        // Let's go with one replica per NUMA node for now:
+        let numa_nodes = core::cmp::max(1, atopology::MACHINE_TOPOLOGY.num_nodes());
+        let numa_nodes = NonZeroUsize::new(numa_nodes).expect("At least one NUMA node");
+
+        // Create the global operation log and first replica and store it (needs
+        // TLS)
+        let kernel_node: Arc<NodeReplicated<KernelNode>> = Arc::try_new(
+            NodeReplicated::new(numa_nodes, |afc: AffinityChange| {
+                let pcm = kcb::per_core_mem();
+                match afc {
+                    AffinityChange::Replica(r) => {
+                        pcm.set_mem_affinity(r).expect("Can't set affinity")
+                    }
+                    AffinityChange::Revert(orig) => {
+                        pcm.set_mem_affinity(orig).expect("Can't set affinity")
+                    }
+                }
+                return 0; // xxx
+            })
+            .expect("Not enough memory to initialize system"),
+        )
+        .expect("Not enough memory to initialize system");
+
+        kernel_node
     };
 }
 
@@ -99,6 +159,7 @@ pub(crate) struct CoreInfo {
     pub entry_point: VAddr,
 }
 
+#[derive(Debug, Clone)]
 pub(crate) struct KernelNode {
     process_map: HashMap<Pid, ()>,
     scheduler_map: HashMap<kpi::system::GlobalThreadId, CoreInfo>,
@@ -106,21 +167,18 @@ pub(crate) struct KernelNode {
 
 impl Default for KernelNode {
     fn default() -> KernelNode {
-        KernelNode {
-            process_map: HashMap::new(),   // with_capacity(MAX_PROCESSES),
-            scheduler_map: HashMap::new(), // with_capacity(MAX_CORES), or, for rackscale, with_capacity(MAX_CORES * MAX_MACHINES)
-        }
+        let k = KernelNode {
+            process_map: HashMap::with_capacity(MAX_PROCESSES), // with_capacity(MAX_PROCESSES),
+            scheduler_map: HashMap::with_capacity(24), // with_capacity(MAX_CORES), or, for rackscale, with_capacity(MAX_CORES * MAX_MACHINES)
+        };
+        k
     }
 }
 
 impl KernelNode {
     pub(crate) fn synchronize() -> Result<(), KError> {
-        NR_REPLICA
-            .get()
-            .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
-                replica.sync(*token);
-                Ok(())
-            })
+        KERNEL_NODE_INSTANCE.sync(*NR_REPLICA_REGISTRATION.get().unwrap());
+        Ok(())
     }
 
     pub(crate) fn allocate_core_to_process(
@@ -129,18 +187,19 @@ impl KernelNode {
         affinity: Option<atopology::NodeId>,
         gtid: Option<kpi::system::GlobalThreadId>,
     ) -> Result<kpi::system::GlobalThreadId, KError> {
-        NR_REPLICA
-            .get()
-            .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
-                let op = Op::SchedAllocateCore(pid, affinity, gtid, entry_point);
-                let response = replica.execute_mut(op, *token);
+        // todo node id
+        crate::nr::NR_REPLICA_REGISTRATION
+            .call_once(|| crate::nr::KERNEL_NODE_INSTANCE.register(0).unwrap());
 
-                match response {
-                    Ok(NodeResult::CoreAllocated(rgtid)) => Ok(rgtid),
-                    Err(e) => Err(e),
-                    Ok(_) => unreachable!("Got unexpected response"),
-                }
-            })
+        let op = Op::SchedAllocateCore(pid, affinity, gtid, entry_point);
+        let response =
+            KERNEL_NODE_INSTANCE.execute_mut(op, *NR_REPLICA_REGISTRATION.get().unwrap());
+
+        match response {
+            Ok(NodeResult::CoreAllocated(rgtid)) => Ok(rgtid),
+            Err(e) => Err(e),
+            Ok(_) => unreachable!("Got unexpected response"),
+        }
     }
 
     pub(crate) fn release_core_from_process(
@@ -148,18 +207,14 @@ impl KernelNode {
         affinity: Option<atopology::NodeId>,
         gtid: kpi::system::GlobalThreadId,
     ) -> Result<(), KError> {
-        NR_REPLICA
-            .get()
-            .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
-                let op = Op::SchedReleaseCore(pid, affinity, gtid);
-                let response = replica.execute_mut(op, *token);
-
-                match response {
-                    Ok(NodeResult::CoreReleased) => Ok(()),
-                    Err(e) => Err(e),
-                    Ok(_) => unreachable!("Got unexpected response"),
-                }
-            })
+        let op = Op::SchedReleaseCore(pid, affinity, gtid);
+        let response =
+            KERNEL_NODE_INSTANCE.execute_mut(op, *NR_REPLICA_REGISTRATION.get().unwrap());
+        match response {
+            Ok(NodeResult::CoreReleased) => Ok(()),
+            Err(e) => Err(e),
+            Ok(_) => unreachable!("Got unexpected response"),
+        }
     }
 }
 
@@ -185,11 +240,15 @@ impl Dispatch for KernelNode {
             Op::AllocatePid => {
                 // TODO(performance): O(n) scan probably not what we really
                 // want, fine for now, MAX_PROCESSES is tiny
+                log::info!("in op alloc pid");
                 for i in 0..MAX_PROCESSES {
                     if !self.process_map.contains_key(&i) {
+                        log::info!("in op alloc pid 1");
                         self.process_map.try_reserve(1)?;
+                        log::info!("in op alloc pid 2");
                         let r = self.process_map.insert(i, ());
                         assert!(r.is_none(), "!contains_key");
+                        log::info!("in op alloc pid 3");
                         return Ok(NodeResult::PidAllocated(i));
                     }
                 }

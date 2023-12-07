@@ -487,13 +487,16 @@ fn s10_fxmark_benchmark() {
                 if cfg!(feature = "smoke") {
                     cmdline = cmdline.memory(8192);
                 } else {
-                    cmdline = cmdline.memory(core::cmp::max(73728, cores * 2048));
+                    cmdline = cmdline.memory(core::cmp::max(87728, cores * 2048));
                 }
 
                 if cfg!(feature = "smoke") && cores > 2 {
-                    cmdline = cmdline.nodes(2);
+                    cmdline = cmdline.nodes(std::cmp::max(machine.max_cores() / 16, 1));
                 } else {
-                    cmdline = cmdline.nodes(machine.max_numa_nodes());
+                    cmdline = cmdline.nodes(std::cmp::max(
+                        machine.max_cores() / 16,
+                        machine.max_numa_nodes(),
+                    ));
                 }
 
                 let mut output = String::new();
@@ -834,7 +837,7 @@ fn s10_leveldb_benchmark() {
 }
 
 #[test]
-fn s10_memcached_benchmark_internal() {
+fn s10_xmemcached_benchmark_internal() {
     setup_network(1);
 
     let machine = Machine::determine();
@@ -850,7 +853,7 @@ fn s10_memcached_benchmark_internal() {
         // Throw out everything above 28 since we have some non-deterministic
         // bug on larger machines that leads to threads calling sched_yield and
         // no readrandom is performed...
-        .filter(|&t| t <= 28)
+        .filter(|&t| t <= 16)
         .collect();
 
     // memcached arguments // currently not there.

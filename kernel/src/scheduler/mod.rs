@@ -9,7 +9,7 @@ use crate::arch::process::ArchProcessManagement;
 use crate::arch::timer;
 use crate::error::KError;
 use crate::nr;
-use crate::nr::NR_REPLICA;
+use crate::nr::{KERNEL_NODE_INSTANCE, NR_REPLICA_REGISTRATION};
 use crate::nrproc::NrProcess;
 use crate::process::{Executor, ResumeHandle};
 
@@ -36,63 +36,60 @@ pub(crate) fn schedule() -> ! {
 
     // No process assigned to core? Figure out if there is one now:
     if unlikely(!crate::arch::process::has_executor()) {
-        if let Some((replica, token)) = NR_REPLICA.get() {
-            loop {
-                let response = replica.execute(
-                    nr::ReadOps::CurrentProcess(*crate::environment::CORE_ID),
-                    *token,
-                );
+        loop {
+            let response = KERNEL_NODE_INSTANCE.execute(
+                nr::ReadOps::CurrentProcess(*crate::environment::CORE_ID),
+                *NR_REPLICA_REGISTRATION.get().unwrap(),
+            );
 
-                match response {
-                    Ok(nr::NodeResult::CoreInfo(ci)) => {
-                        let executor =
-                            NrProcess::allocate_executor(&apm, ci.pid).expect("This should work");
-                        unsafe {
-                            (*executor.vcpu_kernel()).resume_with_upcall = ci.entry_point;
-                        }
-
-                        // info!("Start execution of {} on gtid {}", executor.eid, gtid);
-                        let no = crate::arch::process::swap_current_executor(executor);
-                        assert!(no.is_none(), "Handle the case where we replace a process.");
-                        if is_replica_main_thread {
-                            // Make sure we periodically try and advance the replica on main-thread
-                            // even if we're running something (e.g., if everything polls in
-                            // user-space we can livelock)
-                            timer::set(timer::DEFAULT_TIMER_DEADLINE);
-                        }
-                        break;
+            match response {
+                Ok(nr::NodeResult::CoreInfo(ci)) => {
+                    let executor =
+                        NrProcess::allocate_executor(&apm, ci.pid).expect("This should work");
+                    unsafe {
+                        (*executor.vcpu_kernel()).resume_with_upcall = ci.entry_point;
                     }
-                    Err(KError::NoExecutorForCore) => {
-                        if is_replica_main_thread {
-                            // There is no process but we're the "main" thread,
-                            // aggressively try and advance the replica
-                            let start = rawtime::Instant::now();
-                            crate::nrproc::advance_all();
-                            crate::arch::advance_fs_replica();
 
-                            if start.elapsed().as_millis() < 1 {
-                                // Wait for a bit in case we don't end up doing
-                                // any work, otherwise this causes too much
-                                // contention and tput drops around ~300k
-                                for _i in 0..25_000 {
-                                    core::hint::spin_loop();
-                                }
+                    // info!("Start execution of {} on gtid {}", executor.eid, gtid);
+                    let no = crate::arch::process::swap_current_executor(executor);
+                    assert!(no.is_none(), "Handle the case where we replace a process.");
+                    if is_replica_main_thread {
+                        // Make sure we periodically try and advance the replica on main-thread
+                        // even if we're running something (e.g., if everything polls in
+                        // user-space we can livelock)
+                        timer::set(timer::DEFAULT_TIMER_DEADLINE);
+                    }
+                    break;
+                }
+                Err(KError::NoExecutorForCore) => {
+                    if is_replica_main_thread {
+                        // There is no process but we're the "main" thread,
+                        // aggressively try and advance the replica
+                        let start = rawtime::Instant::now();
+                        crate::arch::advance_fs_replica();
+
+                        if start.elapsed().as_millis() < 1 {
+                            // Wait for a bit in case we don't end up doing
+                            // any work, otherwise this causes too much
+                            // contention and tput drops around ~300k
+                            for _i in 0..25_000 {
+                                core::hint::spin_loop();
                             }
-                            continue;
-                        } else {
-                            // There is no process, set a timer and go to sleep
-                            timer::set(timer::DEFAULT_TIMER_DEADLINE);
                         }
-                        crate::arch::halt();
+                        continue;
+                    } else {
+                        // There is no process, set a timer and go to sleep
+                        timer::set(timer::DEFAULT_TIMER_DEADLINE);
                     }
-                    other => {
-                        unreachable!(
-                            "Unexpected return from ReadOps::CurrentExecutor {:?}.",
-                            other
-                        );
-                    }
-                };
-            }
+                    crate::arch::halt();
+                }
+                other => {
+                    unreachable!(
+                        "Unexpected return from ReadOps::CurrentExecutor {:?}.",
+                        other
+                    );
+                }
+            };
         }
     }
     debug_assert!(

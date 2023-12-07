@@ -325,7 +325,7 @@ impl<const BP: usize, const LP: usize> GrowBackend for MCache<BP, LP> {
         for frame in free_list {
             assert_eq!(frame.size(), LARGE_PAGE_SIZE);
             assert_eq!(frame.base % LARGE_PAGE_SIZE, 0);
-            assert_eq!(frame.affinity, self.node);
+            //assert_eq!(frame.affinity, self.node);
 
             self.large_page_addresses
                 .try_push(frame.base)

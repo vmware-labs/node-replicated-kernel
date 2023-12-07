@@ -191,7 +191,16 @@ pub unsafe extern "C" fn rumprun_makelwp(
     rump_pub_lwproc_switch(curlwp);
 
     let coreid = (rlid as usize) % AVAILABLE_CORES.load(Ordering::Relaxed);
-    let gtid = crate::rumprt::CPUIDX_TO_GTID.lock()[coreid];
+    let hacky_coreid = match rlid as usize {
+        2 => 0,
+        11 => 1,
+        12 => 2,
+        13 => 3,
+        14 => 4,
+        15 => 5,
+        _ => coreid,
+    };
+    let gtid = crate::rumprt::CPUIDX_TO_GTID.lock()[hacky_coreid];
     let tid = Environment::thread().spawn_with_args(
         stack,
         Some(rumprun_makelwp_tramp),
@@ -200,6 +209,15 @@ pub unsafe extern "C" fn rumprun_makelwp(
         None,
         tls_private,
     );
+    trace!(
+        "rlid={:?}, available_cores={:?} rump_core_id={:?} gtid={:?}, tid={:?}",
+        rlid,
+        AVAILABLE_CORES.load(Ordering::Relaxed),
+        coreid,
+        gtid,
+        tid
+    );
+
     debug!(
         "rumprun_makelwp spawned {:?} on core {} (gtid={:?})",
         tid, coreid, gtid

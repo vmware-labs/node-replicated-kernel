@@ -27,7 +27,7 @@ use crate::arch::MAX_CORES;
 use crate::cmdline::CommandLineArguments;
 use crate::error::{KError, KResult};
 use crate::fs::fd::FileDescriptorEntry;
-use crate::memory::backends::PhysicalPageProvider;
+//use crate::memory::backends::PhysicalPageProvider;
 use crate::memory::vspace::AddressSpace;
 use crate::memory::{Frame, KernelAllocator, PAddr, VAddr, KERNEL_BASE};
 use crate::prelude::overlaps;
@@ -49,7 +49,7 @@ pub(crate) type Pid = usize;
 pub(crate) type Eid = usize;
 
 /// How many (concurrent) processes the systems supports.
-pub(crate) const MAX_PROCESSES: usize = 12;
+pub(crate) const MAX_PROCESSES: usize = 1;
 
 /// How many registered "named" frames a process can have.
 pub(crate) const MAX_FRAMES_PER_PROCESS: usize = MAX_CORES;
@@ -58,7 +58,7 @@ pub(crate) const MAX_FRAMES_PER_PROCESS: usize = MAX_CORES;
 pub(crate) const MAX_WRITEABLE_SECTIONS_PER_PROCESS: usize = 4;
 
 /// Abstract definition of a process.
-pub(crate) trait Process: FrameManagement {
+pub(crate) trait Process: FrameManagement + Clone {
     type E: Executor + Copy + Sync + Send + Debug + PartialEq;
     type A: AddressSpace;
 
@@ -79,14 +79,10 @@ pub(crate) trait Process: FrameManagement {
         affinity: atopology::NodeId,
     ) -> Result<(), alloc::collections::TryReserveError>;
 
-    #[cfg(not(feature = "rackscale"))]
-    fn allocate_executors(&mut self, frame: Frame) -> Result<usize, KError>;
-
-    #[cfg(feature = "rackscale")]
     fn allocate_executors(
         &mut self,
         frame: Frame,
-        mid: kpi::system::MachineId,
+        #[cfg(feature = "rackscale")] mid: kpi::system::MachineId,
     ) -> Result<usize, KError>;
 
     fn vspace_mut(&mut self) -> &mut Self::A;
@@ -121,6 +117,7 @@ pub(crate) trait FrameManagement {
 }
 
 /// Implementation for managing a process' frames.
+#[derive(Clone)]
 pub(crate) struct ProcessFrames {
     /// Physical frame objects registered to the process.
     frames: ArrayVec<(Option<Frame>, usize), MAX_FRAMES_PER_PROCESS>,
@@ -295,6 +292,7 @@ impl elfloader::ElfLoader for DataSecAllocator {
                         }
                     };
 
+                    log::info!("DataSecAllocator::allocate");
                     let shmem_frames = rpc_get_shmem_frames(Some(self.pid), large_pages)
                         .expect("Failed to get shmem frames for elf loading");
 
@@ -468,17 +466,17 @@ impl elfloader::ElfLoader for DataSecAllocator {
 /// Create an initial VSpace
 pub(crate) fn make_process<P: Process>(binary: &'static str) -> Result<Pid, KError> {
     // Allocate a new process
-    let pid =
-        crate::nr::NR_REPLICA
-            .get()
-            .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
-                let response = replica.execute_mut(crate::nr::Op::AllocatePid, *token)?;
-                if let crate::nr::NodeResult::PidAllocated(pid) = response {
-                    Ok(pid)
-                } else {
-                    Err(KError::ProcessLoadingFailed)
-                }
-            })?;
+    let pid = {
+        let response = crate::nr::KERNEL_NODE_INSTANCE.execute_mut(
+            crate::nr::Op::AllocatePid,
+            *crate::nr::NR_REPLICA_REGISTRATION.get().unwrap(),
+        )?;
+        if let crate::nr::NodeResult::PidAllocated(pid) = response {
+            Ok(pid)
+        } else {
+            Err(KError::ProcessLoadingFailed)
+        }
+    }?;
 
     #[cfg(feature = "rackscale")]
     let affinity = if crate::CMDLINE
@@ -589,9 +587,16 @@ pub(crate) fn allocate_dispatchers<P: Process>(pid: Pid, affinity: NodeId) -> Re
         KernelAllocator::try_refill_tcache(20, 1, MemType::Mem)?;
         let mut frame = {
             let pcm = crate::arch::kcb::per_core_mem();
-            pcm.gmanager.unwrap().node_caches[affinity]
-                .lock()
-                .allocate_large_page()?
+
+            #[cfg(feature = "rackscale")]
+            pcm.set_mem_affinity(affinity)
+                .expect("Can't change affinity");
+            let frame = pcm.mem_manager().allocate_large_page()?;
+
+            #[cfg(feature = "rackscale")]
+            pcm.set_mem_affinity(crate::memory::shmem_affinity::local_shmem_affinity())
+                .expect("Can't reset affinity");
+            frame
         };
 
         unsafe {

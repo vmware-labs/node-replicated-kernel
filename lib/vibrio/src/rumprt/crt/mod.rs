@@ -114,6 +114,13 @@ static mut INIT_INFO: InitInfo = InitInfo {
     ],
 };
 
+
+#[no_mangle]
+pub unsafe extern "C" fn rs_start_dynrep_protocol() {
+    log::info!("start_dynrep_protocol");
+    crate::syscalls::Process::set_replicas(true, 0x99).expect("start dynrep failed");
+}
+
 /// Sets up ps strings.
 pub unsafe fn netbsd_userlevel_init() {
     extern "C" {

@@ -3,6 +3,7 @@
 
 use alloc::boxed::Box;
 use alloc::sync::Arc;
+use core::num::NonZeroUsize;
 use core::sync::atomic::{AtomicBool, Ordering};
 
 use arrayvec::ArrayVec;
@@ -10,7 +11,7 @@ use cnr::Replica as MlnrReplica;
 use ctor::ctor;
 use fallible_collections::TryClone;
 use log::{debug, info};
-use node_replication::{Log, Replica};
+use nr2::nr::{AffinityChange, Log, NodeReplicated, Replica};
 use x86::current::paging::HUGE_PAGE_SIZE;
 
 use crate::fs::cnrfs::MlnrKernelNode;
@@ -102,13 +103,13 @@ fn init_setup() {
     unsafe { kcb::PER_CORE_MEMORY.set_global_mem(global_memory_static) };
     debug!("Memory allocation should work at this point...");
 
-    let log: Arc<Log<Op>> = Arc::try_new(Log::<Op>::new(LARGE_PAGE_SIZE))
-        .expect("Not enough memory to initialize system");
-    let bsp_replica = Replica::<KernelNode>::new(&log);
-    let local_ridx = bsp_replica
-        .register()
-        .expect("Failed to register with Replica.");
-    crate::nr::NR_REPLICA.call_once(|| (bsp_replica.clone(), local_ridx));
+    {
+        // Create the global operation log and first replica and store it (needs
+        // TLS)
+        lazy_static::initialize(&crate::nr::KERNEL_NODE_INSTANCE);
+        let local_ridx = crate::nr::KERNEL_NODE_INSTANCE.register(0).unwrap();
+        crate::nr::NR_REPLICA_REGISTRATION.call_once(|| local_ridx);
+    };
 
     // Starting to initialize file-system
     let fs_logs = crate::fs::cnrfs::allocate_logs();

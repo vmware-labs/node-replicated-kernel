@@ -20,6 +20,7 @@ pub(crate) struct ShmemAlloc {
 }
 
 impl ShmemAlloc {
+    #[allow(dead_code)]
     pub(crate) fn new(affinity: NodeId) -> ShmemAlloc {
         assert!(
             is_shmem_affinity(affinity)

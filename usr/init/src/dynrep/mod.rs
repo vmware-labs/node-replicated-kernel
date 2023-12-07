@@ -7,6 +7,7 @@ use core::ptr;
 use log::info;
 
 use hashbrown::{hash_map::DefaultHashBuilder, HashMap};
+use lazy_static::lazy_static;
 
 use core::sync::atomic::AtomicUsize;
 use core::sync::atomic::Ordering;
@@ -23,8 +24,16 @@ pub const NUM_ENTRIES: u64 = 50_000_000;
 
 static POOR_MANS_BARRIER: AtomicUsize = AtomicUsize::new(0);
 
+lazy_static! {
+    pub(crate) static ref HASHMAP1: Arc<HashTable> = Arc::new(HashTable::default());
+}
+
+lazy_static! {
+    pub(crate) static ref HASHMAP2: Arc<HashTable> = Arc::new(HashTable::default());
+}
+
 #[derive(Clone)]
-struct HashTable {
+pub struct HashTable {
     pub map: HashMap<u64, u64, DefaultHashBuilder, MyAllocator>,
 }
 
@@ -45,7 +54,7 @@ impl Default for HashTable {
     }
 }
 
-fn run_bench(machine_id: usize, core_id: usize, replica: Arc<HashTable>) {
+fn run_bench(machine_id: usize, core_id: usize, map: Arc<HashTable>) {
     let mut random_key: u64 = 0;
     let batch_size = 64;
     let duration = 5;
@@ -58,7 +67,7 @@ fn run_bench(machine_id: usize, core_id: usize, replica: Arc<HashTable>) {
             for i in 0..batch_size {
                 unsafe { rdrand64(&mut random_key) };
                 random_key = random_key % NUM_ENTRIES;
-                let _ = replica.map.get(&random_key).expect("Get failed");
+                let _ = map.map.get(&random_key).expect("Get failed");
                 ops += 1;
             }
         }
@@ -67,33 +76,15 @@ fn run_bench(machine_id: usize, core_id: usize, replica: Arc<HashTable>) {
     }
 }
 
-unsafe extern "C" fn bencher_trampoline(args: *mut u8) -> *mut u8 {
+unsafe extern "C" fn bencher_trampoline(_args: *mut u8) -> *mut u8 {
     let current_gtid = vibrio::syscalls::System::core_id().expect("Can't get core id");
     let mid = kpi::system::mid_from_gtid(current_gtid);
-    let machine_id = if mid == 0 {
-        let hwthreads = vibrio::syscalls::System::threads().expect("Cant get system topology");
-        let mut node_id = 0;
-        for hwthread in hwthreads.iter() {
-            if hwthread.id == current_gtid {
-                node_id = hwthread.node_id;
-                break;
-            }
-        }
-        node_id
+
+    let map = if mid == 1 {
+        HASHMAP1.clone()
     } else {
-        mid - 1
+        HASHMAP2.clone()
     };
-
-    let replica: Arc<HashTable> = Arc::from_raw(args as *const HashTable);
-
-    // TODO: change replica # here
-    //let replica_id = 0;
-    let replica_id = machine_id;
-    log::info!(
-        "Registered thread {:?} with replica {:?}",
-        current_gtid,
-        replica_id
-    );
 
     // Synchronize with all cores
     POOR_MANS_BARRIER.fetch_sub(1, Ordering::Release);
@@ -101,7 +92,7 @@ unsafe extern "C" fn bencher_trampoline(args: *mut u8) -> *mut u8 {
         core::hint::spin_loop();
     }
 
-    run_bench(machine_id, current_gtid, replica.clone());
+    run_bench(mid, current_gtid, map);
     ptr::null_mut()
 }
 
@@ -110,35 +101,6 @@ pub fn userspace_dynrep_test() {
     let hwthreads = vibrio::syscalls::System::threads().expect("Cant get system topology");
     let current_gtid = vibrio::syscalls::System::core_id().expect("Can't get core id");
     let ncores = hwthreads.len();
-
-    // Figure out how many clients there are - this will determine how many max replicas we use
-    let mut nnodes = 0;
-    let mut nclients = 0;
-    for hwthread in hwthreads.iter() {
-        let mid = kpi::system::mid_from_gtid(hwthread.id);
-        if mid > nclients {
-            nclients = mid;
-        }
-        if hwthread.node_id > nnodes {
-            nnodes = hwthread.node_id;
-        }
-    }
-    if nclients != 0 {
-        // running as DiNOS
-        log::info!("Found {:?} client machines", nclients);
-        nnodes = nclients;
-    } else {
-        // running as NrOS
-        log::info!("Found {:?} nodes", nnodes);
-        nnodes += 1;
-    }
-
-    // Create data structure, with as many replicas as there are clients (assuming 1 numa node per client)
-    // TODO: change this to change number of replicas
-    let mut replicas = Vec::with_capacity(nnodes as usize);
-    for i in 0..nnodes {
-        replicas.push(Arc::new(HashTable::default()));
-    }
 
     let s = &vibrio::upcalls::PROCESS_SCHEDULER;
     let mut gtids = Vec::with_capacity(ncores);
@@ -179,11 +141,7 @@ pub fn userspace_dynrep_test() {
                 let mid = kpi::system::mid_from_gtid(gtids[core_index]);
                 thandles.push(
                     Environment::thread()
-                        .spawn_on_core(
-                            Some(bencher_trampoline),
-                            Arc::into_raw(replicas[mid - 1].clone()) as *const _ as *mut u8,
-                            gtids[core_index],
-                        )
+                        .spawn_on_core(Some(bencher_trampoline), ptr::null_mut(), gtids[core_index])
                         .expect("Can't spawn bench thread?"),
                 );
             }

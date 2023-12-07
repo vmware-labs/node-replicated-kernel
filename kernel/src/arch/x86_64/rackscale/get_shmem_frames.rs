@@ -45,7 +45,7 @@ pub(crate) fn rpc_get_shmem_frames(pid: Option<Pid>, num_frames: usize) -> KResu
     let mid = if pid.is_none() {
         Some(*crate::environment::MACHINE_ID)
     } else {
-        None
+        Some(*crate::environment::MACHINE_ID)
     };
 
     let req = ShmemFrameReq {
@@ -139,18 +139,24 @@ pub(crate) fn handle_get_shmem_frames(
             }
         }
     } else if let Some(pid) = pid {
+        let mid = mid.expect("Expected a machine ID");
+
         // Let DCM choose node
-        let (_, mids) = dcm_resource_alloc(pid, 0, num_frames as u64);
+        //let (_, mids) = dcm_resource_alloc(pid, 0, num_frames as u64);
         for i in 0..num_frames {
-            let mid = mids[i];
-            log::debug!("Received node assignment from DCM: node {:?}", mid);
+            //let mid = mids[i];
+            log::debug!(
+                "Allocating memory for process {:?} from node {:?}",
+                pid,
+                mid
+            );
 
             // TODO(error_handling): should handle errors gracefully here, maybe percolate to client?
             let mut manager = &mut SHMEM_MEMSLICE_ALLOCATORS[mid - 1].lock();
             let frame = manager
                 .allocate_large_page()
                 .expect("DCM OK'd allocation, this should succeed");
-            assert!(frame.affinity == mid_to_shmem_affinity(mid));
+            //assert!(frame.affinity == mid_to_shmem_affinity(mid));
             regions.push(ShmemRegion {
                 base: frame.base.as_u64(),
                 affinity: frame.affinity,

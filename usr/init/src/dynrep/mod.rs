@@ -25,7 +25,7 @@ static POOR_MANS_BARRIER: AtomicUsize = AtomicUsize::new(0);
 
 #[derive(Clone)]
 struct HashTable {
-   pub map: HashMap<u64, u64, DefaultHashBuilder, MyAllocator>,
+    pub map: HashMap<u64, u64, DefaultHashBuilder, MyAllocator>,
 }
 
 impl Default for HashTable {
@@ -45,11 +45,7 @@ impl Default for HashTable {
     }
 }
 
-fn run_bench(
-    machine_id: usize,
-    core_id: usize,
-    replica: Arc<HashTable>,
-) {
+fn run_bench(machine_id: usize, core_id: usize, replica: Arc<HashTable>) {
     let mut random_key: u64 = 0;
     let batch_size = 64;
     let duration = 5;
@@ -186,7 +182,6 @@ pub fn userspace_dynrep_test() {
                         .spawn_on_core(
                             Some(bencher_trampoline),
                             Arc::into_raw(replicas[mid - 1].clone()) as *const _ as *mut u8,
-
                             gtids[core_index],
                         )
                         .expect("Can't spawn bench thread?"),

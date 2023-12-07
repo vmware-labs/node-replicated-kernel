@@ -1156,7 +1156,7 @@ fn s11_rackscale_dynrep_userspace() {
         test.cores_per_client = cores_per_client - (test.num_clients + 1);
     }
     test.memory = 2 * 4096;
-    test.shmem_size = 1024 * 2;
+    test.shmem_size = 1024 * 4;
     if cfg!(feature = "baseline") {
         test.run_baseline();
     } else {

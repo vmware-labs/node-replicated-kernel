@@ -52,7 +52,7 @@ impl VSpaceDispatch<u64> for Arch86LwkSystemCall {
 
         // This is necessary because map_frames -> MemMapFrames seems to assume
         // that base pages follow large pages.
-        let mut initial_base_frames = Vec::try_with_capacity(bp)?;
+        //let mut initial_base_frames = Vec::try_with_capacity(bp)?;
 
         let pid = current_pid()?;
 
@@ -68,6 +68,7 @@ impl VSpaceDispatch<u64> for Arch86LwkSystemCall {
         let mut total_len = 0;
 
         if total_needed_base_pages > 0 {
+            /*
             let mut per_process_bp_cache = CLIENT_STATE.per_process_base_pages[pid].lock();
             let base_pages_from_cache = core::cmp::min(
                 per_process_bp_cache.free_base_pages(),
@@ -86,6 +87,7 @@ impl VSpaceDispatch<u64> for Arch86LwkSystemCall {
             }
 
             total_needed_base_pages -= base_pages_from_cache;
+            */
 
             // We'll have to allocate another large page to fulfill the request for base pages
             if total_needed_base_pages > 0 {
@@ -127,6 +129,7 @@ impl VSpaceDispatch<u64> for Arch86LwkSystemCall {
                 }
 
                 // Add any remaining base pages to the cache, if there's space.
+                /*
                 let mut per_process_bp_cache = CLIENT_STATE.per_process_base_pages[pid].lock();
                 let base_pages_to_save = core::cmp::min(
                     base_page_iter.len(),
@@ -142,6 +145,7 @@ impl VSpaceDispatch<u64> for Arch86LwkSystemCall {
                         .grow_base_pages(&[frame])
                         .expect("We ensure not to overfill the FrameCacheBase above.");
                 }
+                */
 
                 if base_page_iter.len() > 0 {
                     log::debug!(
@@ -155,6 +159,7 @@ impl VSpaceDispatch<u64> for Arch86LwkSystemCall {
 
         // Add initial base pages into frame array. doing this in the end ensures
         // that the order of the frames is large pages and then base pages.
+        /*
         for f in initial_base_frames {
             total_len += f.size;
             if paddr.is_none() {
@@ -164,6 +169,7 @@ impl VSpaceDispatch<u64> for Arch86LwkSystemCall {
                 .try_push(f)
                 .expect("Can't fail see `try_with_capacity`");
         }
+        */
 
         nrproc::NrProcess::<Ring3Process>::map_frames(
             current_pid()?,

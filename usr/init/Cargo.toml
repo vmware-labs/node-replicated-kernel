@@ -15,7 +15,7 @@ lineup = { path = "../../lib/lineup" }
 vibrio = { path = "../../lib/vibrio" }
 kpi = { path = "../../lib/kpi" }
 arrayvec = { version = "0.7.0", default-features = false }
-nr2 = { git="https://github.com/gz/node-replication.git", branch="nr-dymanic-replication" }
+node-replication = { git="https://github.com/gz/node-replication.git", branch="master" }
 proptest = { git = "https://github.com/gz/proptest.git", branch = "x86-asm", default-features = false, features = ['alloc', 'hardware-rng'] }
 rawtime = "0.0.10"
 x86 = { version = "0.52", features = ["unstable"] }

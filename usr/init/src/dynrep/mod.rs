@@ -12,7 +12,7 @@ use core::sync::atomic::AtomicUsize;
 use core::sync::atomic::Ordering;
 
 use lineup::tls2::{Environment, SchedulerControlBlock};
-use nr2::nr::{Dispatch, NodeReplicated, ThreadToken};
+use node_replication::{Dispatch, ReplicaToken, Log, Replica};
 use rawtime::Instant;
 use x86::bits64::paging::VAddr;
 use x86::random::rdrand64;
@@ -46,21 +46,22 @@ impl Default for HashTable {
     }
 }
 
+#[derive(PartialEq, Clone, Debug)]
 enum OpRd {
     Get(u64),
 }
 
-#[derive(PartialEq, Clone)]
+#[derive(PartialEq, Clone, Debug)]
 enum OpWr {
     Put(u64, u64),
 }
 
 impl Dispatch for HashTable {
-    type ReadOperation<'a> = OpRd;
+    type ReadOperation = OpRd;
     type WriteOperation = OpWr;
     type Response = Result<u64, ()>;
 
-    fn dispatch<'a>(&self, op: Self::ReadOperation<'a>) -> Self::Response {
+    fn dispatch(&self, op: Self::ReadOperation) -> Self::Response {
         match op {
             OpRd::Get(key) => match self.map.get(&key) {
                 Some(val) => Ok(*val),
@@ -82,9 +83,10 @@ impl Dispatch for HashTable {
 fn run_bench(
     machine_id: usize,
     core_id: usize,
-    ttkn: ThreadToken,
-    replica: Arc<NodeReplicated<HashTable>>,
+    ttkn: ReplicaToken,
+    replica: Arc<Replica<HashTable>>,
 ) {
+    log::info!("Starting benchmark on {:?}", core_id);
     let mut random_key: u64 = 0;
     let batch_size = 64;
     let duration = 5;
@@ -123,18 +125,14 @@ unsafe extern "C" fn bencher_trampoline(args: *mut u8) -> *mut u8 {
         mid - 1
     };
 
-    let replica: Arc<NodeReplicated<HashTable>> =
-        Arc::from_raw(args as *const NodeReplicated<HashTable>);
-
-    // TODO: change replica # here
-    //let replica_id = 0;
+    let replica = Arc::from_raw(args as *const Replica<HashTable>);
     let replica_id = machine_id;
     log::info!(
         "Registered thread {:?} with replica {:?}",
         current_gtid,
         replica_id
     );
-    let ttkn = replica.register(replica_id).unwrap();
+    let ttkn = replica.register().unwrap();
 
     // Synchronize with all cores
     POOR_MANS_BARRIER.fetch_sub(1, Ordering::Release);
@@ -142,6 +140,7 @@ unsafe extern "C" fn bencher_trampoline(args: *mut u8) -> *mut u8 {
         core::hint::spin_loop();
     }
 
+    log::info!("Starting benchmark on {:?}", current_gtid);
     run_bench(machine_id, current_gtid, ttkn, replica.clone());
     ptr::null_mut()
 }
@@ -174,11 +173,16 @@ pub fn userspace_dynrep_test() {
         nnodes += 1;
     }
 
-    // Create data structure, with as many replicas as there are clients (assuming 1 numa node per client)
-    // TODO: change this to change number of replicas
-    let num_replicas = NonZeroUsize::new(nnodes).unwrap(); // NonZeroUsize::new(1).unwrap();
+    let log = Arc::new(Log::<<HashTable as Dispatch>::WriteOperation>::new(
+        2 * 1024 * 1024,
+    ));
+    let mut replicas = Vec::with_capacity(nnodes);
 
-    let replicas = Arc::new(NodeReplicated::<HashTable>::new(num_replicas, |_| 0).unwrap());
+    for _ in 0..nnodes {
+        replicas.push(Arc::new(
+            Replica::<HashTable>::new(&log),
+        ));
+    }
 
     let s = &vibrio::upcalls::PROCESS_SCHEDULER;
     let mut gtids = Vec::with_capacity(ncores);
@@ -216,11 +220,12 @@ pub fn userspace_dynrep_test() {
             log::info!("Set barrier to: {:?}", POOR_MANS_BARRIER);
 
             for core_index in 0..ncores {
+                let mid = kpi::system::mid_from_gtid(gtids[core_index]);
                 thandles.push(
                     Environment::thread()
                         .spawn_on_core(
                             Some(bencher_trampoline),
-                            Arc::into_raw(replicas.clone()) as *const _ as *mut u8,
+                            Arc::into_raw(replicas[mid -1].clone()) as *const _ as *mut u8,
                             gtids[core_index],
                         )
                         .expect("Can't spawn bench thread?"),

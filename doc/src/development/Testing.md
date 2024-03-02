@@ -35,7 +35,7 @@ If you would like to run a specific integration test you can pass it with `--`:
 
 If you would like to run a specific set of integration tests, you can specify the file name with `--test`:
 
-1. `RUST_TEST_THREADS=1 cargo test --test s00_core_test`
+1. `RUST_TEST_THREADS=1 cargo test --test s00_core_tests`
 
 In case an integration test fails, adding `--nocapture` at the end (needs to
 come after the `--`) will make sure that the underlying `run.py` invocations are

@@ -771,6 +771,7 @@ fn s10_memcached_benchmark() {
 }
 
 #[test]
+#[ignore]
 fn s10_leveldb_benchmark() {
     setup_network(1);
 

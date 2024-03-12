@@ -22,7 +22,7 @@ use serde::Serialize;
 
 use testutils::builder::{BuildArgs, Machine};
 use testutils::helpers::{setup_network, spawn_dhcpd, spawn_nrk, DHCP_ACK_MATCH};
-use testutils::memcached::{MEMCACHED_MEM_SIZE_MB, MEMCACHED_NUM_QUERIES, parse_memcached_output};
+use testutils::memcached::{parse_memcached_output, MEMCACHED_MEM_SIZE_MB, MEMCACHED_NUM_QUERIES};
 use testutils::redis::{redis_benchmark, REDIS_BENCHMARK, REDIS_START_MATCH};
 use testutils::runner_args::{check_for_successful_exit, wait_for_sigterm, RunnerArgs};
 
@@ -874,6 +874,7 @@ fn s10_leveldb_benchmark() {
 }
 
 #[test]
+#[ignore]
 fn s10_memcached_benchmark_internal() {
     setup_network(1);
 
@@ -917,7 +918,6 @@ fn s10_memcached_benchmark_internal() {
     }
     println!();
 
-
     let total_cores_per_node = core::cmp::max(1, machine.max_cores() / machine.max_numa_nodes());
     for thread in threads.iter() {
         println!("\n\nRunning memcached internal benchmark with {thread} threads, {queries} GETs and {memsize}MB memory. ");
@@ -951,7 +951,7 @@ fn s10_memcached_benchmark_internal() {
             output += prev.as_str();
             output += matched.as_str();
 
-            let ret = parse_memcached_output(&mut p ,*thread, &mut output)?;
+            let ret = parse_memcached_output(&mut p, *thread, &mut output)?;
 
             // Append parsed results to a CSV file
             let write_headers = !Path::new(file_name).exists();
@@ -970,7 +970,7 @@ fn s10_memcached_benchmark_internal() {
             assert!(r.is_ok());
             let out = format!(
                 "memcached,{},{},{},{},{}",
-                ret.b_threads, ret.b_mem,  ret.b_queries,  ret.b_time, ret.b_thpt
+                ret.b_threads, ret.b_mem, ret.b_queries, ret.b_time, ret.b_thpt
             );
             let r = csv_file.write(out.as_bytes());
             assert!(r.is_ok());

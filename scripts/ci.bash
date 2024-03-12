@@ -30,7 +30,7 @@ RUST_TEST_THREADS=1 cargo test --test s10* -- s10_fxmark_bench --nocapture
 RUST_TEST_THREADS=1 cargo test --test s11* -- s11_rackscale_shmem_vmops_maptput_benchmark --nocapture
 RUST_TEST_THREADS=1 cargo test --test s11* -- s11_rackscale_shmem_vmops_maplat_benchmark --nocapture
 RUST_TEST_THREADS=1 cargo test --test s11* -- s11_rackscale_shmem_fxmark_bench --nocapture
-RUST_TEST_THREADS=1 cargo test --test s11* -- s11_rackscale_shmem_memcached_internal_benchmark --nocapture
+RUST_TEST_THREADS=1 cargo test --features baseline --test s11* -- s11_rackscale_shmem_memcached_internal_benchmark --nocapture
 RUST_TEST_THREADS=1 cargo test --test s11* -- s11_linux_memcached_sharded_benchmark --nocapture
 
 # Clone repo

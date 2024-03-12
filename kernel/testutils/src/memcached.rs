@@ -61,55 +61,8 @@ pub fn parse_memcached_output(p: &mut PtySession, num_threads: usize,  output: &
     *output += prev.as_str();
     *output += matched.as_str();
 
-
-    // number of keys: 131072
-    let (prev, matched) = p.exp_regex(r#"Prefilling slabs"#)?;
-    println!("> {}", matched);
-
-    *output += prev.as_str();
-    *output += matched.as_str();
-
-
-    // number of keys: 131072
-    let (prev, matched) = p.exp_regex(r#"Prefilling slabs took (\d+) ms"#)?;
-    println!("> {}", matched);
-
-    *output += prev.as_str();
-    *output += matched.as_str();
-
-    // there could be some reordering happening here with the prints, so we account for all of them.
-    for i in 0..(2* num_threads + 1) {
-        let (prev, matched) = p.exp_regex(r#"(thread.(\d+) start running|starting all (\d+) threads|starting thread (\d+) / (\d+))"#)?;
-        println!("> {}", matched);
-
-        *output += prev.as_str();
-        *output += matched.as_str();
-    }
-
-    for i in 0..num_threads {
-        let (prev, matched) = p.exp_regex(r#"populate: thread.(\d+) done. added (\d+) elements, (\d+) not added of which (\d+) already existed"#)?;
-        println!("> {}", matched);
-        *output += prev.as_str();
-        *output += matched.as_str();
-    }
-
     let (prev, matched) = p.exp_regex(r#"Executing (\d+) queries with (\d+) threads."#)?;
     println!("> {}", matched);
-
-    for i in 0..num_threads {
-        let (prev, matched) = p.exp_regex(r#"execute: thread.(\d+) startes executing with connection "#)?;
-        println!("> {}", matched);
-        *output += prev.as_str();
-        *output += matched.as_str();
-    }
-
-    for i in 0..num_threads {
-        let (prev, matched) = p.exp_regex(r#"execute: thread.(\d+) done. executed (\d+) found (\d+), missed (\d+)"#)?;
-        println!("> {}", matched);
-        *output += prev.as_str();
-        *output += matched.as_str();
-    }
-
 
     // benchmark took 129 seconds
     let (prev, matched) = p.exp_regex(r#"benchmark took (\d+) ms"#)?;
@@ -192,12 +145,12 @@ pub fn rackscale_memcached_checkout(tmpdir: &str) {
     }
 
     println!(
-        "CHECKOUT 2c521ec573da7cad604670dde3c9c369dba01f75 {:?}",
+        "CHECKOUT 0a4f217105d994d2ce438464041546ab4f4c4b2c {:?}",
         out_dir
     );
 
     let res = Command::new("git")
-        .args(&["checkout", "2c521ec573da7cad604670dde3c9c369dba01f75"])
+        .args(&["checkout", "0a4f217105d994d2ce438464041546ab4f4c4b2c"])
         .current_dir(out_dir_path.as_path())
         .output()
         .expect("git checkout failed");

@@ -16,7 +16,8 @@ rm -f leveldb_benchmark.csv
 rm -f rackscale_shmem_vmops_benchmark.csv
 rm -f rackscale_shmem_vmops_latency_benchmark.csv
 rm -f rackscale_shmem_fxmark_benchmark.csv
-rm -f rackscale_shmem_memcached_benchmark.csv
+rm -f rackscale_shmem_memcached_internal_benchmark.csv
+rm -f linux_memcached_sharded_benchmark.csv
 
 # For vmops: --features prealloc can improve performance further (at the expense of test duration)
 RUST_TEST_THREADS=1 cargo test --test s10* -- s10_vmops_benchmark --nocapture
@@ -29,7 +30,8 @@ RUST_TEST_THREADS=1 cargo test --test s10* -- s10_fxmark_bench --nocapture
 RUST_TEST_THREADS=1 cargo test --test s11* -- s11_rackscale_shmem_vmops_maptput_benchmark --nocapture
 RUST_TEST_THREADS=1 cargo test --test s11* -- s11_rackscale_shmem_vmops_maplat_benchmark --nocapture
 RUST_TEST_THREADS=1 cargo test --test s11* -- s11_rackscale_shmem_fxmark_bench --nocapture
-RUST_TEST_THREADS=1 cargo test --test s11* -- s11_rackscale_memcached_benchmark_internal --nocapture
+RUST_TEST_THREADS=1 cargo test --features baseline --test s11* -- s11_rackscale_shmem_memcached_internal_benchmark --nocapture
+RUST_TEST_THREADS=1 cargo test --test s11* -- s11_linux_memcached_sharded_benchmark --nocapture
 
 # Clone repo
 rm -rf gh-pages
@@ -61,7 +63,9 @@ if [ -d "${DEPLOY_DIR}" ]; then
 fi
 mkdir -p ${DEPLOY_DIR}
 mv memcached_benchmark_internal.csv ${DEPLOY_DIR}
+mv linux_memcached_sharded_benchmark.csv ${DEPLOY_DIR}
 gzip ${DEPLOY_DIR}/memcached_benchmark_internal.csv
+gzip ${DEPLOY_DIR}/linux_memcached_sharded_benchmark.csv
 
 # Copy vmops results
 DEPLOY_DIR="gh-pages/vmops/${CI_MACHINE_TYPE}/${GIT_REV_CURRENT}/"
@@ -132,8 +136,8 @@ if [ -d "${DEPLOY_DIR}" ]; then
     DEPLOY_DIR=${DEPLOY_DIR}${DATE_PREFIX}
 fi
 mkdir -p ${DEPLOY_DIR}
-mv rackscale_shmem_memcached_benchmark.csv ${DEPLOY_DIR}
-gzip ${DEPLOY_DIR}/rackscale_shmem_memcached_benchmark.csv
+mv rackscale_shmem_memcached_internal_benchmark.csv ${DEPLOY_DIR}
+gzip ${DEPLOY_DIR}/rackscale_shmem_memcached_internal_benchmark.csv
 
 # Update CI history plots
 python3 gh-pages/_scripts/ci_history.py --append --machine $CI_MACHINE_TYPE

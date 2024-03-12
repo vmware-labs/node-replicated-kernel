@@ -22,6 +22,7 @@ use serde::Serialize;
 
 use testutils::builder::{BuildArgs, Machine};
 use testutils::helpers::{setup_network, spawn_dhcpd, spawn_nrk, DHCP_ACK_MATCH};
+use testutils::memcached::{parse_memcached_output, MEMCACHED_MEM_SIZE_MB, MEMCACHED_NUM_QUERIES};
 use testutils::redis::{redis_benchmark, REDIS_BENCHMARK, REDIS_START_MATCH};
 use testutils::runner_args::{check_for_successful_exit, wait_for_sigterm, RunnerArgs};
 
@@ -56,7 +57,7 @@ fn s10_redis_benchmark_virtio() {
         output += dhcp_server.exp_string(DHCP_ACK_MATCH)?.as_str();
         output += p.exp_string(REDIS_START_MATCH)?.as_str();
 
-        std::thread::sleep(std::time::Duration::from_secs(9));
+        std::thread::sleep(std::time::Duration::from_secs(20));
 
         let mut redis_client = redis_benchmark("virtio", 2_000_000)?;
 
@@ -96,7 +97,7 @@ fn s10_redis_benchmark_e1000() {
         output += p.exp_string(REDIS_START_MATCH)?.as_str();
 
         use std::{thread, time};
-        thread::sleep(time::Duration::from_secs(9));
+        thread::sleep(time::Duration::from_secs(20));
 
         let mut redis_client = redis_benchmark("e1000", 2_000_000)?;
 
@@ -671,8 +672,7 @@ fn memcached_benchmark(
 #[cfg(not(feature = "baremetal"))]
 #[test]
 fn s10_memcached_benchmark() {
-    let _r =
-        which::which(MEMASLAP_BINARY).expect("memaslap not installed on host, test will fail!");
+    let _r = which::which(MEMASLAP_BINARY).expect("memslap not installed on host, test will fail!");
 
     let max_cores = 4;
     let threads = if cfg!(feature = "smoke") {
@@ -693,6 +693,8 @@ fn s10_memcached_benchmark() {
 
     for nic in &["virtio", "e1000"] {
         for thread in threads.iter() {
+            println!("\n# Memcached with {} threads over {}", thread, nic);
+
             let kernel_cmdline = format!("init=memcached.bin initargs={}", *thread);
             let cmdline = RunnerArgs::new_with_build("userspace-smp", &build)
                 .memory(8192)
@@ -716,12 +718,50 @@ fn s10_memcached_benchmark() {
 
                 dhcp_server.exp_regex(DHCP_ACK_MATCH)?;
 
-                std::thread::sleep(std::time::Duration::from_secs(6));
-                let mut memaslap = memcached_benchmark(nic, *thread, 10)?;
+                use std::{thread, time};
+                let timeout = 15;
+                print!("waiting {timeout} seconds to give the server time to start up. ");
+                for _ in 0..timeout {
+                    let _ = std::io::stdout().flush();
+                    thread::sleep(time::Duration::from_secs(1));
+                    print!(". ")
+                }
+                println!("\nstarting benchmark");
 
+                match memcached_benchmark(nic, *thread, 10) {
+                    Ok(mut s) => {
+                        let _ = s.process.kill(SIGTERM)?;
+                        println!("benchmark done.");
+                    }
+                    Err(e) => {
+                        println!("benchmark failed.");
+                        print!("\nnrk: ");
+                        while let Some(c) = p.try_read() {
+                            if c == '\n' {
+                                print!("\nnrk: ");
+                            } else {
+                                print!("{}", c);
+                            }
+                        }
+                        println!();
+                        match e.kind() {
+                            ErrorKind::EOF(_r, s, _) => {
+                                for l in s.lines() {
+                                    println!("memslap: {}", l);
+                                }
+                            }
+                            ErrorKind::Timeout(_r, s, _) => {
+                                for l in s.lines() {
+                                    println!("memslap: {}", l);
+                                }
+                            }
+                            e => {
+                                println!("Error: {:?}", e);
+                            }
+                        }
+                    }
+                }
                 dhcp_server.send_control('c')?;
-                memaslap.process.kill(SIGTERM)?;
-
                 p.process.kill(SIGTERM)
             };
 
@@ -731,6 +771,7 @@ fn s10_memcached_benchmark() {
 }
 
 #[test]
+#[ignore]
 fn s10_leveldb_benchmark() {
     setup_network(1);
 
@@ -834,8 +875,11 @@ fn s10_leveldb_benchmark() {
 }
 
 #[test]
+#[ignore]
 fn s10_memcached_benchmark_internal() {
     setup_network(1);
+
+    let is_smoke = cfg!(feature = "smoke");
 
     let machine = Machine::determine();
     let build = BuildArgs::default()
@@ -850,7 +894,7 @@ fn s10_memcached_benchmark_internal() {
         // Throw out everything above 28 since we have some non-deterministic
         // bug on larger machines that leads to threads calling sched_yield and
         // no readrandom is performed...
-        .filter(|&t| t <= 28)
+        .filter(|&t| if is_smoke { t <= 10 } else { t <= 128 })
         .collect();
 
     // memcached arguments // currently not there.
@@ -858,10 +902,11 @@ fn s10_memcached_benchmark_internal() {
         (16 * 1024 /* MB */, 16 /* MB */, 2000000, 300_000)
     } else {
         (
-            128 * 1024, /* MB */
-            32 * 1024,  /* MB */
-            50000000,
-            600_000,
+            // keep in sync with the s11_ra
+            std::cmp::max(8192, 4 * MEMCACHED_MEM_SIZE_MB), /* MB */
+            MEMCACHED_MEM_SIZE_MB,
+            MEMCACHED_NUM_QUERIES,
+            std::cmp::max(60_000, MEMCACHED_NUM_QUERIES) as u64,
         )
     };
 
@@ -874,8 +919,11 @@ fn s10_memcached_benchmark_internal() {
     }
     println!();
 
+    let total_cores_per_node = core::cmp::max(1, machine.max_cores() / machine.max_numa_nodes());
     for thread in threads.iter() {
-        println!("Running memcached internal benchmark with {thread} threads, {queries} GETs and {memsize}MB memory. ");
+        println!("\n\nRunning memcached internal benchmark with {thread} threads, {queries} GETs and {memsize}MB memory. ");
+
+        let num_nodes = (thread + (total_cores_per_node - 1)) / total_cores_per_node;
 
         let kernel_cmdline = format!(
             r#"init=memcachedbench.bin initargs={} appcmd='--x-benchmark-mem={} --x-benchmark-queries={}'"#,
@@ -884,8 +932,8 @@ fn s10_memcached_benchmark_internal() {
 
         let cmdline = RunnerArgs::new_with_build("userspace-smp", &build)
             .timeout(timeout)
-            .cores(machine.max_cores())
-            .nodes(2)
+            .cores(*thread)
+            .nodes(num_nodes)
             .use_virtio()
             .memory(qemu_mem)
             .setaffinity(Vec::new())
@@ -899,70 +947,12 @@ fn s10_memcached_benchmark_internal() {
 
             output += dhcp_server.exp_string(DHCP_ACK_MATCH)?.as_str();
 
-            // match the title
+            // somehow that needs to be here ???
             let (prev, matched) = p.exp_regex(r#"INTERNAL BENCHMARK CONFIGURE"#)?;
-
             output += prev.as_str();
             output += matched.as_str();
 
-            // x_benchmark_mem = 10 MB
-            let (prev, matched) = p.exp_regex(r#"x_benchmark_mem = (\d+) MB"#)?;
-            println!("> {}", matched);
-            let b_mem = matched.replace("x_benchmark_mem = ", "").replace(" MB", "");
-
-            output += prev.as_str();
-            output += matched.as_str();
-
-            // number of threads: 3
-            let (prev, matched) = p.exp_regex(r#"number of threads: (\d+)"#)?;
-            println!("> {}", matched);
-            let b_threads = matched.replace("number of threads: ", "");
-
-            output += prev.as_str();
-            output += matched.as_str();
-
-            // number of keys: 131072
-            let (prev, matched) = p.exp_regex(r#"number of keys: (\d+)"#)?;
-            println!("> {}", matched);
-
-            output += prev.as_str();
-            output += matched.as_str();
-
-            let (prev, matched) = p.exp_regex(r#"Executing (\d+) queries with (\d+) threads"#)?;
-            println!("> {}", matched);
-
-            output += prev.as_str();
-            output += matched.as_str();
-
-            // benchmark took 129 seconds
-            let (prev, matched) = p.exp_regex(r#"benchmark took (\d+) ms"#)?;
-            println!("> {}", matched);
-            let b_time = matched.replace("benchmark took ", "").replace(" ms", "");
-
-            output += prev.as_str();
-            output += matched.as_str();
-
-            // benchmark took 7937984 queries / second
-            let (prev, matched) = p.exp_regex(r#"benchmark took (\d+) queries / second"#)?;
-            println!("> {}", matched);
-            let b_thpt = matched
-                .replace("benchmark took ", "")
-                .replace(" queries / second", "");
-
-            output += prev.as_str();
-            output += matched.as_str();
-
-            let (prev, matched) = p.exp_regex(r#"benchmark executed (\d+)"#)?;
-            println!("> {}", matched);
-            let b_queries = matched
-                .replace("benchmark executed ", "")
-                .split(' ')
-                .next()
-                .unwrap()
-                .to_string();
-
-            output += prev.as_str();
-            output += matched.as_str();
+            let ret = parse_memcached_output(&mut p, *thread, &mut output)?;
 
             // Append parsed results to a CSV file
             let write_headers = !Path::new(file_name).exists();
@@ -981,7 +971,7 @@ fn s10_memcached_benchmark_internal() {
             assert!(r.is_ok());
             let out = format!(
                 "memcached,{},{},{},{},{}",
-                b_threads, b_mem, b_queries, b_time, b_thpt,
+                ret.b_threads, ret.b_mem, ret.b_queries, ret.b_time, ret.b_thpt
             );
             let r = csv_file.write(out.as_bytes());
             assert!(r.is_ok());

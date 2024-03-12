@@ -49,6 +49,7 @@ def get_network_config(workers):
         config['tap{}'.format(2*i)] = {
             'mid': i,
             'mac': '56:b4:44:e9:62:d{:x}'.format(i),
+            'ip' : f"172.31.0.1{i}"
         }
     return config
 
@@ -106,6 +107,8 @@ parser_tasks_mut.add_argument("-b", "--nobuild", action="store_true", default=Fa
 # DCM Scheduler arguments
 parser.add_argument("--dcm-path",
                     help='Path of DCM jar to use (defaults to latest release)', required=False, default=None)
+parser.add_argument("--mid",
+                    help="Machine id to set for this instance", required=False, default=None)
 
 # QEMU related arguments
 parser.add_argument("--qemu-nodes", type=int,
@@ -215,8 +218,10 @@ def build_kernel(args):
             build_args = ['build', '--target', KERNEL_TARGET]
             if args.no_kfeatures:
                 build_args += ["--no-default-features"]
+                log(" - enable feature --no-default-features")
             for feature in args.kfeatures:
                 build_args += ['--features', feature]
+                log(" - enable feature {}".format(feature))
             build_args += CARGO_DEFAULT_ARGS
             build_args += CARGO_NOSTD_BUILD_ARGS
             if args.verbose:
@@ -233,6 +238,16 @@ def build_user_libraries(args):
     build_args += ["--features", "rumprt"]
     if args.nic == "virtio-net-pci":
         build_args += ["--features", "virtio"]
+        log(" - enable feature virtio")
+
+    for featurelist in args.ufeatures:
+        for feature in featurelist.split(',') :
+            if ':' in feature:
+                mod_part, feature_part = feature.split(':')
+                if "libvibrio" == mod_part:
+                    log(" - enable feature {}".format(feature_part))
+                    build_args += ['--features', feature_part]
+
     # else: use e1000 / wm0
     build_args += CARGO_DEFAULT_ARGS
     build_args += CARGO_NOSTD_BUILD_ARGS
@@ -259,18 +274,21 @@ def build_userspace(args):
         if not (USR_PATH / module).exists():
             log("User module {} not found, skipping.".format(module))
             continue
+        log("build user-space module {}".format(module))
         with local.cwd(USR_PATH / module):
             with local.env(RUSTFLAGS=USER_RUSTFLAGS):
                 with local.env(RUST_TARGET_PATH=USR_PATH.absolute()):
                     build_args = build_args_default.copy()
-                    for feature in args.ufeatures:
-                        if ':' in feature:
-                            mod_part, feature_part = feature.split(':')
-                            if module == mod_part:
-                                build_args += ['--features', feature_part]
-                        else:
-                            build_args += ['--features', feature]
-                    log("Build user-module {}".format(module))
+                    for featurelist in args.ufeatures:
+                        for feature in featurelist.split(',') :
+                            if ':' in feature:
+                                mod_part, feature_part = feature.split(':')
+                                if module == mod_part:
+                                    log(" - enable feature {}".format(feature_part))
+                                    build_args += ['--features', feature_part]
+                            else:
+                                log(" - enable feature {}".format(feature))
+                                build_args += ['--features', feature]
                     if args.verbose:
                         print("cd {}".format(USR_PATH / module))
                         print("RUSTFLAGS={} RUST_TARGET_PATH={} cargo ".format(
@@ -316,7 +334,10 @@ def deploy(args):
     # Append globally unique machine id to cmd (for rackscale)
     # as well as a number of workers (clients)
     if args.cmd and NETWORK_CONFIG[args.tap]['mid'] != None:
-        args.cmd += " mid={}".format(NETWORK_CONFIG[args.tap]['mid'])
+        if args.mid is None :
+            args.cmd += " mid={}".format(NETWORK_CONFIG[args.tap]['mid'])
+        else :
+            args.cmd += f" mid={args.mid}"
         if is_controller or is_client:
             args.cmd += " workers={}".format(args.workers)
     # Write kernel cmd-line file in ESP dir
@@ -733,20 +754,26 @@ def configure_network(args):
         sudo[ip[['link', 'set', '{}'.format(tap), 'down']]](retcode=(0, 1))
         sudo[ip[['link', 'del', '{}'.format(tap)]]](retcode=(0, 1))
 
-    # Need to find out how to set default=True in case workers are >0 in `args`
-    if (not 'workers' in args) or ('workers' in args and args.workers <= 1):
-        sudo[tunctl[['-t', args.tap, '-u', user, '-g', group]]]()
-        sudo[ifconfig[args.tap, NETWORK_INFRA_IP]]()
-        sudo[ip[['link', 'set', args.tap, 'up']]](retcode=(0, 1))
-    else:
-        assert args.workers <= MAX_WORKERS, "Too many workers, can't configure network"
-        sudo[ip[['link', 'add', 'br0', 'type', 'bridge']]]()
-        sudo[ip[['addr', 'add', NETWORK_INFRA_IP, 'brd', '+', 'dev', 'br0']]]()
-        for _, ncfg in zip(range(0, args.workers), NETWORK_CONFIG):
-            sudo[tunctl[['-t', ncfg, '-u', user, '-g', group]]]()
-            sudo[ip[['link', 'set', ncfg, 'up']]](retcode=(0, 1))
-            sudo[brctl[['addif', 'br0', ncfg]]]()
-        sudo[ip[['link', 'set', 'br0', 'up']]](retcode=(0, 1))
+
+    # figure out how many workers we have
+    workers = 1
+    if 'workers' in args:
+        workers = args.workers
+
+    # create the bridge
+    sudo[ip[['link', 'add', 'br0', 'type', 'bridge']]]()
+    sudo[ip[['addr', 'add', NETWORK_INFRA_IP, 'brd', '+', 'dev', 'br0']]]()
+
+    # add a network interface for every worker there is
+    for _, ncfg in zip(range(0, workers), NETWORK_CONFIG):
+        sudo[tunctl[['-t', ncfg, '-u', user, '-g', group]]]()
+        sudo[ip[['link', 'set', ncfg, 'up']]](retcode=(0, 1))
+        sudo[brctl[['addif', 'br0', ncfg]]]()
+
+    # set the link up
+    sudo[ip[['link', 'set', 'br0', 'up']]](retcode=(0, 1))
+
+    sudo[brctl[['setageing', 'br0', 600]]]()
 
 
 def configure_dcm_scheduler(args):

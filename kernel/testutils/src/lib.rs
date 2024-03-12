@@ -10,6 +10,7 @@ extern crate serde;
 
 pub mod builder;
 pub mod helpers;
+pub mod memcached;
 pub mod rackscale_runner;
 pub mod redis;
 pub mod runner_args;

@@ -17,7 +17,7 @@ use crate::runner_args::RunnerArgs;
 ///
 /// # Depends on
 /// - `tests/dhcpd.conf`: config file contains match of MAC to IP
-pub const DHCP_ACK_MATCH: &'static str = "DHCPACK on 172.31.0.10 to 56:b4:44:e9:62:d0 via tap0";
+pub const DHCP_ACK_MATCH: &'static str = "DHCPACK on 172.31.0.10 to 56:b4:44:e9:62:d0 via br0";
 pub const DHCP_ACK_MATCH_NRK2: &'static str = "DHCPACK on 172.31.0.11 to 56:b4:44:e9:62:d1 via br0";
 
 /// Default shmem region size (in MB)
@@ -214,7 +214,7 @@ pub fn spawn_dcm(cfg: Option<DCMConfig>) -> Result<rexpect::session::PtySession>
 
 /// Spawns a DHCP server on our host using most common interface: tap0
 pub fn spawn_dhcpd() -> Result<rexpect::session::PtyReplSession> {
-    spawn_dhcpd_with_interface("tap0".to_string())
+    spawn_dhcpd_with_interface("br0".to_string())
 }
 
 /// Spawns a DHCP server on our host

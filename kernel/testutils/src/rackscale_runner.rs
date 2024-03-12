@@ -1,3 +1,4 @@
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{Receiver, Sender, TryRecvError};
 use std::sync::{mpsc::channel, Arc, Mutex};
 use std::thread;
@@ -47,6 +48,13 @@ type RackscaleMatchFn<T> = fn(
     arg: Option<T>,
 ) -> Result<()>;
 
+type ControllerRunFn<T> = fn(
+    config: Option<&T>,
+    num_clients: usize,
+    num_threas: usize,
+    timeout_ms: u64,
+) -> Result<PtySession>;
+
 #[derive(Clone)]
 pub struct RackscaleRun<T>
 where
@@ -60,6 +68,8 @@ where
     pub controller_timeout: u64,
     /// Function that is called after the controller is spawned to match output of the controller process
     pub controller_match_fn: RackscaleMatchFn<T>,
+    /// function to start the controller
+    pub controller_run_fn: Option<ControllerRunFn<T>>,
     /// Timeout for each client process
     pub client_timeout: u64,
     /// Amount of non-shmem QEMU memory given to each QEMU instance
@@ -92,6 +102,8 @@ where
     pub use_qemu_huge_pages: bool,
     /// DCM config
     pub dcm_config: Option<DCMConfig>,
+    /// whether we're running in multi-node mode.
+    pub is_multi_node: bool,
 }
 
 impl<T: Clone + Send + 'static> RackscaleRun<T> {
@@ -112,6 +124,7 @@ impl<T: Clone + Send + 'static> RackscaleRun<T> {
         RackscaleRun {
             controller_timeout: 60_000,
             controller_match_fn: blank_match_fn,
+            controller_run_fn: None,
             client_timeout: 60_000,
             client_match_fn: blank_match_fn,
             memory: 1024,
@@ -130,10 +143,16 @@ impl<T: Clone + Send + 'static> RackscaleRun<T> {
             run_dhcpd_for_baseline: false,
             use_qemu_huge_pages: false,
             dcm_config: None,
+            is_multi_node: false,
         }
     }
 
     pub fn run_rackscale(&self) {
+        if self.is_multi_node {
+            self.run_multi_node();
+            return;
+        }
+
         // Do not allow over provisioning
         let machine = Machine::determine();
         assert!(self.cores_per_client * self.num_clients + 1 <= machine.max_cores());
@@ -418,6 +437,291 @@ impl<T: Clone + Send + 'static> RackscaleRun<T> {
         controller_ret.unwrap();
     }
 
+    pub fn run_multi_node(&self) {
+        // Do not allow over provisioning
+        let machine = Machine::determine();
+        assert!(self.cores_per_client * self.num_clients + 1 <= machine.max_cores());
+        let controller_cores = self.num_clients + 1;
+
+        let mut vm_cores = vec![self.cores_per_client; self.num_clients + 1];
+        vm_cores[0] = controller_cores;
+        let placement_cores = machine.rackscale_core_affinity(vm_cores);
+
+        setup_network(self.num_clients + 1);
+
+        // start the dhcp server
+        let mut dhcpd_server = crate::helpers::spawn_dhcpd_with_interface("br0".to_string())
+            .expect("could not spawn dhcpd server");
+
+        let all_outputs = Arc::new(Mutex::new(Vec::new()));
+
+        let (tx, rx) = channel();
+        let rx_mut = Arc::new(Mutex::new(rx));
+        let tx_mut = Arc::new(Mutex::new(tx));
+
+        let (tx_build_timer, _rx_build_timer) = channel();
+        let tx_build_timer_mut = Arc::new(Mutex::new(tx_build_timer));
+
+        let boot_counter = Arc::new(AtomicUsize::new(0));
+
+        // Run client in separate thead. Wait a bit to make sure controller started
+        let mut client_procs = Vec::new();
+        for i in 0..self.num_clients {
+            let client_output_array: Arc<Mutex<Vec<(String, String)>>> = all_outputs.clone();
+            let client_rx = rx_mut.clone();
+            let client_tx = tx_mut.clone();
+            let client_kernel_test = self.kernel_test.clone();
+            let client_file_name = self.file_name.clone();
+            let client_cmd = self.cmd.clone();
+            let client_placement_cores = placement_cores.clone();
+            let client_boot_counter = boot_counter.clone();
+            let state = self.clone();
+            let client_tx_build_timer = tx_build_timer_mut.clone();
+            let use_large_pages = self.use_qemu_huge_pages;
+            let client = std::thread::Builder::new()
+                .name(format!("Client{}", i + 1))
+                .spawn(move || {
+                    let mut cmdline_client =
+                        RunnerArgs::new_with_build(&client_kernel_test, &state.built)
+                            .timeout(state.client_timeout)
+                            .use_virtio()
+                            .tap(&format!("tap{}", (i + 1) * 2))
+                            .no_network_setup()
+                            .cores(state.cores_per_client)
+                            .memory(state.memory)
+                            .nobuild() // Use single build for all for consistency
+                            .cmd(&client_cmd)
+                            .machine_id(0) // always hardcoded to 0 for the sharded case
+                            .nodes(1)
+                            .node_offset(client_placement_cores[i + 1].0)
+                            .setaffinity(client_placement_cores[i + 1].1.clone());
+
+                    if use_large_pages {
+                        cmdline_client = cmdline_client.large_pages().prealloc();
+                    }
+
+                    let mut output = String::new();
+                    let qemu_run = || -> Result<WaitStatus> {
+                        let mut p = spawn_nrk(&cmdline_client)?;
+                        output += p.exp_string("NRK booting on")?.as_str();
+                        client_boot_counter.fetch_add(1, Ordering::SeqCst);
+
+                        // User-supplied function to check output
+                        (state.client_match_fn)(
+                            &mut p,
+                            &mut output,
+                            state.cores_per_client,
+                            state.num_clients,
+                            &client_file_name,
+                            false,
+                            state.arg,
+                        )?;
+
+                        // Wait for controller to terminate
+                        if !state.wait_for_client {
+                            let rx = client_rx.lock().expect("Failed to get rx lock");
+                            let _ = wait_for_signal::<()>(&rx);
+                        }
+
+                        let ret = p.process.kill(SIGTERM);
+                        output += p.exp_eof()?.as_str();
+                        ret
+                    };
+
+                    // Could exit with 'success' or from sigterm, depending on number of clients.
+                    let ret = qemu_run();
+
+                    if ret.is_err() {
+                        let tx = client_tx_build_timer
+                            .lock()
+                            .expect("Failed to get build timer lock");
+                        send_signal(&tx);
+                    }
+
+                    if state.wait_for_client {
+                        let tx = client_tx.lock().expect("Failed to get rx lock");
+                        send_signal(&tx);
+                    }
+
+                    client_output_array
+                        .lock()
+                        .expect("Failed to get mutex to output array")
+                        .push((format!("Client{}", i + 1), output));
+                    wait_for_sigterm_or_successful_exit_no_log(
+                        &cmdline_client,
+                        ret,
+                        format!("Client{}", i + 1),
+                    );
+                })
+                .expect("Client thread failed to spawn");
+
+            while i == boot_counter.load(Ordering::Relaxed) {
+                thread::sleep(Duration::from_millis(500));
+            }
+
+            client_procs.push(client);
+        }
+
+        // Run controller in separate thread
+        let controller_output_array: Arc<Mutex<Vec<(String, String)>>> = all_outputs.clone();
+        let controller_kernel_test = self.kernel_test.clone();
+        let controller_rx = rx_mut.clone();
+        let controller_tx = tx_mut.clone();
+        let controller_file_name = self.file_name.clone();
+        let controller_placement_cores = placement_cores.clone();
+        let state = self.clone();
+        let controller_tx_build_timer = tx_build_timer_mut.clone();
+        let controller_run_fn = self.controller_run_fn.clone();
+        let use_large_pages = self.use_qemu_huge_pages;
+        let controller_arg = self.arg.clone();
+        let controller = std::thread::Builder::new()
+            .name("Controller".to_string())
+            .spawn(move || {
+                let mut output = String::new();
+                let ret = if let Some(run_fn) = controller_run_fn {
+                    let qemu_run = || -> Result<WaitStatus> {
+                        let mut p = run_fn(
+                            controller_arg.as_ref(),
+                            state.num_clients,
+                            state.cores_per_client,
+                            state.controller_timeout,
+                        )?;
+
+                        // User-supplied function to check output
+                        (state.controller_match_fn)(
+                            &mut p,
+                            &mut output,
+                            state.cores_per_client,
+                            state.num_clients,
+                            &controller_file_name,
+                            false,
+                            state.arg,
+                        )?;
+
+                        for _ in 0..state.num_clients {
+                            if state.wait_for_client {
+                                // Wait for signal from each client that it is done
+                                let rx = controller_rx.lock().expect("Failed to get rx lock");
+                                let _ = wait_for_signal::<()>(&rx);
+                            }
+                        }
+
+                        let ret = p.process.kill(SIGTERM)?;
+                        output += p.exp_eof()?.as_str();
+                        Ok(ret)
+                    };
+                    qemu_run()
+                } else {
+                    let mut cmdline_controller =
+                        RunnerArgs::new_with_build(&controller_kernel_test, &state.built)
+                            .timeout(state.controller_timeout)
+                            .transport(state.transport)
+                            .mode(RackscaleMode::Controller)
+                            .tap("tap0")
+                            .no_network_setup()
+                            .workers(state.num_clients + 1)
+                            .use_vmxnet3()
+                            .memory(state.memory)
+                            .nodes(1)
+                            .cores(controller_cores)
+                            .node_offset(controller_placement_cores[0].0)
+                            .setaffinity(controller_placement_cores[0].1.clone());
+
+                    if use_large_pages {
+                        cmdline_controller = cmdline_controller.large_pages().prealloc();
+                    }
+
+                    let mut output = String::new();
+                    let qemu_run = || -> Result<WaitStatus> {
+                        let mut p = spawn_nrk(&cmdline_controller)?;
+
+                        output += p.exp_string("CONTROLLER READY")?.as_str();
+                        {
+                            let tx = controller_tx_build_timer
+                                .lock()
+                                .expect("Failed to get build timer lock");
+                            send_signal(&tx);
+                        }
+
+                        // User-supplied function to check output
+                        (state.controller_match_fn)(
+                            &mut p,
+                            &mut output,
+                            state.cores_per_client,
+                            state.num_clients,
+                            &controller_file_name,
+                            false,
+                            state.arg,
+                        )?;
+
+                        for _ in 0..state.num_clients {
+                            if state.wait_for_client {
+                                // Wait for signal from each client that it is done
+                                let rx = controller_rx.lock().expect("Failed to get rx lock");
+                                let _ = wait_for_signal::<()>(&rx);
+                            }
+                        }
+
+                        let ret = p.process.kill(SIGTERM)?;
+                        output += p.exp_eof()?.as_str();
+                        Ok(ret)
+                    };
+                    qemu_run()
+                };
+
+                if ret.is_err() {
+                    let tx = controller_tx_build_timer
+                        .lock()
+                        .expect("Failed to get build timer lock");
+                    send_signal(&tx);
+                }
+
+                if !state.wait_for_client {
+                    let tx = controller_tx.lock().expect("Failed to get tx lock");
+                    for _ in 0..state.num_clients {
+                        // Notify each client it's okay to shutdown
+                        send_signal(&tx);
+                    }
+                }
+
+                controller_output_array
+                    .lock()
+                    .expect("Failed to get mutex to output array")
+                    .push((String::from("Controller"), output));
+
+                // This will only find sigterm, that's okay
+                wait_for_sigterm_or_successful_exit_no_log(
+                    &RunnerArgs::new_with_build(&controller_kernel_test, &state.built),
+                    ret,
+                    String::from("Controller"),
+                );
+            })
+            .expect("Controller thread failed to spawn");
+
+        let mut client_rets = Vec::new();
+        for client in client_procs {
+            client_rets.push(client.join());
+        }
+        let controller_ret = controller.join();
+
+        dhcpd_server
+            .send_control('c')
+            .expect("could not terminate dhcp");
+
+        // If there's been an error, print everything
+        if controller_ret.is_err() || (&client_rets).into_iter().any(|ret| ret.is_err()) {
+            let outputs = all_outputs.lock().expect("Failed to get output lock");
+            for (name, output) in outputs.iter() {
+                log_qemu_out_with_name(None, name.to_string(), output.to_string());
+            }
+        }
+
+        for client_ret in client_rets {
+            client_ret.unwrap();
+        }
+        controller_ret.unwrap();
+    }
+
     pub fn run_baseline(&self) {
         // Here we assume run.num_clients == run.num_replicas (num nodes)
         // And the controller match function, timeout, memory will be used
@@ -483,14 +787,14 @@ impl<T: Clone + Send + 'static> RackscaleRun<T> {
 pub struct RackscaleBench<T: Clone + Send + 'static> {
     // Test to run
     pub test: RackscaleRun<T>,
-    // Function to calculate the command. Takes as argument number of application cores
-    pub cmd_fn: fn(usize, Option<T>) -> String,
+    // Function to calculate the command. Takes as argument number of application cores and the number of clients
+    pub cmd_fn: fn(usize, usize, Option<T>) -> String,
     // Function to calculate the timeout. Takes as argument number of application cores
     pub rackscale_timeout_fn: fn(usize) -> u64,
     // Function to calculate the timeout. Takes as argument number of application cores
     pub baseline_timeout_fn: fn(usize) -> u64,
     // Function to calculate memory (excpeting controller memory). Takes as argument number of application cores and is_smoke
-    pub mem_fn: fn(usize, bool) -> usize,
+    pub mem_fn: fn(usize, usize, bool) -> usize,
 }
 
 impl<T: Clone + Send + 'static> RackscaleBench<T> {
@@ -499,12 +803,13 @@ impl<T: Clone + Send + 'static> RackscaleBench<T> {
 
         // Set rackscale appropriately, rebuild if necessary.
         if !is_baseline != test_run.built.with_args.rackscale {
-            eprintln!("\tRebuilding with rackscale={}", !is_baseline,);
+            let is_rackscale = !is_baseline && !test_run.is_multi_node;
+            eprintln!("\tRebuilding with rackscale={}", is_rackscale);
             test_run.built = test_run
                 .built
                 .with_args
                 .clone()
-                .set_rackscale(!is_baseline)
+                .set_rackscale(is_rackscale)
                 .build();
         }
 
@@ -567,23 +872,26 @@ impl<T: Clone + Send + 'static> RackscaleBench<T> {
             test_run.cores_per_client = cores_per_client;
             test_run.num_clients = num_clients;
 
-            // Set controller timeout for this test
-            test_run.controller_timeout = test_run.client_timeout;
-
             // Calculate command based on the number of cores
-            test_run.cmd = (self.cmd_fn)(total_cores, test_run.arg.clone());
+            test_run.cmd = (self.cmd_fn)(total_cores, num_clients, test_run.arg.clone());
 
             // Caclulate memory and timeouts, and then run test
             if is_baseline {
                 test_run.client_timeout = (self.baseline_timeout_fn)(total_cores);
                 // Total client memory in test is: (mem_based_on_cores) + shmem_size * num_clients
-                test_run.memory = (self.mem_fn)(total_cores, is_smoke)
+                test_run.memory = (self.mem_fn)(total_cores, cores_per_client, is_smoke)
                     + test_run.shmem_size * test_run.num_clients;
+
+                // Set controller timeout for this test
+                test_run.controller_timeout = test_run.client_timeout;
 
                 test_run.run_baseline();
             } else {
                 test_run.client_timeout = (self.rackscale_timeout_fn)(total_cores);
-                test_run.memory = (self.mem_fn)(total_cores, is_smoke) / test_run.num_clients;
+                test_run.memory = (self.mem_fn)(total_cores, cores_per_client, is_smoke);
+
+                // Set controller timeout for this test
+                test_run.controller_timeout = test_run.client_timeout;
 
                 test_run.run_rackscale();
             }

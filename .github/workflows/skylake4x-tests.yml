@@ -49,3 +49,4 @@ jobs:
           bash scripts/ci.bash
     env:
       CI_MACHINE_TYPE: "skylake4x"
+    timeout-minutes: 600
